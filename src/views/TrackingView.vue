@@ -9,6 +9,7 @@ import TrackingRatingValue from '@/components/TrackingRatingValue.vue'
 import TrackingTrackerCard from '@/components/TrackingTrackerCard.vue'
 import TrackingWeeklyBarChart from '@/components/TrackingWeeklyBarChart.vue'
 import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
+import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { getScreenTimeStatus, isNativeHealthConnectSupported, readScreenTimeForDates } from '@/services/healthConnect'
 import { formatTrackingValue, TRACKING_PRESETS, trackerDraftFromPreset } from '@/services/tracking'
 import { useTrackingStore } from '@/stores/tracking'
@@ -26,6 +27,7 @@ const actionTracker = ref<TrackingTracker>()
 const pendingStatusTracker = ref<TrackingTracker>()
 const statusDialog = ref(false)
 const updatingStatus = ref(false)
+const reorderingTrackers = ref(false)
 const sheetOpen = ref(false)
 const sheetTracker = ref<TrackingTracker>()
 const editingEntry = ref<TrackingEntry>()
@@ -71,6 +73,17 @@ const dayLogCountLabel = computed(() => `${dayLogs.value.length} ${dayLogs.value
 function openTrackerActions(tracker: TrackingTracker) {
   actionTracker.value = tracker
   trackerActionsOpen.value = true
+}
+
+async function reorderVisibleTrackers(result: LongPressDragResult) {
+  reorderingTrackers.value = true
+  try {
+    await store.reorderTrackers(result.orderedIds)
+  } catch {
+    // The store restores the previous order and exposes the save error.
+  } finally {
+    reorderingTrackers.value = false
+  }
 }
 
 async function logActionTracker() {
@@ -319,6 +332,13 @@ async function loadVisibleWeekEntries() {
           <TrackingTrackerCard
             v-for="tracker in factors"
             :key="tracker.id"
+            v-long-press-drag="{
+              id: tracker.id,
+              group: 'factor-trackers',
+              handle: '.tracker-card__action',
+              disabled: factors.length < 2 || updatingStatus || reorderingTrackers,
+              onDrop: reorderVisibleTrackers,
+            }"
             :tracker="tracker"
             @actions="openTrackerActions"
           />
@@ -342,6 +362,13 @@ async function loadVisibleWeekEntries() {
           <TrackingTrackerCard
             v-for="tracker in outcomes"
             :key="tracker.id"
+            v-long-press-drag="{
+              id: tracker.id,
+              group: 'outcome-trackers',
+              handle: '.tracker-card__action',
+              disabled: outcomes.length < 2 || updatingStatus || reorderingTrackers,
+              onDrop: reorderVisibleTrackers,
+            }"
             :tracker="tracker"
             @actions="openTrackerActions"
           />
@@ -485,6 +512,7 @@ async function loadVisibleWeekEntries() {
 
 <style scoped>
 .tracker-grid { display: grid; gap: .75rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tracker-grid :deep(.long-press-drag-placeholder) { min-width: 0; }
 .tracker-section-empty { font-size: .8rem; }
 .tracking-log-section { margin-bottom: .5rem; }
 .tracking-log { overflow: hidden; }

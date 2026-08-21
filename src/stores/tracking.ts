@@ -227,6 +227,59 @@ export const useTrackingStore = defineStore('tracking', () => {
     }
   }
 
+  async function reorderTrackers(orderedIds: string[]) {
+    const previousTrackers = trackers.value.map((tracker) => ({ ...tracker }))
+    const previousSortOrders = new Map(
+      previousTrackers.map((tracker) => [tracker.id, tracker.sortOrder]),
+    )
+    const uniqueIds = [...new Set(orderedIds)]
+    const orderedIdSet = new Set(uniqueIds)
+    const orderedTrackers = uniqueIds
+      .map(id => trackers.value.find(tracker => tracker.id === id))
+      .filter((tracker): tracker is TrackingTracker => Boolean(tracker))
+
+    if (orderedTrackers.length < 2 || orderedTrackers.length !== uniqueIds.length) return
+
+    let orderedIndex = 0
+    trackers.value = [...trackers.value]
+      .sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name))
+      .map(tracker => orderedIdSet.has(tracker.id)
+        ? orderedTrackers[orderedIndex++] ?? tracker
+        : tracker)
+    trackers.value.forEach((tracker, index) => {
+      tracker.sortOrder = index
+    })
+
+    const changedTrackers = trackers.value.filter(
+      tracker => previousSortOrders.get(tracker.id) !== tracker.sortOrder,
+    )
+    if (!changedTrackers.length) return
+
+    error.value = ''
+    try {
+      await Promise.all(
+        changedTrackers.map(tracker =>
+          api.collection('tracking_trackers').update(tracker.id, {
+            sort_order: tracker.sortOrder,
+          }),
+        ),
+      )
+    } catch (cause) {
+      trackers.value = previousTrackers
+      await Promise.allSettled(
+        changedTrackers.map(tracker =>
+          api.collection('tracking_trackers').update(tracker.id, {
+            sort_order: previousSortOrders.get(tracker.id),
+          }),
+        ),
+      )
+      error.value = cause instanceof Error
+        ? cause.message
+        : 'Could not save the tracker order.'
+      throw cause
+    }
+  }
+
   async function deleteTracker(id: string) {
     const previousTrackers = trackers.value
     const previousEntries = entries.value
@@ -262,6 +315,7 @@ export const useTrackingStore = defineStore('tracking', () => {
     updateEntry,
     deleteEntry,
     setTrackerActive,
+    reorderTrackers,
     deleteTracker,
   }
 })
