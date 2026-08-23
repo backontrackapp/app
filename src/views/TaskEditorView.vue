@@ -3,6 +3,7 @@ import { Capacitor } from '@capacitor/core'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { format } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
+import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import AppForm from '@/components/AppForm.vue'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -16,6 +17,7 @@ import { formatIntervalDuration, intervalDuration, intervalStepCount } from '@/s
 import { createProgramStepCompletion } from '@/services/programStepCompletions'
 import { requestTaskReminderPermission, taskReminderSettingsAvailable } from '@/services/taskReminders'
 import { TASK_TYPE_OPTIONS, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
+import { TASK_RETIREMENT_ACTIONS, type TaskRetirementActionId } from '@/services/taskRetirementActions'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
@@ -39,6 +41,9 @@ const form = ref()
 const saving = ref(false)
 const archiving = ref(false)
 const archiveDialog = ref(false)
+const archiveActions = ref(false)
+const deleteDialog = ref(false)
+const deleting = ref(false)
 const openStep = ref<number>()
 const error = ref('')
 const reminderAvailable = taskReminderSettingsAvailable()
@@ -574,6 +579,42 @@ async function setTaskArchived() {
   }
 }
 
+function openTaskRetirementActions() {
+  if (draft.archived) {
+    archiveDialog.value = true
+    return
+  }
+  archiveActions.value = true
+}
+
+function runTaskRetirementAction(action: TaskRetirementActionId) {
+  if (archiving.value || deleting.value) return
+  if (action === 'archive') {
+    archiveActions.value = false
+    void setTaskArchived()
+    return
+  }
+  archiveActions.value = false
+  deleteDialog.value = true
+}
+
+async function deleteTaskPermanently() {
+  if (!draft.id) return
+  deleting.value = true
+  error.value = ''
+  try {
+    await store.deleteTask(draft.id)
+    deleteDialog.value = false
+    archiveActions.value = false
+    await router.replace('/tasks')
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not permanently delete the task.'
+    deleteDialog.value = false
+  } finally {
+    deleting.value = false
+  }
+}
+
 </script>
 
 <template>
@@ -1102,24 +1143,54 @@ async function setTaskArchived() {
       :loading="saving"
       :show-archive="isEditing"
       :archived="draft.archived"
-      :archive-label="draft.archived ? 'Restore routine' : 'Archive routine'"
-      :archive-disabled="archiving"
+      :archive-label="draft.archived ? 'Restore task' : 'Archive task'"
+      :archive-disabled="archiving || deleting"
       @submit="save"
       @cancel="router.back()"
-      @archive="archiveDialog = true"
+      @archive="openTaskRetirementActions"
     />
+
+    <ActionBottomSheet
+      v-model="archiveActions"
+      title="Archive or delete?"
+      :description="`Choose what to do with ${draft.name || 'this task'}.`"
+      aria-label="Archive or permanently delete task"
+    >
+      <template v-for="action in TASK_RETIREMENT_ACTIONS" :key="action.id">
+        <v-divider v-if="'divider' in action && action.divider" class="my-1" />
+        <v-list-item
+          :prepend-icon="action.icon"
+          :title="action.title"
+          :subtitle="action.subtitle"
+          :base-color="action.color"
+          rounded="lg"
+          :disabled="archiving || deleting"
+          @click="runTaskRetirementAction(action.id)"
+        />
+      </template>
+    </ActionBottomSheet>
 
     <ConfirmDialog
       v-model="archiveDialog"
-      :title="draft.archived ? 'Restore this routine?' : 'Archive this routine?'"
+      :title="draft.archived ? 'Restore this task?' : 'Archive this task?'"
       :message="draft.archived
-        ? 'This routine will return to the Tasks view with its previous active or paused state.'
-        : 'This routine will leave your schedule, while its settings, logged entries, and history remain available.'"
-      :confirm-text="draft.archived ? 'Restore routine' : 'Archive routine'"
+        ? 'This task will return to the Tasks view with its previous active or paused state.'
+        : 'This task will leave your schedule, while its settings, logged entries, and history remain available.'"
+      :confirm-text="draft.archived ? 'Restore task' : 'Archive task'"
       :confirm-color="draft.archived ? 'secondary' : 'warning'"
       :icon="draft.archived ? 'mdi-archive-arrow-up-outline' : 'mdi-archive-arrow-down-outline'"
       :loading="archiving"
       @confirm="setTaskArchived"
+    />
+
+    <ConfirmDialog
+      v-model="deleteDialog"
+      title="Delete this task permanently?"
+      message="This permanently removes the task, its program steps, occurrences, entries, and image logs. Saved interval and Review sessions remain in history but will no longer be linked. This cannot be undone."
+      confirm-text="Delete permanently"
+      icon="mdi-delete-forever-outline"
+      :loading="deleting"
+      @confirm="deleteTaskPermanently"
     />
   </main>
 </template>

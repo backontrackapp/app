@@ -7216,7 +7216,7 @@ final class Api
         ]);
         $status = $statement->fetchColumn();
         if ($status !== false) {
-            return $status === 'pending';
+            return in_array($status, ['pending', 'missed'], true);
         }
         if ($programStepId !== '') {
             $statement = $this->database->pdo->prepare(

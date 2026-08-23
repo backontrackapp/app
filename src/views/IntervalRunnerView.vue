@@ -393,7 +393,7 @@ const attachedProgressCandidates = computed(() => {
   return [...taskProgress, ...stepProgress]
 })
 const eligibleTaskProgress = computed(() => {
-  const today = new Date()
+  const taskDate = originTaskId.value ? parseISO(originTaskDate.value) : new Date()
   return attachedProgressCandidates.value
     .filter((item) => (item.status === 'pending' || item.status === 'missed')
       && !item.complete
@@ -409,8 +409,8 @@ const eligibleTaskProgress = computed(() => {
       && !item.task.archived
       && (Boolean(item.occurrence)
         || (item.programStep
-          ? taskStore.stepsForTaskDate(item.task, today).some((step) => step.id === item.programStep?.id)
-          : taskStore.taskIsScheduledForDate(item.task, today))))
+          ? taskStore.stepsForTaskDate(item.task, taskDate).some((step) => step.id === item.programStep?.id)
+          : taskStore.taskIsScheduledForDate(item.task, taskDate))))
 })
 function intervalCompletionId(progress: TaskProgress) {
   if (!progress.programStep) return undefined
@@ -538,7 +538,7 @@ onMounted(async () => {
           && !completion.complete
         )))
       )) {
-        error.value = 'This interval task or program step is not open today.'
+        error.value = 'This interval task or program step is not open for the selected date.'
         return
       }
     }
@@ -2546,7 +2546,7 @@ async function runAgain(repetitions?: number) {
       aria-label="Choose an interval task or standalone run"
     >
       <p class="text-body-2 muted px-4 pb-3">Choose one open task for today, or run the interval on its own.</p>
-      <p v-if="!eligibleTaskProgress.length" class="text-caption muted px-4 pb-2">No attached tasks are open today.</p>
+      <p v-if="!eligibleTaskProgress.length" class="text-caption muted px-4 pb-2">No attached tasks are open for this date.</p>
       <v-list-item
         v-for="item in eligibleTaskProgress"
         :key="`${item.task.id}-${item.programStep?.id || ''}`"

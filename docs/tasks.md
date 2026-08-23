@@ -2,7 +2,9 @@
 
 Opening the Tasks view selects the current day. Choosing another date remains in effect while working in that view, but returning to Tasks starts from today again.
 
-Saved tasks are archived instead of deleted from the task editor. Archiving removes a task from its schedule and reminders while preserving its settings, entries, and history. Archived tasks appear in the collapsible Archive section below Not scheduled, where selecting one opens the editor so it can be restored.
+The task editor's archive action offers a choice between archiving and permanent deletion. Archiving removes a task from its schedule and reminders while preserving its settings, entries, and history. Archived tasks appear in the collapsible Archive section below Not scheduled, where selecting one opens the editor so it can be restored. Permanent deletion removes the task, its program steps, occurrences, entries, and image logs; saved interval and Review sessions remain in history without task attribution.
+
+Program steps can be duplicated from their expanded editor. The copy is inserted on the following program day with independent completion requirements and opens immediately for editing. Check-off, Interval, and Review set requirements can also have an optional label that identifies the requirement on its task card.
 
 On mobile, the next incomplete task banner appears only when no incomplete task card is visible between the app bar and bottom navigation. It links to the nearest incomplete task farther down the page.
 
@@ -25,6 +27,10 @@ Open-work review is unavailable while viewing a future date. Future selections n
 When **Resolve open work** contains more than three items, it also offers confirmed bulk actions to mark the full backlog missed, carry the full backlog forward, or shift every affected program once for each of its unresolved steps. Each bulk action updates offline state and queues one command in a single local transaction; the server applies the complete command atomically so it cannot persist only part of the selection.
 
 Task cards for missed, skipped, and shifted occurrences remain available in their dated history but use the same muted grayscale treatment as other inactive work. The **Missed** and **Shifted** labels retain their semantic colors so the resolution remains clear. Opening a missed or shifted task offers an undo action. Undoing a missed task returns it to pending; undoing a shifted program step also restores the following program schedule by one day. For dates earlier than yesterday, the task action sheet offers separate choices to undo only that day or also reset all later missed and shifted states for that task while preserving completed work and logs. Either undo choice updates its occurrences and program start date optimistically and queues one atomic transaction command.
+
+Resolved or partially logged program occurrences anchor their historical date. If later program shifts would recalculate a different virtual step onto that same date, the Tasks view keeps the stored historical step instead of showing both cards. Empty carried work can still appear beside the day's scheduled step.
+
+Pending and missed program-step requirements remain actionable on previous dates. Check and quantity requirements update that historical occurrence directly, while interval and Review set requirements start a session attributed to the selected program step and date. Future requirements remain unavailable.
 
 ## Health Connect
 

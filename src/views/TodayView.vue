@@ -253,8 +253,8 @@ function programStepRequirementItems(progress: TaskProgress): ProgramStepRequire
       color: TASK_TYPE_PRESENTATION.flashcards.color,
       complete: completion.complete,
       disabled: locked || (!completion.complete && (
-        !progressIsToday(progress)
-        || progress.status !== 'pending'
+        !programStepSessionCanStart(progress)
+        || !['pending', 'missed'].includes(progress.status)
         || !reviewSet?.cardCount
       )),
     }
@@ -345,7 +345,11 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
       disabled: locked,
     })
   }
-  if (completionType === 'flashcards' && progressIsToday(progress) && progress.status === 'pending') {
+  if (
+    completionType === 'flashcards'
+    && programStepSessionCanStart(progress)
+    && ['pending', 'missed'].includes(progress.status)
+  ) {
     items.push({
       id: 'start-review',
       title: reviewSessionMatchesProgress(progress) ? 'Resume review' : 'Start review',
@@ -782,8 +786,11 @@ function taskPresentation(progress: TaskProgress) {
   return TASK_TYPE_PRESENTATION[progress.task.type]
 }
 
-function progressIsToday(progress: TaskProgress) {
-  return progress.scheduledDate === toDateKey(new Date())
+function programStepSessionCanStart(progress: TaskProgress) {
+  const today = toDateKey(new Date())
+  return progress.programStep
+    ? progress.scheduledDate <= today
+    : progress.scheduledDate === today
 }
 
 function intervalCanStart(progress: TaskProgress) {

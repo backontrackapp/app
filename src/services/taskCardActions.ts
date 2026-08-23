@@ -44,8 +44,11 @@ export function taskIntervalCanStart(progress: TaskProgress, currentDate: string
       ? progress.completionItems.some(item => item.type === 'interval' && !item.complete)
       : progress.programStep.completionType === 'interval'
     : progress.task.type === 'interval'
+  const isAvailableDate = progress.programStep
+    ? progress.scheduledDate <= currentDate
+    : progress.scheduledDate === currentDate
   return isInterval
-    && progress.scheduledDate === currentDate
+    && isAvailableDate
     && !progress.complete
     && (progress.status === 'pending' || progress.status === 'missed')
 }
