@@ -1240,6 +1240,7 @@ async function previous() {
   displayRemainingMs.value = runtime.remainingMs
   lastCountCue = ''
   if (updated.status === 'running') await syncNativeTimer(updated)
+  playIntervalGoCue(item.cues, previousStep.step.kind, previousStep.step.name)
 }
 
 async function restart() {
