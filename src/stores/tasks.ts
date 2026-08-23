@@ -1571,10 +1571,32 @@ export const useTaskStore = defineStore('tasks', () => {
       })
       steps.value = [
         ...steps.value.filter(step => step.task !== optimisticTask.id),
+        ...steps.value.filter(step => step.task === optimisticTask.id && !step.active),
         ...optimisticSteps,
       ]
     }
     try {
+      const existingSteps = draft.id && draft.type === 'program'
+        ? previousSteps.filter(step => step.active && step.task === draft.id)
+        : []
+      const retainedStepIds = new Set(draft.steps.map(step => step.id).filter(Boolean))
+      const removedSteps = existingSteps.filter(step => !retainedStepIds.has(step.id))
+      const referencedStepIds = new Set<string>()
+      if (removedSteps.length) {
+        const referenceChecks = await Promise.all(removedSteps.map(async step => ({
+          id: step.id,
+          referenced: await programStepHasReferences(step.id),
+        })))
+        referenceChecks
+          .filter(check => check.referenced)
+          .forEach(check => referencedStepIds.add(check.id))
+      }
+      steps.value = [
+        ...steps.value,
+        ...removedSteps
+          .filter(step => referencedStepIds.has(step.id))
+          .map(step => ({ ...step, active: false })),
+      ]
       const record = draft.id
         ? await api.collection('tasks').update(draft.id, payload)
         : await api.collection('tasks').create(payload)
@@ -1585,15 +1607,9 @@ export const useTaskStore = defineStore('tasks', () => {
       })
 
       if (draft.type === 'program') {
-        const existing = previousSteps.filter((step) => step.task === taskId)
-        const retainedIds = new Set(draft.steps.map((step) => step.id).filter(Boolean))
-        await Promise.all(existing.filter((step) => !retainedIds.has(step.id)).map((step) =>
-          api.collection('program_steps').update(step.id, {
-            active: false,
-            interval_template: '',
-            flashcard_review_set: '',
-            completions: [],
-          }),
+        await Promise.all(removedSteps.map((step) => referencedStepIds.has(step.id)
+          ? api.collection('program_steps').update(step.id, { active: false })
+          : api.collection('program_steps').delete(step.id),
         ))
         const stepRecords = await Promise.all(
           draft.steps.map((step, index) => {
@@ -1636,6 +1652,15 @@ export const useTaskStore = defineStore('tasks', () => {
       void syncTaskReminders()
       throw cause
     }
+  }
+
+  async function programStepHasReferences(stepId: string) {
+    const filter = `program_step = "${stepId}"`
+    const collections = ['occurrences', 'entries', 'interval_sessions', 'flashcard_review_sessions']
+    const results = await Promise.all(collections.map(collection =>
+      api.collection(collection).getList(1, 1, { filter }),
+    ))
+    return results.some(result => result.totalItems > 0)
   }
 
   async function toggleTaskActive(task: Task) {
@@ -2091,6 +2116,7 @@ export const useTaskStore = defineStore('tasks', () => {
     undoReviewResolution,
     bulkResolveReview,
     saveTask,
+    programStepHasReferences,
     reorderQuickLogs,
     toggleTaskActive,
     setTaskArchived,

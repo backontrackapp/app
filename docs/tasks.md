@@ -10,6 +10,8 @@ The task action menu includes **Duplicate**, which opens a new task prefilled wi
 
 Program steps can be duplicated from their expanded editor. The copy is inserted on the following program day with independent completion requirements and opens immediately for editing. Check-off, Interval, and Review set requirements can also have an optional label that identifies the requirement on its task card.
 
+Removing a program step checks its complete occurrence, entry, Interval-session, and Review-session history. A step with any historical reference is archived so its definition and log links remain intact; the editor explains this above the step and labels the action **Archive step**. A step with no references is permanently deleted and labels the action **Delete step**. Remaining steps close the removed day in the program sequence.
+
 On mobile, the next incomplete task banner appears only when no incomplete task card is visible between the app bar and bottom navigation. It links to the nearest incomplete task farther down the page.
 
 When a Daily Total log exactly fills the positive amount remaining to its target, the Tasks view asks whether to lock in the total. Locking finishes the task and prevents more changes for that day; skipping leaves it unlocked so more values can still be logged.

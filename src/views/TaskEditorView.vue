@@ -45,6 +45,9 @@ const archiveActions = ref(false)
 const deleteDialog = ref(false)
 const deleting = ref(false)
 const openStep = ref<number>()
+const referencedStepIds = ref(new Set<string>())
+const checkedStepReferenceIds = ref(new Set<string>())
+const failedStepReferenceIds = ref(new Set<string>())
 const error = ref('')
 const reminderAvailable = taskReminderSettingsAvailable()
 const stepDragIds = new WeakMap<ProgramStepDraft, string>()
@@ -504,6 +507,34 @@ function removeStep(index: number) {
   if (openStep.value === index) openStep.value = undefined
   else if (openStep.value !== undefined && openStep.value > index) openStep.value -= 1
 }
+
+function stepWillBeArchived(step: ProgramStepDraft) {
+  return Boolean(step.id && (
+    failedStepReferenceIds.value.has(step.id)
+    || referencedStepIds.value.has(step.id)
+  ))
+}
+
+function checkingStepReferences(step: ProgramStepDraft) {
+  return Boolean(step.id && !checkedStepReferenceIds.value.has(step.id))
+}
+
+async function loadStepReferences(step: ProgramStepDraft) {
+  if (!step.id || checkedStepReferenceIds.value.has(step.id)) return
+  try {
+    if (await store.programStepHasReferences(step.id)) referencedStepIds.value.add(step.id)
+  } catch {
+    failedStepReferenceIds.value.add(step.id)
+  } finally {
+    checkedStepReferenceIds.value.add(step.id)
+  }
+}
+
+watch(openStep, (index) => {
+  if (index === undefined) return
+  const step = draft.steps[index]
+  if (step) void loadStepReferences(step)
+})
 
 function moveStep(index: number, direction: -1 | 1) {
   const targetIndex = index + direction
@@ -1088,6 +1119,18 @@ async function deleteTaskPermanently() {
               </div>
             </v-expansion-panel-title>
             <v-expansion-panel-text v-if="step.completionType !== 'day_off'">
+              <v-alert
+                v-if="stepWillBeArchived(step)"
+                type="info"
+                variant="tonal"
+                density="compact"
+                icon="mdi-archive-outline"
+                class="mt-2 mb-4"
+              >
+                {{ step.id && failedStepReferenceIds.has(step.id)
+                  ? 'History could not be checked, so this step will be archived to protect any logs.'
+                  : 'This step has history. It will be archived so its logs stay linked.' }}
+              </v-alert>
               <div class="field-stack mt-2 mb-4">
                 <v-text-field
                   v-model="step.name"
@@ -1212,12 +1255,15 @@ async function deleteTaskPermanently() {
               <v-btn
                 block
                 class="mt-2"
-                color="error"
+                :color="stepWillBeArchived(step) ? 'warning' : 'error'"
                 variant="tonal"
-                prepend-icon="mdi-delete-outline"
+                :prepend-icon="stepWillBeArchived(step) ? 'mdi-archive-outline' : 'mdi-delete-outline'"
+                :disabled="checkingStepReferences(step)"
                 @click="removeStep(index)"
               >
-                Remove step
+                {{ checkingStepReferences(step)
+                  ? 'Checking history…'
+                  : stepWillBeArchived(step) ? 'Archive step' : 'Delete step' }}
               </v-btn>
             </v-expansion-panel-text>
           </v-expansion-panel>
