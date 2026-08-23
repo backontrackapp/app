@@ -81,6 +81,7 @@ export interface ProgramStep {
 export interface ProgramStepCompletion {
   id: string
   type: ProgramStepCompletionType
+  label?: string
   targetValue?: number
   targetOperator?: TargetOperator
   unit?: string

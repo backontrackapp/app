@@ -200,7 +200,9 @@ function programStepRequirementItems(progress: TaskProgress): ProgramStepRequire
   const completions = progress.completionItems || []
   return completions.map((completion, index) => {
     const sourceName = completionSourceName(completion)
-    const title = completions.length > 1 ? `${index + 1}. ${sourceName}` : sourceName
+    const customLabel = completion.label?.trim()
+    const requirementName = customLabel || sourceName
+    const title = completions.length > 1 ? `${index + 1}. ${requirementName}` : requirementName
     const locked = Boolean(progress.locked)
 
     if (completion.type === 'check') {
@@ -230,7 +232,11 @@ function programStepRequirementItems(progress: TaskProgress): ProgramStepRequire
       return {
         id: completion.id,
         title,
-        subtitle: [completion.complete ? 'Complete' : '', interval?.duration ? `${interval.duration} total` : 'Saved interval unavailable']
+        subtitle: [
+          completion.complete ? 'Complete' : '',
+          customLabel ? sourceName : '',
+          interval?.duration ? `${interval.duration} total` : 'Saved interval unavailable',
+        ]
           .filter(Boolean)
           .join(' · '),
         icon: completion.complete ? 'mdi-check-circle' : 'mdi-timer-play-outline',
@@ -248,7 +254,11 @@ function programStepRequirementItems(progress: TaskProgress): ProgramStepRequire
     return {
       id: completion.id,
       title,
-      subtitle: [completion.complete ? 'Complete' : '', reviewDetails].filter(Boolean).join(' · '),
+      subtitle: [
+        completion.complete ? 'Complete' : '',
+        customLabel ? sourceName : '',
+        reviewDetails,
+      ].filter(Boolean).join(' · '),
       icon: completion.complete ? 'mdi-check-circle' : 'mdi-cards-playing-outline',
       color: TASK_TYPE_PRESENTATION.flashcards.color,
       complete: completion.complete,

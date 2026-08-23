@@ -283,6 +283,7 @@ function setCompletionStyle(
   completion.customUnit = type === 'quantity' ? completion.customUnit : undefined
   completion.intervalTemplate = type === 'interval' ? item.sourceId : undefined
   completion.flashcardReviewSet = type === 'flashcards' ? item.sourceId : undefined
+  completion.label = type === 'quantity' ? undefined : completion.label
   syncStepCompletionProjection(step)
 }
 
@@ -431,6 +432,25 @@ function addDayOff() {
   draft.steps.push(dayOffStep(draft.steps.length))
   syncProgramSequence()
   openStep.value = undefined
+}
+
+function duplicateStep(index: number) {
+  if (draft.steps.length >= 365) return
+  const step = draft.steps[index]
+  if (!step || step.completionType === 'day_off') return
+
+  const duplicate: ProgramStepDraft = {
+    ...step,
+    id: undefined,
+    cycleDays: [...step.cycleDays],
+    completions: step.completions?.map(completion => ({
+      ...completion,
+      id: createProgramStepCompletion(completion.type).id,
+    })),
+  }
+  draft.steps.splice(index + 1, 0, duplicate)
+  syncProgramSequence()
+  openStep.value = index + 1
 }
 
 function removeStep(index: number) {
@@ -1104,11 +1124,22 @@ async function deleteTaskPermanently() {
                         </span>
                       </template>
                     </v-select>
+                    <v-row v-if="completion.type !== 'quantity'" no-gutters class="mt-4">
+                      <v-col cols="12">
+                        <v-text-field
+                          v-model="completion.label"
+                          label="Requirement label (optional)"
+                          placeholder="e.g. Warm-up"
+                          maxlength="160"
+                          autocomplete="off"
+                        />
+                      </v-col>
+                    </v-row>
                     <div v-if="completion.type === 'check'" class="completion-check-summary">
                       <v-icon icon="mdi-check-circle-outline" color="secondary" />
                       <span>A separate check-off is required.</span>
                     </div>
-                    <div v-if="completion.type === 'quantity'" class="target-grid">
+                    <div v-if="completion.type === 'quantity'" class="target-grid mt-4">
                       <v-number-input
                         v-model="completion.targetValue"
                         label="Target"
@@ -1125,6 +1156,16 @@ async function deleteTaskPermanently() {
               <v-btn
                 block
                 class="mt-3"
+                variant="tonal"
+                prepend-icon="mdi-content-copy"
+                :disabled="draft.steps.length >= 365"
+                @click="duplicateStep(index)"
+              >
+                Duplicate step
+              </v-btn>
+              <v-btn
+                block
+                class="mt-2"
                 color="error"
                 variant="tonal"
                 prepend-icon="mdi-delete-outline"
