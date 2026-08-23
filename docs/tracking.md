@@ -6,7 +6,7 @@ Both device factors are quantitative. Insights load one value per local calendar
 
 When Android Usage Access is enabled, the main Tracking page also loads screen time for the visible week and shows it as a duration series in the weekly chart. Future dates are not requested. Like tracker series, screen time can be hidden or restored from the chart legend.
 
-The main Tracking page keeps tracker cards focused on starting a new log and managing the tracker. Entries for the selected date appear together in a chronological **Log** section below the factor and outcome tracker groups. Selecting a log opens it for editing, and days without entries show an explicit empty state.
+The main Tracking page keeps tracker cards focused on starting a new log and managing the tracker. Cards with an entry on the selected date are greyed out, while remaining available for additional entries and tracker actions. Entries for the selected date appear together in a chronological **Log** section below the factor and outcome tracker groups. Selecting a log opens it for editing, and days without entries show an explicit empty state.
 
 Tracker cards can be reordered within their **Things you did** or **How you felt** group by pressing and holding, then dragging. Cards animate into their prospective grid positions while dragging, with row-aware targeting for stable vertical movement across the grid. The new order is applied immediately and saved through the offline-first data layer; if persistence fails, the previous order is restored and an error is shown.
 

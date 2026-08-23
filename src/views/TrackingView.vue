@@ -43,6 +43,7 @@ const dateKey = computed(() => format(selectedDate.value, 'yyyy-MM-dd'))
 const dayEntries = computed(() => store.entries
   .filter((entry) => entry.localDate === dateKey.value)
   .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)))
+const loggedTrackerIds = computed(() => new Set(dayEntries.value.map(entry => entry.tracker)))
 const trackingDateMarkers = computed(() => [...new Set(store.entries.map((entry) => entry.localDate))]
   .map((date) => ({ date, color: 'error', label: 'Has tracking entries' })))
 const sortedTrackers = computed(() => [...store.trackers]
@@ -285,8 +286,12 @@ async function loadVisibleWeekEntries() {
       class="mb-5"
     />
 
-    <v-card v-if="weeklyChartLoading || store.trackers.length || screenTimeEnabled" class="weekly-chart-card surface-card pa-5 mb-5">
-      <v-alert v-if="weeklyChartError" type="error" variant="tonal" class="mb-4">
+    <v-sheet
+      v-if="weeklyChartLoading || store.trackers.length || screenTimeEnabled"
+      class="weekly-chart-card surface-card pa-5 mb-5"
+      rounded="xl"
+    >
+      <v-alert v-if="weeklyChartError" type="error" variant="tonal">
         {{ weeklyChartError }}
       </v-alert>
       <TrackingWeeklyBarChart
@@ -300,7 +305,6 @@ async function loadVisibleWeekEntries() {
       <v-btn
         v-if="store.trackers.length"
         block
-        class="mt-4"
         color="secondary"
         variant="tonal"
         prepend-icon="mdi-chart-box-outline"
@@ -309,7 +313,7 @@ async function loadVisibleWeekEntries() {
       >
         Explore your patterns
       </v-btn>
-    </v-card>
+    </v-sheet>
 
     <div v-if="store.loading && !store.loaded" class="d-flex justify-center py-12">
       <v-progress-circular indeterminate color="secondary" />
@@ -340,6 +344,7 @@ async function loadVisibleWeekEntries() {
               onDrop: reorderVisibleTrackers,
             }"
             :tracker="tracker"
+            :logged="loggedTrackerIds.has(tracker.id)"
             @actions="openTrackerActions"
           />
         </div>
@@ -370,6 +375,7 @@ async function loadVisibleWeekEntries() {
               onDrop: reorderVisibleTrackers,
             }"
             :tracker="tracker"
+            :logged="loggedTrackerIds.has(tracker.id)"
             @actions="openTrackerActions"
           />
         </div>
@@ -511,6 +517,7 @@ async function loadVisibleWeekEntries() {
 </template>
 
 <style scoped>
+.weekly-chart-card { display: grid; gap: 1rem; }
 .tracker-grid { display: grid; gap: .75rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .tracker-grid :deep(.long-press-drag-placeholder) { min-width: 0; }
 .tracker-section-empty { font-size: .8rem; }

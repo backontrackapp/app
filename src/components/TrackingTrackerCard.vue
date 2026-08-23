@@ -3,9 +3,12 @@ import { computed } from 'vue'
 import { Ripple } from 'vuetify/directives'
 import type { TrackingTracker } from '@/types/domain'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   tracker: TrackingTracker
-}>()
+  logged?: boolean
+}>(), {
+  logged: false,
+})
 
 const emit = defineEmits<{
   actions: [tracker: TrackingTracker]
@@ -27,7 +30,10 @@ const cardInk = computed(() => {
 <template>
   <v-card
     class="tracker-card surface-card"
-    :class="{ 'tracker-card--paused': !tracker.active }"
+    :class="{
+      'tracker-card--logged': logged,
+      'tracker-card--paused': !tracker.active,
+    }"
     :style="{ '--tracker-color': tracker.color, '--tracker-ink': cardInk }"
   >
     <button
@@ -92,6 +98,15 @@ const cardInk = computed(() => {
 .tracker-card--paused .tracker-card__header {
   background: color-mix(in srgb, var(--tracker-color) 28%, rgb(var(--v-theme-surface-variant)));
   color: rgb(var(--v-theme-on-surface) / .62);
+}
+
+.tracker-card--logged:not(.tracker-card--paused) .tracker-card__header {
+  background: rgb(var(--v-theme-surface-variant));
+  color: rgb(var(--v-theme-on-surface) / .52);
+}
+
+.tracker-card--logged .tracker-card__title {
+  color: rgb(var(--v-theme-on-surface) / .58);
 }
 
 .tracker-card__content {
