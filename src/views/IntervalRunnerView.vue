@@ -1633,14 +1633,14 @@ async function ejectIntervalFlashcard() {
     }
     if (flashcardEjectExcludes(review.ejectBehavior)) {
       if (!reviewSet) throw new Error('The Review set for this session is no longer available.')
-      await flashcardStore.saveReviewSetPreferences(reviewSet.id, {
-        ...reviewSet,
-        excludedCards: updateFlashcardReviewExclusions(
-          previousExcludedCards,
-          'exclude',
-          [cardId],
-        ),
-      })
+        await flashcardStore.saveReviewSetPreferences(reviewSet.id, {
+          ...reviewSet,
+          excludedCards: updateFlashcardReviewExclusions(
+            previousExcludedCards,
+            'exclude',
+            [cardId],
+          ),
+        })
     }
     await updateFlashcardSnapshot({
       ...review,
