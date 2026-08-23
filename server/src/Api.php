@@ -205,6 +205,12 @@ final class Api
             if ($method === 'POST' && $path === '/task-session-progress/reconcile') {
                 $this->reconcileSessionTaskProgress($this->authenticate());
             }
+            if ($method === 'POST' && $path === '/task-review/bulk') {
+                $this->respond($this->syncService->bulkResolveTaskReview(
+                    $this->authenticate(),
+                    $this->jsonBody(),
+                ));
+            }
             if ($method === 'POST' && $path === '/auth/passkeys/register/options') {
                 $this->passkeyRegistrationOptions();
             }
@@ -2631,6 +2637,8 @@ final class Api
         if ($collection['name'] === 'tasks') {
             $body += [
                 'archived' => false,
+                'quick_log_enabled' => false,
+                'quick_log_sort_order' => 0,
                 'log_with_images_enabled' => false,
                 'schedule_mode' => 'all_day',
                 'scheduled_time' => '',

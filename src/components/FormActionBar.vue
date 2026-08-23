@@ -134,6 +134,16 @@ const emit = defineEmits<{
     justify-content: flex-end;
   }
 
+  .form-action-bar__inner > .v-btn {
+    height: 2.25rem;
+  }
+
+  .form-action-bar__delete {
+    width: 2.25rem;
+    min-width: 2.25rem;
+    flex-basis: 2.25rem;
+  }
+
   .form-action-bar__primary,
   .form-action-bar__cancel {
     max-width: 10rem;

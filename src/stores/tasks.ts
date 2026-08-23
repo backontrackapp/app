@@ -30,6 +30,8 @@ import type {
   TaskProgress,
 } from '@/types/domain'
 
+const TASK_PROGRESS_HISTORY_DAYS = 120
+
 const asNumberArray = (value: unknown, fallback: number[] = []) =>
   Array.isArray(value) ? value.map(Number) : fallback
 
@@ -66,6 +68,8 @@ function mapTask(record: Record<string, any>): Task {
     cycleLength: record.cycle_length || undefined,
     programRepeat: record.program_repeat,
     programStrict: record.program_strict,
+    quickLogEnabled: record.quick_log_enabled === true,
+    quickLogSortOrder: Number(record.quick_log_sort_order || 0),
     logWithImagesEnabled: record.log_with_images_enabled === true,
     sortOrder: record.sort_order || 0,
     intervalTemplate: record.interval_template || undefined,
@@ -497,7 +501,46 @@ export const useTaskStore = defineStore('tasks', () => {
 
   function reviewProgressForDate(date: Date) {
     const currentDate = toDateKey(date)
-    return progressForDate(subDays(date, 1)).filter(item => taskNeedsReview(item, currentDate))
+    const candidates = new Map<string, TaskProgress>()
+    const addCandidate = (item: TaskProgress) => {
+      candidates.set(
+        occurrenceStatusKey(item.task.id, item.scheduledDate, item.programStep?.id),
+        item,
+      )
+    }
+
+    progressForDate(subDays(date, 1)).forEach(addCandidate)
+
+    for (const task of activeTasks.value) {
+      if (
+        task.type !== 'program'
+        || (!task.programStrict && !task.reviewWhenMissed)
+      ) continue
+      const retainedHistoryStart = subDays(date, TASK_PROGRESS_HISTORY_DAYS)
+      const taskStart = parseISO(task.startDate)
+      const reviewStart = taskStart > retainedHistoryStart ? taskStart : retainedHistoryStart
+      for (
+        let reviewDate = reviewStart;
+        reviewDate < date;
+        reviewDate = addDays(reviewDate, 1)
+      ) {
+        for (const step of stepsForDate(task, steps.value, reviewDate)) {
+          addCandidate(makeProgress(task, reviewDate, step))
+        }
+      }
+    }
+
+    return [...candidates.values()]
+      .filter(item => taskNeedsReview(item, currentDate) || Boolean(
+        item.programStep
+        && item.task.programStrict
+        && item.scheduledDate < currentDate
+        && item.status === 'pending'
+        && !item.complete,
+      ))
+      .sort((left, right) => left.scheduledDate.localeCompare(right.scheduledDate)
+        || left.task.sortOrder - right.task.sortOrder
+        || (left.programStep?.sortOrder ?? 0) - (right.programStep?.sortOrder ?? 0))
   }
 
   const completionRate = computed(() => completionRateForDate(selectedDate.value) || 0)
@@ -557,7 +600,7 @@ export const useTaskStore = defineStore('tasks', () => {
     error.value = ''
     try {
       await repairLegacyHealthConnectEntrySync(api.authStore.record.id)
-      const since = toDateKey(subDays(new Date(), 120))
+      const since = toDateKey(subDays(new Date(), TASK_PROGRESS_HISTORY_DAYS))
       const [taskRecords, stepRecords, occurrenceRecords, entryRecords] = await Promise.all([
         api.collection('tasks').getFullList({ sort: 'sort_order' }),
         api.collection('program_steps').getFullList({ sort: 'sort_order' }),
@@ -1361,6 +1404,12 @@ export const useTaskStore = defineStore('tasks', () => {
     const sortOrder = draft.id
       ? draft.sortOrder
       : tasks.value.reduce((highest, task) => Math.max(highest, task.sortOrder), -1) + 1
+    const quickLogSortOrder = draft.id
+      ? draft.quickLogSortOrder ?? draft.sortOrder
+      : tasks.value.reduce((highest, task) => Math.max(
+          highest,
+          task.quickLogSortOrder ?? task.sortOrder,
+        ), -1) + 1
     const payload = {
       owner: api.authStore.record!.id,
       name: draft.name,
@@ -1386,6 +1435,8 @@ export const useTaskStore = defineStore('tasks', () => {
       cycle_length: draft.type === 'program' ? draft.steps.length : draft.cycleLength || 0,
       program_repeat: draft.programRepeat ?? true,
       program_strict: draft.programStrict ?? false,
+      quick_log_enabled: draft.quickLogEnabled === true,
+      quick_log_sort_order: quickLogSortOrder,
       log_with_images_enabled: draft.logWithImagesEnabled,
       sort_order: sortOrder,
       interval_template: draft.type === 'interval' ? draft.intervalTemplate || '' : '',
@@ -1639,6 +1690,54 @@ export const useTaskStore = defineStore('tasks', () => {
     }
   }
 
+  async function reorderQuickLogs(orderedIds: string[]) {
+    const uniqueIds = [...new Set(orderedIds)]
+    const orderedIdSet = new Set(uniqueIds)
+    const orderedTasks = uniqueIds
+      .map(id => tasks.value.find(task => task.id === id && task.quickLogEnabled))
+      .filter((task): task is Task => Boolean(task))
+    if (orderedTasks.length < 2 || orderedTasks.length !== uniqueIds.length) return
+
+    const previousTasks = tasks.value.map(task => ({ ...task }))
+    const previousSortOrders = new Map(previousTasks.map(task => [
+      task.id,
+      task.quickLogSortOrder ?? task.sortOrder,
+    ]))
+    const quickLogTasks = tasks.value
+      .filter(task => task.quickLogEnabled)
+      .sort((left, right) => (
+        (left.quickLogSortOrder ?? left.sortOrder) - (right.quickLogSortOrder ?? right.sortOrder)
+        || left.sortOrder - right.sortOrder
+      ))
+    let orderedIndex = 0
+    quickLogTasks.forEach((task, index) => {
+      const orderedTask = orderedIdSet.has(task.id)
+        ? orderedTasks[orderedIndex++] ?? task
+        : task
+      orderedTask.quickLogSortOrder = index
+    })
+    const changedTasks = quickLogTasks.filter(task => (
+      previousSortOrders.get(task.id) !== task.quickLogSortOrder
+    ))
+    if (!changedTasks.length) return
+
+    error.value = ''
+    try {
+      await Promise.all(changedTasks.map(task => api.collection('tasks').update(task.id, {
+        quick_log_sort_order: task.quickLogSortOrder,
+      })))
+    } catch (cause) {
+      tasks.value = previousTasks
+      await Promise.allSettled(changedTasks.map(task => api.collection('tasks').update(task.id, {
+        quick_log_sort_order: previousSortOrders.get(task.id),
+      })))
+      error.value = cause instanceof Error
+        ? cause.message
+        : 'Could not save the quick-log order.'
+      throw cause
+    }
+  }
+
   async function deleteTask(taskId: string) {
     const previousTasks = tasks.value
     const previousSteps = steps.value
@@ -1673,6 +1772,114 @@ export const useTaskStore = defineStore('tasks', () => {
       progress.task.startDate = previousStart
       throw cause
     } finally {
+      void syncTaskReminders()
+    }
+  }
+
+  async function bulkResolveReview(
+    progressItems: TaskProgress[],
+    action: 'missed' | 'carried' | 'shift',
+  ) {
+    if (!progressItems.length) return
+    const previousOccurrences = occurrences.value.map(item => ({
+      ...item,
+      completionState: { ...(item.completionState || {}) },
+    }))
+    const previousTaskStarts = new Map(
+      progressItems.map(item => [item.task.id, item.task.startDate]),
+    )
+    const resolvedStatus: Occurrence['status'] = action === 'shift' ? 'rescheduled' : action
+    const payloadItems: Array<{
+      occurrence: Record<string, any> & { id: string }
+      carriedOccurrence?: Record<string, any> & { id: string }
+    }> = []
+    const shiftCounts = new Map<string, number>()
+
+    const occurrenceRecord = (occurrence: Occurrence) => ({
+      id: occurrence.id,
+      task: occurrence.task,
+      program_step: occurrence.programStep || '',
+      scheduled_date: occurrence.scheduledDate,
+      status: occurrence.status,
+      sealed: occurrence.sealed,
+      completed_at: occurrence.completedAt || '',
+      snapshot_name: occurrence.snapshotName,
+      snapshot_target: occurrence.snapshotTarget || 0,
+      snapshot_unit: occurrence.snapshotUnit || '',
+      completion_state: occurrence.completionState || {},
+    })
+
+    try {
+      for (const progress of progressItems) {
+        const progressDate = parseISO(progress.scheduledDate)
+        let occurrence = occurrenceFor(progress.task, progressDate, progress.programStep)
+        if (!occurrence) {
+          occurrence = {
+            id: createLocalRecordId(),
+            task: progress.task.id,
+            programStep: progress.programStep?.id,
+            scheduledDate: progress.scheduledDate,
+            status: 'pending',
+            sealed: false,
+            snapshotName: progress.programStep?.name || progress.task.name,
+            snapshotTarget: (progress.programStep?.completions?.length || 0) > 1
+              ? progress.programStep!.completions!.length
+              : progress.programStep?.completions?.[0]?.targetValue
+                ?? progress.programStep?.targetValue
+                ?? progress.task.targetValue
+                ?? 0,
+            snapshotUnit: progress.programStep?.customUnit
+              || progress.programStep?.unit
+              || progress.task.customUnit
+              || progress.task.unit
+              || '',
+            completionState: {},
+          }
+          occurrences.value.push(occurrence)
+        }
+        occurrence.status = resolvedStatus
+        occurrence.sealed = false
+        occurrence.completedAt = undefined
+
+        let carriedOccurrence: Occurrence | undefined
+        if (action === 'carried') {
+          const carriedDate = addDays(progressDate, 1)
+          carriedOccurrence = occurrenceFor(progress.task, carriedDate, progress.programStep)
+          if (!carriedOccurrence) {
+            carriedOccurrence = {
+              ...occurrence,
+              id: createLocalRecordId(),
+              scheduledDate: toDateKey(carriedDate),
+              status: 'pending',
+            }
+            occurrences.value.push(carriedOccurrence)
+          }
+        }
+        if (action === 'shift') {
+          shiftCounts.set(progress.task.id, (shiftCounts.get(progress.task.id) || 0) + 1)
+        }
+        payloadItems.push({
+          occurrence: occurrenceRecord(occurrence),
+          ...(carriedOccurrence ? { carriedOccurrence: occurrenceRecord(carriedOccurrence) } : {}),
+        })
+      }
+
+      const taskPatches = [...shiftCounts].map(([taskId, count]) => {
+        const task = taskById.value.get(taskId)!
+        task.startDate = toDateKey(addDays(parseISO(task.startDate), count))
+        return { id: task.id, startDate: task.startDate }
+      })
+      occurrenceMutationRevision += 1
+      await api.bulkResolveTaskReview({ action, items: payloadItems, taskPatches })
+    } catch (cause) {
+      occurrences.value = previousOccurrences
+      for (const [taskId, startDate] of previousTaskStarts) {
+        const task = taskById.value.get(taskId)
+        if (task) task.startDate = startDate
+      }
+      throw cause
+    } finally {
+      occurrenceMutationRevision += 1
       void syncTaskReminders()
     }
   }
@@ -1719,7 +1926,9 @@ export const useTaskStore = defineStore('tasks', () => {
     progressIsScheduled,
     toggleSkipped,
     shiftProgram,
+    bulkResolveReview,
     saveTask,
+    reorderQuickLogs,
     toggleTaskActive,
     setTaskArchived,
     upsertOccurrenceRecord,

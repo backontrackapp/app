@@ -9,7 +9,7 @@ use PDOException;
 
 final class Database
 {
-    public const EXPECTED_SCHEMA_VERSION = '202608200007';
+    public const EXPECTED_SCHEMA_VERSION = '202608220001';
 
     public readonly PDO $pdo;
 
@@ -78,6 +78,7 @@ final class Database
                 'recurrence_type', 'weekdays', 'interval_weeks', 'target_value',
                 'target_operator', 'unit', 'custom_unit', 'goal_period',
                 'quick_amounts', 'cycle_length', 'program_repeat', 'program_strict',
+                'quick_log_enabled', 'quick_log_sort_order',
                 'log_with_images_enabled', 'sort_order',
                 'color', 'interval_template', 'flashcard_review_set',
                 'session_count_mode', 'session_goal_type', 'session_target_seconds',

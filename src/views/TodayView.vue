@@ -12,6 +12,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import StickyActionBanner from '@/components/StickyActionBanner.vue'
 import TaskCard from '@/components/TaskCard.vue'
 import TaskImageLogBottomSheet from '@/components/TaskImageLogBottomSheet.vue'
+import TaskQuickLogCard from '@/components/TaskQuickLogCard.vue'
 import TrackingLogBottomSheet from '@/components/TrackingLogBottomSheet.vue'
 import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
@@ -89,6 +90,10 @@ const lockInUpdating = ref(false)
 const todayPage = ref<HTMLElement>()
 const nextIncompleteProgress = ref<TaskProgress>()
 const reviewSheet = ref(false)
+const reviewBulkDialog = ref(false)
+const reviewBulkAction = ref<'missed' | 'carried' | 'shift'>('missed')
+const reviewBulkItems = ref<TaskProgress[]>([])
+const reviewBulkUpdating = ref(false)
 const taskSheet = ref(false)
 const taskSheetMode = ref<'actions' | 'history'>('actions')
 const taskActionProgress = ref<TaskProgress>()
@@ -115,6 +120,7 @@ const valuePulseVersions = ref<Record<string, number>>({})
 const notScheduledExpanded = ref(false)
 const archiveExpanded = ref(false)
 const reorderingTasks = ref(false)
+const reorderingQuickLogs = ref(false)
 const exactAmount = computed(() => {
   if (!exactAmountInput.value || exactAmountInput.value === '.') return null
   const value = Number(exactAmountInput.value)
@@ -437,10 +443,42 @@ const archivedProgress = computed(() => store.tasks
 const scheduleLayout = computed(() => groupTaskProgressBySchedule(selectedProgress.value))
 const allDayProgress = computed(() => scheduleLayout.value.allDay)
 const timedProgressGroups = computed(() => scheduleLayout.value.timed)
+const quickLogProgress = computed(() => selectedProgress.value
+  .filter(progress => progress.task.quickLogEnabled && progress.status !== 'rescheduled')
+  .sort((left, right) => (
+    (left.task.quickLogSortOrder ?? left.task.sortOrder)
+      - (right.task.quickLogSortOrder ?? right.task.sortOrder)
+    || left.task.sortOrder - right.task.sortOrder
+    || (left.programStep?.sortOrder ?? 0) - (right.programStep?.sortOrder ?? 0)
+  )))
 const progressByVisibilityKey = computed(() => new Map(
   selectedProgress.value.map(progress => [visibilityKey(progress), progress]),
 ))
 const reviewItems = computed(() => store.reviewProgressForDate(selectedDate.value))
+const reviewProgramItems = computed(() => reviewItems.value.filter(item => Boolean(item.programStep)))
+const reviewBulkPresentation = computed(() => ({
+  missed: {
+    title: 'Mark all open work missed?',
+    message: `${reviewBulkItems.value.length} open items will be marked missed. Their programs will keep their current schedules.`,
+    confirmText: 'Mark all missed',
+    color: 'error',
+    icon: 'mdi-close-circle-outline',
+  },
+  carried: {
+    title: 'Carry all open work forward?',
+    message: `${reviewBulkItems.value.length} open items will be carried to their following days. Existing scheduled work will remain there too.`,
+    confirmText: 'Carry all forward',
+    color: 'warning',
+    icon: 'mdi-arrow-right-bold',
+  },
+  shift: {
+    title: 'Shift all affected programs?',
+    message: `${reviewBulkItems.value.length} open program steps will be rescheduled and their programs shifted forward once per step.`,
+    confirmText: 'Shift all programs',
+    color: 'warning',
+    icon: 'mdi-calendar-arrow-right',
+  },
+})[reviewBulkAction.value])
 const scoredProgress = computed(() => selectedProgress.value.filter(item => item.status !== 'skipped'))
 const doneCount = computed(() => scoredProgress.value.filter((item) => item.complete).length)
 const taskLogImageDeckByTask = computed(() => {
@@ -677,6 +715,19 @@ async function reorderTaskCards(result: LongPressDragResult, progressItems: Task
   }
 }
 
+async function reorderQuickLogCards(result: LongPressDragResult) {
+  const orderedTaskIds = taskIdsFromProgressDrag(result, quickLogProgress.value)
+  if (orderedTaskIds.length < 2) return
+  reorderingQuickLogs.value = true
+  try {
+    await store.reorderQuickLogs(orderedTaskIds)
+  } catch {
+    // The store restores the previous order and exposes the save error.
+  } finally {
+    reorderingQuickLogs.value = false
+  }
+}
+
 function visibilityKey(progress: TaskProgress) {
   return `${progress.scheduledDate}:${progressKey(progress)}`
 }
@@ -801,6 +852,30 @@ async function resolveReview(item: TaskProgress, status: 'missed' | 'carried') {
   const update = runForProgress(item, () => store.setStatus(item, status))
   if (!reviewItems.value.length) reviewSheet.value = false
   await update
+}
+
+function requestBulkReview(action: 'missed' | 'carried' | 'shift') {
+  const items = action === 'shift' ? reviewProgramItems.value : reviewItems.value
+  if (reviewItems.value.length <= 3 || !items.length) return
+  reviewBulkAction.value = action
+  reviewBulkItems.value = [...items]
+  reviewSheet.value = false
+  reviewBulkDialog.value = true
+}
+
+async function confirmBulkReview() {
+  if (reviewBulkUpdating.value || !reviewBulkItems.value.length) return
+  reviewBulkUpdating.value = true
+  reviewBulkDialog.value = false
+  try {
+    await store.bulkResolveReview(reviewBulkItems.value, reviewBulkAction.value)
+    reviewBulkItems.value = []
+  } catch (cause) {
+    store.error = cause instanceof Error ? cause.message : 'Could not resolve all open work.'
+    reviewSheet.value = true
+  } finally {
+    reviewBulkUpdating.value = false
+  }
 }
 
 function openTaskActions(progress: TaskProgress) {
@@ -1354,6 +1429,25 @@ async function saveTaskLogEntry() {
       :markers="taskDateMarkers"
       class="mb-5"
     />
+
+    <section v-if="quickLogProgress.length" class="quick-log-section mb-5" aria-label="Quick log tasks">
+      <div class="quick-log-strip">
+        <TaskQuickLogCard
+          v-for="item in quickLogProgress"
+          :key="visibilityKey(item)"
+          v-long-press-drag="{
+            id: progressKey(item),
+            group: 'quick-log-cards',
+            handle: '.task-quick-log__action',
+            disabled: draggableTaskCount(quickLogProgress) < 2 || reorderingQuickLogs,
+            onDrop: reorderQuickLogCards,
+          }"
+          :progress="item"
+          :class="{ 'quick-log-item--draggable': draggableTaskCount(quickLogProgress) > 1 }"
+          @actions="openTaskActions"
+        />
+      </div>
+    </section>
 
     <v-card class="score-card pa-5" color="surface">
       <div class="score-pattern" />
@@ -1935,20 +2029,78 @@ async function saveTaskLogEntry() {
       @confirm="confirmTaskLogDeletion"
     />
 
+    <ConfirmDialog
+      v-model="reviewBulkDialog"
+      :title="reviewBulkPresentation.title"
+      :message="reviewBulkPresentation.message"
+      :confirm-text="reviewBulkPresentation.confirmText"
+      :confirm-color="reviewBulkPresentation.color"
+      :icon="reviewBulkPresentation.icon"
+      :loading="reviewBulkUpdating"
+      @confirm="confirmBulkReview"
+    />
+
     <ActionBottomSheet
       v-model="reviewSheet"
       title="Resolve open work"
       aria-label="Resolve open task actions"
     >
-      <div v-for="item in reviewItems" :key="`${item.task.id}-${item.programStep?.id || ''}`" class="review-row px-2 py-3">
-        <div class="flex-grow-1"><strong>{{ item.programStep?.name || item.task.name }}</strong><p class="text-caption muted">Choose how this attempt ends.</p></div>
+      <div v-if="reviewItems.length > 3" class="review-bulk-actions px-2 pb-3">
+        <p class="text-caption muted mb-2">Apply one resolution to the full backlog.</p>
+        <v-row dense>
+          <v-col cols="12" md="4">
+            <v-btn
+              block
+              size="large"
+              variant="tonal"
+              color="error"
+              prepend-icon="mdi-close-circle-multiple-outline"
+              :disabled="reviewBulkUpdating"
+              @click="requestBulkReview('missed')"
+            >
+              Mark all missed
+            </v-btn>
+          </v-col>
+          <v-col cols="12" md="4">
+            <v-btn
+              block
+              size="large"
+              variant="tonal"
+              prepend-icon="mdi-arrow-right-bold"
+              :disabled="reviewBulkUpdating"
+              @click="requestBulkReview('carried')"
+            >
+              Carry all forward
+            </v-btn>
+          </v-col>
+          <v-col v-if="reviewProgramItems.length" cols="12" md="4">
+            <v-btn
+              block
+              size="large"
+              variant="tonal"
+              prepend-icon="mdi-calendar-arrow-right"
+              :disabled="reviewBulkUpdating"
+              @click="requestBulkReview('shift')"
+            >
+              Shift all programs
+            </v-btn>
+          </v-col>
+        </v-row>
+      </div>
+      <div v-for="item in reviewItems" :key="`${item.scheduledDate}-${item.task.id}-${item.programStep?.id || ''}`" class="review-row px-2 py-3">
+        <div class="flex-grow-1">
+          <strong>{{ item.programStep?.name || item.task.name }}</strong>
+          <p class="text-caption muted">
+            {{ format(parseISO(item.scheduledDate), 'EEE, MMM d') }} · Choose how this attempt ends.
+          </p>
+        </div>
         <div class="review-actions">
           <v-btn
             size="large"
             variant="tonal"
             color="error"
             prepend-icon="mdi-close-circle-outline"
-            :disabled="progressIsBusy(item)"
+            :disabled="reviewBulkUpdating || progressIsBusy(item)"
             @click="resolveReview(item, 'missed')"
           >
             Mark missed
@@ -1957,7 +2109,7 @@ async function saveTaskLogEntry() {
             size="large"
             variant="tonal"
             prepend-icon="mdi-arrow-right-bold"
-            :disabled="progressIsBusy(item)"
+            :disabled="reviewBulkUpdating || progressIsBusy(item)"
             @click="resolveReview(item, 'carried')"
           >
             Carry forward
@@ -1967,7 +2119,7 @@ async function saveTaskLogEntry() {
             size="large"
             variant="tonal"
             prepend-icon="mdi-calendar-arrow-right"
-            :disabled="progressIsBusy(item)"
+            :disabled="reviewBulkUpdating || progressIsBusy(item)"
             @click="runForProgress(item, () => store.shiftProgram(item))"
           >
             Shift program
@@ -2009,6 +2161,30 @@ async function saveTaskLogEntry() {
 </template>
 
 <style scoped>
+.quick-log-section {
+  width: calc(100% + 2rem);
+  margin-right: -1rem;
+  margin-left: -1rem;
+  overflow: hidden;
+}
+.quick-log-strip {
+  display: flex;
+  overflow-x: auto;
+  padding: 0 1rem .25rem;
+  gap: .75rem;
+  overscroll-behavior-inline: contain;
+  scroll-padding-inline: 1rem;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+.quick-log-strip::-webkit-scrollbar { display: none; }
+.quick-log-strip > * { scroll-snap-align: start; }
+.quick-log-strip :deep(.long-press-drag-placeholder) {
+  width: 8rem;
+  min-width: 8rem;
+  flex: 0 0 8rem;
+}
+.quick-log-item--draggable :deep(.task-quick-log__action) { cursor: grab; }
 .score-card { position: relative; overflow: hidden; }
 .score-pattern { position: absolute; top: -4.375rem; right: -2.5rem; width: 13.75rem; height: 13.75rem; border: 2.1875rem solid rgba(199,244,100,.07); border-radius: 50%; }
 .score-number { font-family: Impact, "Arial Narrow", sans-serif; font-size: 3.2rem; line-height: .9; letter-spacing: -.03em; }

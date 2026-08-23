@@ -44,7 +44,9 @@ interface DragGesture {
   layoutTransitionFrame?: number
   layoutTransitionTimer?: number
   layoutTransitionElements?: Set<HTMLElement>
+  layoutTransitionBounds?: Map<HTMLElement, DOMRect>
   autoScrollFrame?: number
+  horizontalScrollElement?: HTMLElement
   sourceDropZone?: DropState
   activeDropZone?: DropState
   fromIndex: number
@@ -303,9 +305,10 @@ function clearLayoutTransition(gesture: DragGesture) {
     element.style.removeProperty('transform')
   })
   gesture.layoutTransitionElements = undefined
+  gesture.layoutTransitionBounds = undefined
 }
 
-function movePlaceholderVertically(
+function animatePlaceholderMove(
   gesture: DragGesture,
   destination: HTMLElement,
   move: () => void,
@@ -331,17 +334,27 @@ function movePlaceholderVertically(
   move()
 
   const moving = new Set<HTMLElement>()
+  const layoutBounds = new Map<HTMLElement, DOMRect>()
   elements.forEach((element) => {
     const previous = before.get(element)
     if (!previous || !element.isConnected) return
-    const offsetY = previous.top - element.getBoundingClientRect().top
-    if (!Number.isFinite(offsetY) || Math.abs(offsetY) < 1) return
-    element.style.transform = `translate3d(0, ${offsetY}px, 0)`
+    const current = element.getBoundingClientRect()
+    layoutBounds.set(element, current)
+    const offsetX = gesture.horizontalSlots ? previous.left - current.left : 0
+    const offsetY = previous.top - current.top
+    if (
+      !Number.isFinite(offsetX)
+      || !Number.isFinite(offsetY)
+      || (Math.abs(offsetX) < 1 && Math.abs(offsetY) < 1)
+    ) return
+    const translateX = Math.abs(offsetX) < 1 ? '0' : `${offsetX}px`
+    element.style.transform = `translate3d(${translateX}, ${offsetY}px, 0)`
     moving.add(element)
   })
   if (!moving.size) return
 
   gesture.layoutTransitionElements = moving
+  gesture.layoutTransitionBounds = layoutBounds
   void placeholder.offsetHeight
   gesture.layoutTransitionFrame = window.requestAnimationFrame(() => {
     gesture.layoutTransitionFrame = undefined
@@ -360,7 +373,7 @@ function placePlaceholderAtEnd(gesture: DragGesture, parent: HTMLElement) {
     gesture.placeholder?.parentElement === parent
     && gesture.placeholder.nextSibling === null
   ) return
-  movePlaceholderVertically(gesture, parent, () => {
+  animatePlaceholderMove(gesture, parent, () => {
     if (gesture.placeholder) parent.append(gesture.placeholder)
   })
 }
@@ -377,9 +390,81 @@ function placePlaceholderBefore(
       || gesture.placeholder.nextSibling === reference
     )
   ) return
-  movePlaceholderVertically(gesture, parent, () => {
+  animatePlaceholderMove(gesture, parent, () => {
     if (gesture.placeholder) parent.insertBefore(gesture.placeholder, reference)
   })
+}
+
+function placeGridPlaceholderAtPoint(
+  gesture: DragGesture,
+  parent: HTMLElement,
+  candidates: DragState[],
+  x: number,
+  y: number,
+) {
+  const placeholder = gesture.placeholder
+  if (!placeholder) return false
+
+  const candidateElements = new Set(candidates.map(candidate => candidate.element))
+  const slots = Array.from(parent.children).filter((child): child is HTMLElement =>
+    child instanceof HTMLElement
+    && (child === placeholder || candidateElements.has(child)),
+  )
+  const measuredSlots = slots.map(element => ({
+    element,
+    bounds: gesture.layoutTransitionBounds?.get(element)
+      || element.getBoundingClientRect(),
+  }))
+  if (
+    measuredSlots.length !== candidates.length + 1
+    || measuredSlots.some(slot => slot.bounds.width <= 0 || slot.bounds.height <= 0)
+  ) return false
+
+  const rows: Array<{ top: number; bottom: number; slots: typeof measuredSlots }> = []
+  measuredSlots.forEach((slot) => {
+    const row = rows.find(candidate => {
+      const overlap = Math.max(
+        0,
+        Math.min(candidate.bottom, slot.bounds.bottom)
+          - Math.max(candidate.top, slot.bounds.top),
+      )
+      return overlap >= Math.min(candidate.bottom - candidate.top, slot.bounds.height) / 2
+    })
+    if (row) {
+      row.top = Math.min(row.top, slot.bounds.top)
+      row.bottom = Math.max(row.bottom, slot.bounds.bottom)
+      row.slots.push(slot)
+    } else {
+      rows.push({
+        top: slot.bounds.top,
+        bottom: slot.bounds.bottom,
+        slots: [slot],
+      })
+    }
+  })
+  if (rows.length < 2) return false
+
+  const row = rows.reduce((closest, candidate) => {
+    const distance = Math.abs(y - (candidate.top + candidate.bottom) / 2)
+    const closestDistance = Math.abs(y - (closest.top + closest.bottom) / 2)
+    return distance < closestDistance ? candidate : closest
+  })
+  const slot = row.slots.reduce((closest, candidate) => {
+    const distance = Math.abs(x - (candidate.bounds.left + candidate.bounds.width / 2))
+    const closestDistance = Math.abs(x - (closest.bounds.left + closest.bounds.width / 2))
+    return distance < closestDistance ? candidate : closest
+  })
+  const destinationIndex = measuredSlots.indexOf(slot)
+  const currentIndex = measuredSlots.findIndex(item => item.element === placeholder)
+  if (destinationIndex === currentIndex) return true
+
+  const remainingSlots = measuredSlots.filter(item => item.element !== placeholder)
+  placePlaceholderBefore(
+    gesture,
+    parent,
+    remainingSlots[destinationIndex]?.element || null,
+  )
+  return true
 }
 
 function updatePlaceholder(state: DragState, x: number, y: number) {
@@ -416,6 +501,14 @@ function updatePlaceholder(state: DragState, x: number, y: number) {
   }
   if (!candidates.length) {
     placePlaceholderAtEnd(gesture, parent)
+    syncGhostWidth(gesture)
+    return
+  }
+
+  if (
+    gesture.horizontalSlots
+    && placeGridPlaceholderAtPoint(gesture, parent, candidates, x, y)
+  ) {
     syncGhostWidth(gesture)
     return
   }
@@ -474,12 +567,48 @@ function pageAutoScrollAmount(clientY: number) {
   return direction * Math.max(1, Math.round(AUTO_SCROLL_MAX_PX * intensity * intensity))
 }
 
+function horizontalScrollContainer(element: HTMLElement) {
+  let candidate = element.parentElement
+  while (candidate) {
+    const overflow = getComputedStyle(candidate).overflowX
+    if (
+      ['auto', 'scroll'].includes(overflow)
+      && candidate.scrollWidth > candidate.clientWidth
+    ) return candidate
+    candidate = candidate.parentElement
+  }
+  return undefined
+}
+
+function horizontalAutoScrollAmount(gesture: DragGesture) {
+  const container = gesture.horizontalScrollElement
+  if (!container) return 0
+  const bounds = container.getBoundingClientRect()
+  const edge = Math.min(AUTO_SCROLL_EDGE_PX, bounds.width / 3)
+  if (edge <= 0) return 0
+
+  let direction = 0
+  let intensity = 0
+  if (gesture.clientX < bounds.left + edge) {
+    direction = -1
+    intensity = Math.min(1, (bounds.left + edge - gesture.clientX) / edge)
+  } else if (gesture.clientX > bounds.right - edge) {
+    direction = 1
+    intensity = Math.min(1, (gesture.clientX - (bounds.right - edge)) / edge)
+  }
+  if (!direction || intensity <= 0) return 0
+  return direction * Math.max(1, Math.round(AUTO_SCROLL_MAX_PX * intensity * intensity))
+}
+
 function schedulePageAutoScroll(state: DragState) {
   const gesture = state.gesture
   if (
     !gesture?.active
     || gesture.autoScrollFrame !== undefined
-    || pageAutoScrollAmount(gesture.clientY) === 0
+    || (
+      pageAutoScrollAmount(gesture.clientY) === 0
+      && horizontalAutoScrollAmount(gesture) === 0
+    )
   ) return
 
   gesture.autoScrollFrame = window.requestAnimationFrame(() => {
@@ -487,12 +616,21 @@ function schedulePageAutoScroll(state: DragState) {
     if (!current?.active) return
     current.autoScrollFrame = undefined
 
+    let scrolled = false
     const amount = pageAutoScrollAmount(current.clientY)
-    if (!amount) return
     const scrollingElement = document.scrollingElement || document.documentElement
-    const previousScrollTop = scrollingElement.scrollTop
-    scrollingElement.scrollTop += amount
-    if (scrollingElement.scrollTop === previousScrollTop) return
+    if (amount) {
+      const previousScrollTop = scrollingElement.scrollTop
+      scrollingElement.scrollTop += amount
+      scrolled ||= scrollingElement.scrollTop !== previousScrollTop
+    }
+    const horizontalAmount = horizontalAutoScrollAmount(current)
+    if (horizontalAmount && current.horizontalScrollElement) {
+      const previousScrollLeft = current.horizontalScrollElement.scrollLeft
+      current.horizontalScrollElement.scrollLeft += horizontalAmount
+      scrolled ||= current.horizontalScrollElement.scrollLeft !== previousScrollLeft
+    }
+    if (!scrolled) return
 
     updatePlaceholder(state, current.clientX, current.clientY)
     schedulePageAutoScroll(state)
@@ -520,6 +658,7 @@ function activateDrag(state: DragState) {
     : siblings
   gesture.fromIndex = sourceItems.findIndex((candidate) => candidate.element === state.element)
   gesture.horizontalSlots = hasHorizontalSlots(sourceItems)
+  gesture.horizontalScrollElement = horizontalScrollContainer(state.element)
   gesture.active = true
   gesture.sourceBounds = state.element.getBoundingClientRect()
   gesture.originalDisplay = state.element.style.display

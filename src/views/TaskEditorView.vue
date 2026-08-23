@@ -146,6 +146,8 @@ const draft = reactive<TaskDraft>({
   cycleLength: 7,
   programRepeat: true,
   programStrict: false,
+  quickLogEnabled: false,
+  quickLogSortOrder: 0,
   logWithImagesEnabled: false,
   sortOrder: 0,
   intervalTemplate: undefined,
@@ -616,6 +618,11 @@ async function setTaskArchived() {
         <div class="setting-row">
           <div><strong>Review if unfinished</strong><p>Ask whether to miss, carry, or reschedule</p></div>
           <v-switch v-model="draft.reviewWhenMissed" color="secondary" hide-details inset />
+        </div>
+        <v-divider />
+        <div class="setting-row">
+          <div><strong>Quick log</strong><p>Show a shortcut at the top of Tasks</p></div>
+          <v-switch v-model="draft.quickLogEnabled" color="secondary" hide-details="auto" inset />
         </div>
         <template v-if="showImageLogSettings">
           <v-divider />

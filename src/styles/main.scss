@@ -325,6 +325,15 @@ body.long-press-drag-active {
     padding-top: 2.5rem;
     padding-bottom: 3rem;
   }
+
+  /* Main actions use the larger touch treatment on mobile only. */
+  .v-btn.mobile-large-action {
+    --v-btn-size: .875rem;
+    --v-btn-height: 2.25rem;
+
+    min-width: 4rem;
+    padding-inline: 1rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

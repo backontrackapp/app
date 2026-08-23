@@ -1929,6 +1929,10 @@ async function leaveRunner() {
     calc(1rem + env(safe-area-inset-left, 0rem)) !important;
 }
 .session-settings-actions > .v-btn { height: 3rem; }
+
+@media (min-width: 60rem) {
+  .session-settings-actions > .v-btn { height: 2.25rem; }
+}
 .session-settings-actions__cancel,
 .session-settings-actions__primary {
   min-width: 0;

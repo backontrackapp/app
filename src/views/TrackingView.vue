@@ -9,6 +9,7 @@ import TrackingRatingValue from '@/components/TrackingRatingValue.vue'
 import TrackingTrackerCard from '@/components/TrackingTrackerCard.vue'
 import TrackingWeeklyBarChart from '@/components/TrackingWeeklyBarChart.vue'
 import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
+import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { getScreenTimeStatus, isNativeHealthConnectSupported, readScreenTimeForDates } from '@/services/healthConnect'
 import { formatTrackingValue, TRACKING_PRESETS, trackerDraftFromPreset } from '@/services/tracking'
 import { useTrackingStore } from '@/stores/tracking'
@@ -26,6 +27,7 @@ const actionTracker = ref<TrackingTracker>()
 const pendingStatusTracker = ref<TrackingTracker>()
 const statusDialog = ref(false)
 const updatingStatus = ref(false)
+const reorderingTrackers = ref(false)
 const sheetOpen = ref(false)
 const sheetTracker = ref<TrackingTracker>()
 const editingEntry = ref<TrackingEntry>()
@@ -41,6 +43,7 @@ const dateKey = computed(() => format(selectedDate.value, 'yyyy-MM-dd'))
 const dayEntries = computed(() => store.entries
   .filter((entry) => entry.localDate === dateKey.value)
   .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)))
+const loggedTrackerIds = computed(() => new Set(dayEntries.value.map(entry => entry.tracker)))
 const trackingDateMarkers = computed(() => [...new Set(store.entries.map((entry) => entry.localDate))]
   .map((date) => ({ date, color: 'error', label: 'Has tracking entries' })))
 const sortedTrackers = computed(() => [...store.trackers]
@@ -62,28 +65,34 @@ const requestedTaskProgress = computed(() => {
   if (!requestedTask.value || currentTrackerIndex < 0) return ''
   return `${requestedTask.value.name} · Tracker ${currentTrackerIndex + 1} of ${requestedTaskTrackerIds.value.length}`
 })
-const dayEntriesByTracker = computed(() => {
-  const grouped = new Map<string, TrackingEntry[]>()
-  for (const entry of dayEntries.value) {
-    const trackerEntries = grouped.get(entry.tracker) || []
-    trackerEntries.push(entry)
-    grouped.set(entry.tracker, trackerEntries)
-  }
-  return grouped
-})
 const dayLogs = computed(() => dayEntries.value.flatMap((entry) => {
   const tracker = store.trackers.find(item => item.id === entry.tracker)
   return tracker ? [{ entry, tracker }] : []
 }))
 const dayLogCountLabel = computed(() => `${dayLogs.value.length} ${dayLogs.value.length === 1 ? 'entry' : 'entries'}`)
 
-function entriesForTracker(trackerId: string) {
-  return dayEntriesByTracker.value.get(trackerId) || []
-}
-
 function openTrackerActions(tracker: TrackingTracker) {
   actionTracker.value = tracker
   trackerActionsOpen.value = true
+}
+
+async function reorderVisibleTrackers(result: LongPressDragResult) {
+  reorderingTrackers.value = true
+  try {
+    await store.reorderTrackers(result.orderedIds)
+  } catch {
+    // The store restores the previous order and exposes the save error.
+  } finally {
+    reorderingTrackers.value = false
+  }
+}
+
+async function logActionTracker() {
+  const tracker = actionTracker.value
+  if (!tracker?.active) return
+  trackerActionsOpen.value = false
+  await nextTick()
+  startLog(tracker)
 }
 
 function editActionTracker() {
@@ -277,8 +286,12 @@ async function loadVisibleWeekEntries() {
       class="mb-5"
     />
 
-    <v-card v-if="weeklyChartLoading || store.trackers.length || screenTimeEnabled" class="weekly-chart-card surface-card pa-5 mb-5">
-      <v-alert v-if="weeklyChartError" type="error" variant="tonal" class="mb-4">
+    <v-sheet
+      v-if="weeklyChartLoading || store.trackers.length || screenTimeEnabled"
+      class="weekly-chart-card surface-card pa-5 mb-5"
+      rounded="xl"
+    >
+      <v-alert v-if="weeklyChartError" type="error" variant="tonal">
         {{ weeklyChartError }}
       </v-alert>
       <TrackingWeeklyBarChart
@@ -292,7 +305,6 @@ async function loadVisibleWeekEntries() {
       <v-btn
         v-if="store.trackers.length"
         block
-        class="mt-4"
         color="secondary"
         variant="tonal"
         prepend-icon="mdi-chart-box-outline"
@@ -301,7 +313,7 @@ async function loadVisibleWeekEntries() {
       >
         Explore your patterns
       </v-btn>
-    </v-card>
+    </v-sheet>
 
     <div v-if="store.loading && !store.loaded" class="d-flex justify-center py-12">
       <v-progress-circular indeterminate color="secondary" />
@@ -324,9 +336,15 @@ async function loadVisibleWeekEntries() {
           <TrackingTrackerCard
             v-for="tracker in factors"
             :key="tracker.id"
+            v-long-press-drag="{
+              id: tracker.id,
+              group: 'factor-trackers',
+              handle: '.tracker-card__action',
+              disabled: factors.length < 2 || updatingStatus || reorderingTrackers,
+              onDrop: reorderVisibleTrackers,
+            }"
             :tracker="tracker"
-            :entries="entriesForTracker(tracker.id)"
-            @log="startLog"
+            :logged="loggedTrackerIds.has(tracker.id)"
             @actions="openTrackerActions"
           />
         </div>
@@ -349,9 +367,15 @@ async function loadVisibleWeekEntries() {
           <TrackingTrackerCard
             v-for="tracker in outcomes"
             :key="tracker.id"
+            v-long-press-drag="{
+              id: tracker.id,
+              group: 'outcome-trackers',
+              handle: '.tracker-card__action',
+              disabled: outcomes.length < 2 || updatingStatus || reorderingTrackers,
+              onDrop: reorderVisibleTrackers,
+            }"
             :tracker="tracker"
-            :entries="entriesForTracker(tracker.id)"
-            @log="startLog"
+            :logged="loggedTrackerIds.has(tracker.id)"
             @actions="openTrackerActions"
           />
         </div>
@@ -428,9 +452,17 @@ async function loadVisibleWeekEntries() {
       v-model="trackerActionsOpen"
       :title="actionTracker?.name || 'Tracker actions'"
       hide-title
-      :aria-label="actionTracker ? `${actionTracker.name} journal or edit actions` : 'Tracker actions'"
+      :aria-label="actionTracker ? `${actionTracker.name} logging and tracker actions` : 'Tracker actions'"
     >
       <template v-if="actionTracker">
+        <v-list-item
+          prepend-icon="mdi-plus-box-outline"
+          title="Log entry"
+          rounded="lg"
+          :disabled="!actionTracker.active"
+          @click="logActionTracker"
+        />
+        <v-divider class="my-1" />
         <v-list-item
           prepend-icon="mdi-pencil-outline"
           title="Edit"
@@ -485,7 +517,9 @@ async function loadVisibleWeekEntries() {
 </template>
 
 <style scoped>
-.tracker-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)); }
+.weekly-chart-card { display: grid; gap: 1rem; }
+.tracker-grid { display: grid; gap: .75rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tracker-grid :deep(.long-press-drag-placeholder) { min-width: 0; }
 .tracker-section-empty { font-size: .8rem; }
 .tracking-log-section { margin-bottom: .5rem; }
 .tracking-log { overflow: hidden; }
@@ -508,4 +542,16 @@ async function loadVisibleWeekEntries() {
 .preset-card__icon :deep(.v-icon) { color: rgb(var(--v-theme-background)); }
 .preset-card span { display: block; margin-top: .25rem; color: rgb(var(--v-theme-on-surface) / .58); font-size: .72rem; line-height: 1.45; }
 .min-width-0 { min-width: 0; }
+
+@media (min-width: 37.5rem) {
+  .tracker-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (min-width: 60rem) {
+  .tracker-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (min-width: 80rem) {
+  .tracker-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
 </style>

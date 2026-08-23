@@ -464,6 +464,63 @@ export async function putLocalCommand(
   return operation
 }
 
+export async function putLocalCommandWithResourceChanges(
+  accountId: string,
+  command: string,
+  payload: Record<string, unknown>,
+  changes: Array<{
+    resource: string
+    id: string
+    patch: Record<string, any>
+    create?: Record<string, any>
+  }>,
+) {
+  const plainPayload = cloneSyncRecord(payload)
+  const clock = createFieldClock()
+  const operation = makeOperation(
+    accountId,
+    command,
+    undefined,
+    'command',
+    plainPayload,
+    { '*': clock },
+    {},
+  )
+  const changedResources = new Set<string>()
+
+  await localDatabase.transaction('rw', localDatabase.resources, localDatabase.outbox, async () => {
+    for (const change of changes) {
+      const key = resourceKey(accountId, change.resource, change.id)
+      const current = await localDatabase.resources.get(key)
+      const base = current?.data || change.create
+      if (!base) throw new Error('Local record not found.')
+      const patch = cloneSyncRecord(change.patch)
+      const data = { ...base, ...patch, id: change.id, owner: accountId }
+      const fieldClocks = {
+        ...(current?.fieldClocks || {}),
+        ...Object.fromEntries(Object.keys(patch).map(field => [field, clock])),
+      }
+      await localDatabase.resources.put({
+        key,
+        accountId,
+        resource: change.resource,
+        id: change.id,
+        revision: current?.revision || 0,
+        fieldClocks,
+        deleted: false,
+        data,
+        locallyModified: false,
+      })
+      changedResources.add(change.resource)
+    }
+    await localDatabase.outbox.add(operation)
+  })
+
+  for (const resource of changedResources) notifyDataChanged(accountId, resource)
+  notifyOutboxChanged(accountId)
+  return operation
+}
+
 export async function putLocalProjectionPatch(
   accountId: string,
   resource: string,

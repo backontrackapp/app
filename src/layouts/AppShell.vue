@@ -72,9 +72,12 @@ let localRefreshTimer: number | undefined
 let localRefreshPending = false
 let mainNavigationPreloadTimer: number | undefined
 let pendingMainNavigationPointerId: number | undefined
+let committedMainNavigationClickPath: string | undefined
+let committedMainNavigationClickTimer: number | undefined
 let earlyLeavingPage: HTMLElement | undefined
 let earlyLeavingRoute: string | undefined
 let earlyLeaveResetTimer: number | undefined
+let routeScrollUnlockFrame: number | undefined
 
 const items = computed(() => visibleMainNavItems(
   storedMenuOrder.value ?? auth.user?.settings?.mainMenuOrder,
@@ -153,11 +156,10 @@ function preloadMainNavigationPath(path: string) {
 }
 
 function beginMainNavigationPress(path: string, event: PointerEvent) {
-  if (!event.isPrimary || event.pointerType === 'mouse') return
+  if (!event.isPrimary) return
   pendingMainNavigationPointerId = event.pointerId
   pendingMainNavigationPath.value = path
   preloadMainNavigationPath(path)
-  if (router.currentRoute.value.path !== path) beginEarlyPageLeave(path)
 }
 
 function finishMainNavigationPress(path: string, event: PointerEvent) {
@@ -168,7 +170,33 @@ function finishMainNavigationPress(path: string, event: PointerEvent) {
     && event.clientX <= bounds.right
     && event.clientY >= bounds.top
     && event.clientY <= bounds.bottom
-  if (!releasedInside) cancelMainNavigationPress(path)
+  if (!releasedInside) {
+    cancelMainNavigationPress(path)
+    return
+  }
+  committedMainNavigationClickPath = path
+  if (committedMainNavigationClickTimer !== undefined) {
+    window.clearTimeout(committedMainNavigationClickTimer)
+  }
+  committedMainNavigationClickTimer = window.setTimeout(() => {
+    committedMainNavigationClickTimer = undefined
+    committedMainNavigationClickPath = undefined
+  }, 0)
+  void router.push(path)
+}
+
+function activateMainNavigation(path: string) {
+  if (committedMainNavigationClickPath === path) {
+    committedMainNavigationClickPath = undefined
+    if (committedMainNavigationClickTimer !== undefined) {
+      window.clearTimeout(committedMainNavigationClickTimer)
+      committedMainNavigationClickTimer = undefined
+    }
+    return
+  }
+  pendingMainNavigationPath.value = path
+  preloadMainNavigationPath(path)
+  void router.push(path)
 }
 
 function cancelMainNavigationPress(path: string, event?: PointerEvent) {
@@ -267,8 +295,40 @@ function restoreEarlyPageLeave(route?: string) {
   }, 240)
 }
 
+function releaseRouteScrollLock() {
+  if (routeScrollUnlockFrame !== undefined) {
+    window.cancelAnimationFrame(routeScrollUnlockFrame)
+    routeScrollUnlockFrame = undefined
+  }
+  document.documentElement.classList.remove('route-navigation-scroll-lock')
+}
+
+function stopDocumentMomentumScroll() {
+  releaseRouteScrollLock()
+  const scrollingElement = document.scrollingElement
+  const scrollTop = scrollingElement?.scrollTop ?? window.scrollY
+  const scrollLeft = scrollingElement?.scrollLeft ?? window.scrollX
+  document.documentElement.classList.add('route-navigation-scroll-lock')
+  // Recreating the root scrolling box cancels a native fling. Keep its current
+  // position until Vue Router applies the destination's scroll position.
+  void document.documentElement.offsetHeight
+  if (scrollingElement) {
+    scrollingElement.scrollTop = scrollTop
+    scrollingElement.scrollLeft = scrollLeft
+  }
+}
+
+function scheduleRouteScrollUnlock() {
+  if (routeScrollUnlockFrame !== undefined) window.cancelAnimationFrame(routeScrollUnlockFrame)
+  routeScrollUnlockFrame = window.requestAnimationFrame(() => {
+    routeScrollUnlockFrame = undefined
+    releaseRouteScrollLock()
+  })
+}
+
 const removeTransitionGuard = router.beforeEach((to, from) => {
   if (to.meta.auth && from.meta.auth && to.path !== from.path) {
+    stopDocumentMomentumScroll()
     beginEarlyPageLeave(to.fullPath)
   }
 
@@ -301,13 +361,17 @@ const removeTransitionGuard = router.beforeEach((to, from) => {
 const removeNavigationFeedbackGuard = router.afterEach((to, _from, failure) => {
   pendingMainNavigationPointerId = undefined
   pendingMainNavigationPath.value = undefined
+  scheduleRouteScrollUnlock()
   if (failure) {
     restoreEarlyPageLeave(to.fullPath)
   } else if (earlyLeavingRoute === to.fullPath) {
     earlyLeavingRoute = undefined
   }
 })
-const removeNavigationErrorHandler = router.onError(() => restoreEarlyPageLeave())
+const removeNavigationErrorHandler = router.onError(() => {
+  scheduleRouteScrollUnlock()
+  restoreEarlyPageLeave()
+})
 
 function refreshStoredMenuSettings() {
   storedMenuOrder.value = readStoredMainMenuOrder()
@@ -387,12 +451,16 @@ onBeforeUnmount(() => {
   removeNavigationErrorHandler()
   restoreEarlyPageLeave()
   clearEarlyLeaveResetTimer()
+  releaseRouteScrollLock()
   window.removeEventListener(MAIN_MENU_ORDER_CHANGED_EVENT, refreshStoredMenuSettings)
   window.removeEventListener(MAIN_MENU_VISIBILITY_CHANGED_EVENT, refreshStoredMenuSettings)
   window.removeEventListener('storage', refreshStoredMenuSettings)
   window.removeEventListener(localDataChangedEvent, scheduleLocalRefresh)
   if (localRefreshTimer !== undefined) window.clearTimeout(localRefreshTimer)
   if (mainNavigationPreloadTimer !== undefined) window.clearTimeout(mainNavigationPreloadTimer)
+  if (committedMainNavigationClickTimer !== undefined) {
+    window.clearTimeout(committedMainNavigationClickTimer)
+  }
 })
 
 async function logout() {
@@ -601,20 +669,27 @@ function releaseLeavingPage(element: Element) {
           v-for="item in items"
           :key="item.to"
           :to="item.to"
-          class="bottom-nav__link"
-          :class="{ 'bottom-nav__link--active': selectedMainNavigationPath === item.to }"
-          :aria-current="current === item.to ? 'page' : undefined"
-          :aria-label="menuItemLabel(item)"
-          @pointerdown="beginMainNavigationPress(item.to, $event)"
-          @pointerup="finishMainNavigationPress(item.to, $event)"
-          @pointercancel="cancelMainNavigationPress(item.to, $event)"
+          v-slot="{ href }"
+          custom
         >
-          <MainNavigationIcon
-            :icon="item.icon"
-            :running="menuItemHasActiveSession(item.id)"
-            badge-surface="surface"
-          />
-          <span>{{ item.title }}</span>
+          <a
+            :href="href"
+            class="bottom-nav__link"
+            :class="{ 'bottom-nav__link--active': selectedMainNavigationPath === item.to }"
+            :aria-current="current === item.to ? 'page' : undefined"
+            :aria-label="menuItemLabel(item)"
+            @pointerdown="beginMainNavigationPress(item.to, $event)"
+            @pointerup="finishMainNavigationPress(item.to, $event)"
+            @pointercancel="cancelMainNavigationPress(item.to, $event)"
+            @click.prevent="activateMainNavigation(item.to)"
+          >
+            <MainNavigationIcon
+              :icon="item.icon"
+              :running="menuItemHasActiveSession(item.id)"
+              badge-surface="surface"
+            />
+            <span>{{ item.title }}</span>
+          </a>
         </router-link>
       </nav>
     </transition>
@@ -1116,6 +1191,10 @@ function releaseLeavingPage(element: Element) {
   left: var(--page-leave-left) !important;
   width: var(--page-leave-width) !important;
   margin: 0 !important;
+}
+
+html.route-navigation-scroll-lock {
+  overflow-y: hidden !important;
 }
 
 .page-route-early-leave,

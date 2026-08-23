@@ -355,7 +355,7 @@ defineExpose({ choose })
         <v-btn variant="text" :disabled="loading || compressing" @click="closeCrop()">
           Cancel
         </v-btn>
-        <v-btn color="secondary" size="large" :loading="loading || compressing" @click="saveCrop">
+        <v-btn class="mobile-large-action" color="secondary" size="large" :loading="loading || compressing" @click="saveCrop">
           {{ saveLabel }}
         </v-btn>
       </div>

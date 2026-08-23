@@ -176,6 +176,8 @@ CREATE TABLE tasks (
     cycle_length NUMERIC NOT NULL DEFAULT 0,
     program_repeat BOOLEAN NOT NULL DEFAULT FALSE,
     program_strict BOOLEAN NOT NULL DEFAULT FALSE,
+    quick_log_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    quick_log_sort_order NUMERIC NOT NULL DEFAULT 0,
     log_with_images_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     sort_order NUMERIC NOT NULL DEFAULT 0,
     color TEXT NOT NULL DEFAULT '',

@@ -38,7 +38,7 @@ const emit = defineEmits<{
       <p class="text-body-2 muted mt-2">{{ message }}</p>
       <div class="confirm-actions mt-6">
         <v-btn
-          class="confirm-actions__primary"
+          class="confirm-actions__primary mobile-large-action"
           size="large"
           :color="confirmColor"
           :loading="loading"
