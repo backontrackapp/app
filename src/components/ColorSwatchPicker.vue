@@ -158,7 +158,7 @@ function applyCustomColor() {
         <v-btn variant="text" @click="customColorDialog = false">
           Cancel
         </v-btn>
-        <v-btn color="secondary" variant="flat" size="large" @click="applyCustomColor">
+        <v-btn class="mobile-large-action" color="secondary" variant="flat" size="large" @click="applyCustomColor">
           Apply
         </v-btn>
       </v-card-actions>

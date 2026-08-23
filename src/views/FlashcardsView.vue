@@ -281,6 +281,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
             <strong class="active-review__name text-truncate">{{ store.activeSession.name }}</strong>
           </div>
           <v-btn
+            class="mobile-large-action"
             color="primary"
             size="large"
             append-icon="mdi-arrow-right"

@@ -2499,7 +2499,7 @@ async function runAgain(repetitions?: number) {
         />
         <div class="note-dialog-actions mt-5">
           <v-btn variant="text" :disabled="noteSaving" @click="noteDialog = false">Cancel</v-btn>
-          <v-btn color="secondary" size="large" :loading="noteSaving" :disabled="!noteChanged" @click="saveSessionNote">Save note</v-btn>
+          <v-btn class="mobile-large-action" color="secondary" size="large" :loading="noteSaving" :disabled="!noteChanged" @click="saveSessionNote">Save note</v-btn>
         </div>
       </v-card>
     </AppDialog>
@@ -2535,7 +2535,7 @@ async function runAgain(repetitions?: number) {
         </p>
         <div class="note-dialog-actions mt-5">
           <v-btn variant="text" :disabled="starting" @click="cancelRepetitionStart">Cancel</v-btn>
-          <v-btn color="secondary" size="large" prepend-icon="mdi-play" :loading="starting" @click="confirmRepetitionStart">Start</v-btn>
+          <v-btn class="mobile-large-action" color="secondary" size="large" prepend-icon="mdi-play" :loading="starting" @click="confirmRepetitionStart">Start</v-btn>
         </div>
       </v-card>
     </AppDialog>
@@ -2845,6 +2845,11 @@ async function runAgain(repetitions?: number) {
 }
 .flashcard-settings-actions > .v-btn,
 .interval-settings-actions > .v-btn { height: 3rem; }
+
+@media (min-width: 60rem) {
+  .flashcard-settings-actions > .v-btn,
+  .interval-settings-actions > .v-btn { height: 2.25rem; }
+}
 .flashcard-settings-actions__cancel,
 .flashcard-settings-actions__primary,
 .interval-settings-actions__cancel,

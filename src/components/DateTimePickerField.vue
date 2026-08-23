@@ -107,7 +107,7 @@ function confirmDateTime() {
       <v-card-actions>
         <v-spacer />
         <v-btn variant="text" @click="dialogOpen = false">Cancel</v-btn>
-        <v-btn color="secondary" variant="flat" size="large" :disabled="!canConfirm" @click="confirmDateTime">Done</v-btn>
+        <v-btn class="mobile-large-action" color="secondary" variant="flat" size="large" :disabled="!canConfirm" @click="confirmDateTime">Done</v-btn>
       </v-card-actions>
     </v-card>
   </AppDialog>

@@ -198,7 +198,7 @@ async function revoke() {
             size="large"
             color="secondary"
             prepend-icon="mdi-account-plus-outline"
-            class="mt-4"
+            class="mobile-large-action mt-4"
             :loading="saving"
             :disabled="!canShare"
             @click="addShare"

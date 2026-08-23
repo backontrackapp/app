@@ -25,6 +25,7 @@ const emit = defineEmits<{
         <strong class="sticky-action-banner__title text-truncate">{{ title }}</strong>
       </div>
       <v-btn
+        class="mobile-large-action"
         color="primary"
         size="large"
         :append-icon="actionIcon"
