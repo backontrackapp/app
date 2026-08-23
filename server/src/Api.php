@@ -38,6 +38,8 @@ final class Api
         'go',
         'complete',
         'count',
+        'copper-bell',
+        'speech',
         'none',
     ];
     private const FLASHCARD_REVIEW_SETTING_FIELDS = [
@@ -54,6 +56,7 @@ final class Api
     ];
     private readonly Mailer $mailer;
     private readonly SyncService $syncService;
+    private readonly AssistantService $assistantService;
 
     public function __construct(
         private readonly Config $config,
@@ -61,6 +64,7 @@ final class Api
     ) {
         $this->mailer = new Mailer($config);
         $this->syncService = new SyncService($database, $config);
+        $this->assistantService = new AssistantService($config);
     }
 
     public function run(): never
@@ -201,6 +205,19 @@ final class Api
             }
             if ($method === 'POST' && $path === '/client-errors') {
                 $this->storeClientErrors($this->authenticate());
+            }
+            if ($method === 'POST' && $path === '/assistant/respond') {
+                $user = $this->authenticate();
+                $this->rateLimit('assistant:' . (string) $user['id'], 30, 300, true);
+                $this->respond($this->assistantService->respond($this->jsonBody(), $user));
+            }
+            if ($method === 'POST' && $path === '/assistant/flashcards/apply') {
+                $user = $this->authenticate();
+                $this->rateLimit('assistant-write:' . (string) $user['id'], 20, 300, true);
+                $this->respond($this->syncService->applyAssistantFlashcards(
+                    $user,
+                    $this->jsonBody(),
+                ));
             }
             if ($method === 'POST' && $path === '/task-session-progress/reconcile') {
                 $this->reconcileSessionTaskProgress($this->authenticate());
@@ -2702,6 +2719,8 @@ final class Api
             $now = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
             $values += [
                 'tags' => [],
+                'selection_mode' => 'tags',
+                'included_cards' => [],
                 'card_sides' => 'both',
                 'indefinite' => false,
                 'max_cards' => 20,
@@ -2797,6 +2816,7 @@ final class Api
         if ($collection['name'] === 'flashcard_review_sets') {
             $this->allowOnlyFields($body, [
                 'name', 'tags', 'mode', 'card_sides', 'indefinite',
+                'selection_mode', 'included_cards',
                 'time_limit_seconds', 'max_cards', 'eject_behavior', 'front_seconds', 'back_seconds',
                 'back_speech_repeat_count',
                 'note_before_back',
@@ -3771,6 +3791,7 @@ final class Api
             'created_at' => $now,
             'updated_at' => $now,
         ]);
+        $this->addCardsToCustomReviewSet($reviewSet, [$cardId]);
         $card = $this->ownedRecord('flashcards', $cardId, (string) $reviewSet['owner']);
         $this->syncFlashcardWithActiveReviewQueues($card, (string) $reviewSet['owner'], true);
         $this->respond($this->flashcardResponseForReviewer($card, $account), 201);
@@ -3861,6 +3882,10 @@ final class Api
                 ]);
                 $createdCards[] = $this->ownedRecord('flashcards', $cardId, $owner);
             }
+            $this->addCardsToCustomReviewSet(
+                $reviewSet,
+                array_map(static fn (array $card): string => (string) $card['id'], $createdCards),
+            );
             $pdo->commit();
         } catch (Throwable $exception) {
             if ($pdo->inTransaction()) {
@@ -4908,6 +4933,10 @@ final class Api
         if (!is_array($selectedTags)) {
             $selectedTags = [];
         }
+        $includedCards = (string) ($reviewSet['selection_mode'] ?? 'tags') === 'cards'
+            ? $this->decodeJsonColumn($reviewSet['included_cards'] ?? '[]')
+            : [];
+        $includedCards = is_array($includedCards) ? $includedCards : [];
         $excludedValue = $reviewSet['excluded_cards'] ?? '[]';
         $excludedCards = is_array($excludedValue)
             ? $excludedValue
@@ -4919,9 +4948,12 @@ final class Api
         $statement->execute(['owner' => $sourceOwner]);
         $cards = array_values(array_filter(
             $statement->fetchAll(),
-            function (array $card) use ($selectedTags, $excludedCards): bool {
+            function (array $card) use ($selectedTags, $includedCards, $excludedCards, $reviewSet): bool {
                 if (in_array((string) $card['id'], $excludedCards, true)) {
                     return false;
+                }
+                if ((string) ($reviewSet['selection_mode'] ?? 'tags') === 'cards') {
+                    return in_array((string) $card['id'], $includedCards, true);
                 }
                 if ($selectedTags === []) {
                     return true;
@@ -6137,6 +6169,34 @@ final class Api
             'DELETE FROM flashcard_review_card_stats WHERE card = :id',
         );
         $statement->execute(['id' => $id]);
+        $reviewSets = $this->database->pdo->prepare(
+            "SELECT id, included_cards FROM flashcard_review_sets
+             WHERE owner = :owner AND selection_mode = 'cards'",
+        );
+        $reviewSets->execute(['owner' => $owner]);
+        $updateReviewSet = $this->database->pdo->prepare(
+            'UPDATE flashcard_review_sets
+             SET included_cards = :included_cards, updated_at = :updated_at
+             WHERE id = :id AND owner = :owner',
+        );
+        foreach ($reviewSets->fetchAll() as $reviewSet) {
+            $includedCards = $this->decodeJsonColumn($reviewSet['included_cards'] ?? '[]');
+            if (!is_array($includedCards) || !in_array($id, $includedCards, true)) {
+                continue;
+            }
+            $updateReviewSet->execute([
+                'included_cards' => json_encode(
+                    array_values(array_filter(
+                        $includedCards,
+                        static fn (mixed $cardId): bool => $cardId !== $id,
+                    )),
+                    JSON_THROW_ON_ERROR,
+                ),
+                'updated_at' => $this->now(),
+                'id' => $reviewSet['id'],
+                'owner' => $owner,
+            ]);
+        }
         $this->deleteOwnedRow('flashcards', $id, $owner);
         foreach ($audioFiles as $audioFile) {
             $this->removeDeletedFlashcardAudioFileIfUnused($audioFile);
@@ -6600,6 +6660,24 @@ final class Api
             throw new ApiException(422, 'Task log entries cannot have a value of zero.', [
                 'value' => 'nonzero',
             ]);
+        }
+        if ($collection === 'flashcard_review_sets') {
+            $selectionMode = (string) ($record['selection_mode'] ?? 'tags');
+            $includedCards = $record['included_cards'] ?? [];
+            $tags = $record['tags'] ?? [];
+            if ($selectionMode === 'cards') {
+                if ($tags !== []) {
+                    throw new ApiException(422, 'Custom selected-card Review sets cannot use tags.');
+                }
+                $includedCards = is_array($includedCards) ? $includedCards : [];
+                foreach ($includedCards as $cardId) {
+                    if (!is_string($cardId) || !$this->relationExists('flashcards', $cardId, $owner)) {
+                        throw new ApiException(422, 'A selected flashcard is invalid.');
+                    }
+                }
+            } elseif ($includedCards !== []) {
+                throw new ApiException(422, 'Tag-based Review sets cannot store custom selected cards.');
+            }
         }
         if (in_array($collection, ['flashcards', 'flashcard_review_sets'], true)) {
             foreach (($record['tags'] ?? []) as $tag) {
@@ -7216,7 +7294,7 @@ final class Api
         ]);
         $status = $statement->fetchColumn();
         if ($status !== false) {
-            return $status === 'pending';
+            return in_array($status, ['pending', 'missed'], true);
         }
         if ($programStepId !== '') {
             $statement = $this->database->pdo->prepare(
@@ -7523,6 +7601,30 @@ final class Api
             : [];
     }
 
+    private function addCardsToCustomReviewSet(array $reviewSet, array $cardIds): void
+    {
+        if ((string) ($reviewSet['selection_mode'] ?? 'tags') !== 'cards' || $cardIds === []) {
+            return;
+        }
+        $includedCards = $this->decodeJsonColumn($reviewSet['included_cards'] ?? '[]');
+        $includedCards = is_array($includedCards) ? $includedCards : [];
+        $includedCards = array_values(array_unique([
+            ...array_filter($includedCards, 'is_string'),
+            ...array_filter($cardIds, 'is_string'),
+        ]));
+        $statement = $this->database->pdo->prepare(
+            'UPDATE flashcard_review_sets
+             SET included_cards = :included_cards, updated_at = :updated_at
+             WHERE id = :id AND owner = :owner',
+        );
+        $statement->execute([
+            'included_cards' => json_encode($includedCards, JSON_THROW_ON_ERROR),
+            'updated_at' => $this->now(),
+            'id' => $reviewSet['id'],
+            'owner' => $reviewSet['owner'],
+        ]);
+    }
+
     private function flashcardTagDetails(string $owner, array $tagIds): array
     {
         if ($tagIds === []) {
@@ -7564,13 +7666,21 @@ final class Api
     private function matchingSourceFlashcards(array $reviewSet): array
     {
         $selectedTags = $this->reviewSetTagIds($reviewSet);
+        $selectionMode = (string) ($reviewSet['selection_mode'] ?? 'tags');
+        $includedCards = $selectionMode === 'cards'
+            ? $this->decodeJsonColumn($reviewSet['included_cards'] ?? '[]')
+            : [];
+        $includedCards = is_array($includedCards) ? $includedCards : [];
         $statement = $this->database->pdo->prepare(
             'SELECT * FROM flashcards WHERE owner = :owner ORDER BY created_at DESC, id',
         );
         $statement->execute(['owner' => $reviewSet['owner']]);
         return array_values(array_filter(
             $statement->fetchAll(),
-            function (array $card) use ($selectedTags): bool {
+            function (array $card) use ($selectedTags, $selectionMode, $includedCards): bool {
+                if ($selectionMode === 'cards') {
+                    return in_array((string) $card['id'], $includedCards, true);
+                }
                 if ($selectedTags === []) {
                     return true;
                 }
@@ -7583,6 +7693,13 @@ final class Api
     private function matchingSourceFlashcard(array $reviewSet, string $cardId): array
     {
         $card = $this->ownedRecord('flashcards', $cardId, (string) $reviewSet['owner']);
+        if ((string) ($reviewSet['selection_mode'] ?? 'tags') === 'cards') {
+            $includedCards = $this->decodeJsonColumn($reviewSet['included_cards'] ?? '[]');
+            if (!is_array($includedCards) || !in_array($cardId, $includedCards, true)) {
+                throw new ApiException(404, 'Flashcard not found in this Review set.');
+            }
+            return $card;
+        }
         $selectedTags = $this->reviewSetTagIds($reviewSet);
         if ($selectedTags === []) {
             return $card;
@@ -8076,7 +8193,12 @@ final class Api
         ];
     }
 
-    private function rateLimit(string $key, int $maximum, int $windowSeconds): void
+    private function rateLimit(
+        string $key,
+        int $maximum,
+        int $windowSeconds,
+        bool $enforce = false,
+    ): void
     {
         $now = time();
         $cutoff = $now - $windowSeconds;
@@ -8095,9 +8217,9 @@ final class Api
         );
         $statement->execute(['rate_key' => $rateKey]);
         $limit = $statement->fetch();
-        if (is_array($limit) && (int) $limit['hits'] > $maximum) {
-            // header('Retry-After: ' . max(1, (int) $limit['window_start'] + $windowSeconds - $now));
-            // throw new ApiException(429, 'Too many attempts. Please try again later.');
+        if ($enforce && is_array($limit) && (int) $limit['hits'] > $maximum) {
+            header('Retry-After: ' . max(1, (int) $limit['window_start'] + $windowSeconds - $now));
+            throw new ApiException(429, 'Too many attempts. Please try again later.');
         }
 
         if (random_int(1, 100) === 1) {

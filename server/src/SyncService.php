@@ -295,6 +295,30 @@ final class SyncService
         }
     }
 
+    public function applyAssistantFlashcards(array $user, array $body): array
+    {
+        $pdo = $this->database->pdo;
+        $pdo->exec('BEGIN IMMEDIATE');
+        try {
+            $result = $this->applyAssistantFlashcardCommand(
+                $body,
+                ['*' => gmdate('YmdHis') . '-assistant'],
+                (string) $user['id'],
+                'assistant-api',
+            );
+            $pdo->exec('COMMIT');
+            return [
+                'cards' => $result['cards'],
+                'review_set' => $result['review_set'],
+            ];
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->exec('ROLLBACK');
+            }
+            throw $exception;
+        }
+    }
+
     private function applyOperation(array $operation, string $account, string $clientId): array
     {
         $operationId = $this->identifier($operation['operationId'] ?? null, 'operationId', 120);
@@ -604,6 +628,15 @@ final class SyncService
             return ['status' => 'applied'];
         }
 
+        if ($command === 'flashcards.assistant_apply') {
+            return $this->applyAssistantFlashcardCommand(
+                $payload,
+                $fieldClocks,
+                $account,
+                $clientId,
+            );
+        }
+
         if ($command === 'review_set_preferences.patch') {
             $reviewSetId = $this->recordId($payload['review_set_id'] ?? null);
             $reviewSet = $this->accessibleReviewSet($reviewSetId, $account);
@@ -831,6 +864,149 @@ final class SyncService
         }
 
         throw new ApiException(422, 'The sync command is not supported.');
+    }
+
+    private function applyAssistantFlashcardCommand(
+        array $payload,
+        array $fieldClocks,
+        string $account,
+        string $clientId,
+    ): array {
+        $mode = (string) ($payload['mode'] ?? '');
+        if (!in_array($mode, ['create', 'add'], true)) {
+            throw new ApiException(422, 'The assistant flashcard action is invalid.');
+        }
+        $cardRows = $payload['cards'] ?? null;
+        $existingIds = $payload['existing_card_ids'] ?? null;
+        if (!is_array($cardRows) || !array_is_list($cardRows)
+            || !is_array($existingIds) || !array_is_list($existingIds)) {
+            throw new ApiException(422, 'The assistant flashcard action is invalid.');
+        }
+        $existingIds = array_values(array_unique(array_map(
+            fn (mixed $id): string => $this->recordId($id),
+            $existingIds,
+        )));
+        if (count($cardRows) + count($existingIds) < 1
+            || count($cardRows) + count($existingIds) > 100) {
+            throw new ApiException(422, 'Choose between 1 and 100 cards.');
+        }
+
+        $cardConfig = Schema::collection('flashcards');
+        $reviewSetConfig = Schema::collection('flashcard_review_sets');
+        if ($cardConfig === null || $reviewSetConfig === null) {
+            throw new ApiException(500, 'The flashcard schema is unavailable.');
+        }
+        foreach ($existingIds as $cardId) {
+            $this->ownedRecord('flashcards', $cardId, $account);
+        }
+
+        $createdCards = [];
+        $createdCardIds = [];
+        foreach ($cardRows as $row) {
+            if (!is_array($row) || array_is_list($row)) {
+                throw new ApiException(422, 'An assistant flashcard is invalid.');
+            }
+            $cardId = $this->recordId($row['id'] ?? null);
+            $response = $this->createOwnedRecord(
+                'flashcards',
+                $cardConfig,
+                $cardId,
+                [
+                    'front' => $row['front'] ?? null,
+                    'back' => $row['back'] ?? null,
+                    'transliteration' => $row['transliteration'] ?? '',
+                    'note' => $row['note'] ?? '',
+                    'tags' => [],
+                ],
+                $fieldClocks,
+                $account,
+                $clientId,
+            );
+            $createdCardIds[] = (string) ($response['replacementId'] ?? $cardId);
+            $createdCards[] = $response['resource']['data'] ?? [];
+        }
+
+        $reviewSetId = $this->recordId($payload['review_set_id'] ?? null);
+        if ($mode === 'create') {
+            $name = trim((string) ($payload['name'] ?? ''));
+            $maxCards = (int) ($payload['max_cards'] ?? 20);
+            $sort = $this->database->pdo->prepare(
+                'SELECT COUNT(*) FROM flashcard_review_sets WHERE owner = :owner',
+            );
+            $sort->execute(['owner' => $account]);
+            $reviewSetPayload = [
+                'name' => $name,
+                'tags' => [],
+                'selection_mode' => 'cards',
+                'included_cards' => array_values(array_unique([...$existingIds, ...$createdCardIds])),
+                'excluded_cards' => [],
+                'mode' => 'manual',
+                'card_sides' => 'both',
+                'indefinite' => false,
+                'time_limit_seconds' => 0,
+                'max_cards' => $maxCards,
+                'eject_behavior' => 'replace',
+                'front_seconds' => 5,
+                'back_seconds' => 5,
+                'back_speech_repeat_count' => 1,
+                'note_before_back' => false,
+                'speech_enabled' => false,
+                'front_language' => '',
+                'back_language' => '',
+                'sort_mode' => 'difficult',
+                'sort_direction' => 'asc',
+                'sort_order' => (int) $sort->fetchColumn(),
+            ];
+            $setResponse = $this->createOwnedRecord(
+                'flashcard_review_sets',
+                $reviewSetConfig,
+                $reviewSetId,
+                $reviewSetPayload,
+                $fieldClocks,
+                $account,
+                $clientId,
+            );
+        } else {
+            $current = $this->ownedRecord('flashcard_review_sets', $reviewSetId, $account);
+            $currentIds = (string) ($current['selection_mode'] ?? 'tags') === 'cards'
+                ? $this->stringArray($current['included_cards'] ?? [])
+                : array_map(
+                    static fn (array $card): string => (string) $card['id'],
+                    $this->matchingCards($current),
+                );
+            $setResponse = $this->patchOwnedRecord(
+                'flashcard_review_sets',
+                $reviewSetConfig,
+                $reviewSetId,
+                [
+                    'selection_mode' => 'cards',
+                    'tags' => [],
+                    'included_cards' => array_values(array_unique([
+                        ...$currentIds,
+                        ...$existingIds,
+                        ...$createdCardIds,
+                    ])),
+                ],
+                $fieldClocks,
+                $account,
+            );
+        }
+
+        $this->resetReadCaches();
+        $reviewSet = $this->reviewSetResponse(
+            $this->accessibleReviewSet($reviewSetId, $account),
+            $account,
+        );
+        return [
+            'status' => $setResponse['status'] ?? 'applied',
+            'resource' => $this->projectionEnvelope(
+                'accessible_flashcard_review_sets',
+                $reviewSetId,
+                $reviewSet,
+            ),
+            'cards' => $createdCards,
+            'review_set' => $reviewSet,
+        ];
     }
 
     private function applyTaskReviewBulk(array $payload, string $account): void
@@ -1500,6 +1676,34 @@ final class SyncService
                 ->execute(['id' => $recordId]);
             $pdo->prepare('DELETE FROM flashcard_review_card_stats WHERE card = :id')
                 ->execute(['id' => $recordId]);
+            $reviewSets = $pdo->prepare(
+                "SELECT id, included_cards FROM flashcard_review_sets
+                 WHERE owner = :owner AND selection_mode = 'cards'",
+            );
+            $reviewSets->execute(['owner' => $account]);
+            $updateReviewSet = $pdo->prepare(
+                'UPDATE flashcard_review_sets
+                 SET included_cards = :included_cards, updated_at = :updated_at
+                 WHERE id = :id AND owner = :owner',
+            );
+            foreach ($reviewSets->fetchAll() as $reviewSet) {
+                $includedCards = $this->stringArray($reviewSet['included_cards'] ?? []);
+                if (!in_array($recordId, $includedCards, true)) {
+                    continue;
+                }
+                $updateReviewSet->execute([
+                    'included_cards' => json_encode(
+                        array_values(array_filter(
+                            $includedCards,
+                            static fn (string $cardId): bool => $cardId !== $recordId,
+                        )),
+                        JSON_THROW_ON_ERROR,
+                    ),
+                    'updated_at' => $this->now(),
+                    'id' => $reviewSet['id'],
+                    'owner' => $account,
+                ]);
+            }
         } elseif ($resource === 'flashcard_review_sessions') {
             $pdo->prepare(
                 'DELETE FROM flashcard_review_events WHERE session = :id AND owner = :owner',
@@ -1541,6 +1745,31 @@ final class SyncService
             throw new ApiException(422, 'Task log entries cannot have a value of zero.', [
                 'value' => 'nonzero',
             ]);
+        }
+        if ($resource === 'flashcard_review_sets') {
+            $selectionMode = (string) ($values['selection_mode'] ?? 'tags');
+            $includedCards = $values['included_cards'] ?? [];
+            $tags = $values['tags'] ?? [];
+            if ($selectionMode === 'cards') {
+                if ($tags !== []) {
+                    throw new ApiException(422, 'Custom selected-card Review sets cannot use tags.');
+                }
+                $includedCards = is_array($includedCards) ? $includedCards : [];
+                $statement = $this->database->pdo->prepare(
+                    'SELECT 1 FROM flashcards WHERE id = :id AND owner = :owner',
+                );
+                foreach ($includedCards as $cardId) {
+                    if (!is_string($cardId)) {
+                        throw new ApiException(422, 'A selected flashcard is invalid.');
+                    }
+                    $statement->execute(['id' => $cardId, 'owner' => $account]);
+                    if ($statement->fetchColumn() === false) {
+                        throw new ApiException(422, 'A selected flashcard is invalid.');
+                    }
+                }
+            } elseif ($includedCards !== []) {
+                throw new ApiException(422, 'Tag-based Review sets cannot store custom selected cards.');
+            }
         }
         if ($resource === 'tasks') {
             $scheduleMode = (string) ($values['schedule_mode'] ?? 'all_day');
@@ -2421,6 +2650,10 @@ final class SyncService
     private function matchingCards(array $reviewSet): array
     {
         $tags = $this->stringArray($reviewSet['tags'] ?? []);
+        $selectionMode = (string) ($reviewSet['selection_mode'] ?? 'tags');
+        $includedCards = $selectionMode === 'cards'
+            ? $this->stringArray($reviewSet['included_cards'] ?? [])
+            : [];
         $owner = (string) $reviewSet['owner'];
         if (!isset($this->cardsByOwner[$owner])) {
             $statement = $this->database->pdo->prepare(
@@ -2429,7 +2662,14 @@ final class SyncService
             $statement->execute(['owner' => $owner]);
             $this->cardsByOwner[$owner] = $statement->fetchAll();
         }
-        return array_values(array_filter($this->cardsByOwner[$owner], function (array $card) use ($tags): bool {
+        return array_values(array_filter($this->cardsByOwner[$owner], function (array $card) use (
+            $tags,
+            $selectionMode,
+            $includedCards,
+        ): bool {
+            if ($selectionMode === 'cards') {
+                return in_array((string) $card['id'], $includedCards, true);
+            }
             if ($tags === []) {
                 return true;
             }

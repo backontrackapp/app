@@ -13,6 +13,7 @@ describe('task card actions', () => {
   it('defines the shared task menu order', () => {
     expect(TASK_CARD_ACTION_ITEMS.map(item => item.id)).toEqual([
       'edit-task',
+      'duplicate-task',
       'skip-task',
       'toggle-task-status',
       'view-log-history',

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Ripple } from 'vuetify/directives'
+import { formatIntervalDuration } from '@/services/intervals'
 import { TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import type { TaskProgress } from '@/types/domain'
 
@@ -32,6 +33,40 @@ const hasProgress = computed(() => {
   const type = singleCompletion.value?.type || task.value.type
   return ['quantity', 'duration', 'daily_total', 'step_counter'].includes(type)
 })
+const target = computed(() => {
+  if (hasMultipleCompletions.value) return completionItems.value.length
+  if (!props.progress.programStep && task.value.type === 'tracking') {
+    return task.value.trackingTrackers?.length ?? 0
+  }
+  if (isSessionDuration.value) return task.value.sessionTargetSeconds ?? 0
+  return singleCompletion.value?.targetValue ?? task.value.targetValue ?? 0
+})
+const unit = computed(() => singleCompletion.value?.customUnit
+  || singleCompletion.value?.unit
+  || task.value.customUnit
+  || task.value.unit
+  || '')
+const remainingLabel = computed(() => {
+  if (!hasProgress.value || target.value <= 0) return ''
+
+  const remaining = Math.max(0, target.value - props.progress.value)
+  if (hasMultipleCompletions.value) {
+    return `${remaining} ${remaining === 1 ? 'requirement' : 'requirements'} remaining`
+  }
+  if (!props.progress.programStep && task.value.type === 'tracking') {
+    return `${remaining} ${remaining === 1 ? 'tracker' : 'trackers'} remaining`
+  }
+  if (isSessionDuration.value) return `${formatIntervalDuration(remaining)} remaining`
+  if (!props.progress.programStep && task.value.type === 'duration') {
+    return `${Number(remaining.toFixed(2))}h remaining`
+  }
+  if (!props.progress.programStep && task.value.type === 'step_counter') {
+    return `${Math.round(remaining).toLocaleString()} steps remaining`
+  }
+
+  const amount = Number(remaining.toFixed(2)).toLocaleString()
+  return `${amount}${unit.value ? ` ${unit.value}` : ''} remaining`
+})
 const cardInk = computed(() => {
   const hex = taskColor.value.match(/^#([0-9a-f]{6})$/i)?.[1]
   if (!hex) return '#17200F'
@@ -61,12 +96,12 @@ const cardInk = computed(() => {
       </span>
       <span class="task-quick-log__content">
         <strong>{{ title }}</strong>
+        <small v-if="remainingLabel" class="task-quick-log__remaining">{{ remainingLabel }}</small>
         <v-progress-linear
           v-if="hasProgress"
-          class="task-quick-log__progress"
+          class="task-quick-log__progress mt-2"
           :model-value="progress.percent"
-          :color="taskColor"
-          bg-color="grey-darken-2"
+          color="secondary"
           rounded
           :aria-label="`${title}: ${Math.round(progress.percent)}% complete`"
         />
@@ -128,7 +163,6 @@ const cardInk = computed(() => {
   justify-content: center;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: .5rem;
 }
 
 .task-quick-log__content strong {
@@ -146,8 +180,15 @@ const cardInk = computed(() => {
   color: rgb(var(--v-theme-on-surface) / .58);
 }
 
+.task-quick-log__remaining {
+  color: rgba(var(--v-theme-on-surface), .5);
+  font-size: .6rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
 .task-quick-log__progress {
   height: .35rem !important;
-  flex: 0 0 .35rem;
 }
+
 </style>

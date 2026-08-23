@@ -46,6 +46,7 @@ export const INTERVAL_CUE_SOUND_OPTIONS: Array<{
   { title: 'Completion Signal', value: 'complete' },
   { title: 'Countdown Tick', value: 'count' },
   { title: 'Copper Bell', value: 'copper-bell' },
+  { title: 'Speak Step Name', value: 'speech' },
   { title: 'None', value: 'none' },
 ]
 

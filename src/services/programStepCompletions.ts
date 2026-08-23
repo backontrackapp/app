@@ -33,6 +33,9 @@ function normalizedCompletion(value: unknown): ProgramStepCompletion | undefined
   }
   const id = typeof record.id === 'string' && record.id ? record.id : createLocalRecordId()
   const completion: ProgramStepCompletion = { id, type: type as ProgramStepCompletionType }
+  if (completion.type !== 'quantity') {
+    completion.label = String(record.label || '').trim() || undefined
+  }
   if (completion.type === 'quantity') {
     completion.targetValue = Number(record.targetValue ?? record.target_value ?? 0)
     completion.targetOperator = String(
@@ -75,6 +78,9 @@ export function programStepCompletionPayload(completions: ProgramStepCompletion[
   return completions.map((completion) => ({
     id: completion.id,
     type: completion.type,
+    ...(completion.type !== 'quantity' && completion.label?.trim() ? {
+      label: completion.label.trim(),
+    } : {}),
     ...(completion.type === 'quantity' ? {
       targetValue: completion.targetValue ?? 0,
       targetOperator: completion.targetOperator || 'gte',

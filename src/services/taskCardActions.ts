@@ -8,6 +8,11 @@ export const TASK_CARD_ACTION_ITEMS = [
     icon: 'mdi-pencil-outline',
   },
   {
+    id: 'duplicate-task',
+    title: 'Duplicate',
+    icon: 'mdi-content-copy',
+  },
+  {
     id: 'skip-task',
     title: 'Skip',
     icon: 'mdi-skip-next-outline',
@@ -44,8 +49,11 @@ export function taskIntervalCanStart(progress: TaskProgress, currentDate: string
       ? progress.completionItems.some(item => item.type === 'interval' && !item.complete)
       : progress.programStep.completionType === 'interval'
     : progress.task.type === 'interval'
+  const isAvailableDate = progress.programStep
+    ? progress.scheduledDate <= currentDate
+    : progress.scheduledDate === currentDate
   return isInterval
-    && progress.scheduledDate === currentDate
+    && isAvailableDate
     && !progress.complete
     && (progress.status === 'pending' || progress.status === 'missed')
 }

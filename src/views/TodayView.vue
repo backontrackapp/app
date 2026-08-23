@@ -9,12 +9,14 @@ import { useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import AppDialog from '@/components/AppDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import DateSwipeFeedback from '@/components/DateSwipeFeedback.vue'
 import StickyActionBanner from '@/components/StickyActionBanner.vue'
 import TaskCard from '@/components/TaskCard.vue'
 import TaskImageLogBottomSheet from '@/components/TaskImageLogBottomSheet.vue'
 import TaskQuickLogCard from '@/components/TaskQuickLogCard.vue'
 import TrackingLogBottomSheet from '@/components/TrackingLogBottomSheet.vue'
 import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
+import { dateSwipe as vDateSwipe } from '@/directives/dateSwipe'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { reviewSetCardCount } from '@/services/flashcards'
 import { isNativeHealthConnectSupported } from '@/services/healthConnect'
@@ -32,7 +34,7 @@ import {
   tasksWithoutProgress,
 } from '@/services/taskScheduleLayout'
 import { taskIdsFromProgressDrag, taskProgressDragKey } from '@/services/taskReordering'
-import { TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
+import { taskSupportsQuickLog, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import { useIntervalStore } from '@/stores/intervals'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useJournalStore } from '@/stores/journal'
@@ -120,6 +122,23 @@ const notScheduledExpanded = ref(false)
 const archiveExpanded = ref(false)
 const reorderingTasks = ref(false)
 const reorderingQuickLogs = ref(false)
+const dateSwipeFeedback = ref<InstanceType<typeof DateSwipeFeedback>>()
+const quickLogStrip = ref<HTMLElement>()
+
+function changeTaskDate(amount: number) {
+  selectedDate.value = addDays(selectedDate.value, amount)
+  dateSwipeFeedback.value?.show(selectedDate.value)
+  void nextTick(() => {
+    if (quickLogStrip.value) quickLogStrip.value.scrollLeft = 0
+  })
+}
+
+const taskDateSwipe = {
+  onPrevious: () => changeTaskDate(-1),
+  onNext: () => changeTaskDate(1),
+  ignore: '.week-date-navigator, .quick-log-section',
+  transitionTarget: '.date-swipe-content',
+}
 const exactAmount = computed(() => {
   if (!exactAmountInput.value || exactAmountInput.value === '.') return null
   const value = Number(exactAmountInput.value)
@@ -200,7 +219,9 @@ function programStepRequirementItems(progress: TaskProgress): ProgramStepRequire
   const completions = progress.completionItems || []
   return completions.map((completion, index) => {
     const sourceName = completionSourceName(completion)
-    const title = completions.length > 1 ? `${index + 1}. ${sourceName}` : sourceName
+    const customLabel = completion.label?.trim()
+    const requirementName = customLabel || sourceName
+    const title = completions.length > 1 ? `${index + 1}. ${requirementName}` : requirementName
     const locked = Boolean(progress.locked)
 
     if (completion.type === 'check') {
@@ -230,7 +251,11 @@ function programStepRequirementItems(progress: TaskProgress): ProgramStepRequire
       return {
         id: completion.id,
         title,
-        subtitle: [completion.complete ? 'Complete' : '', interval?.duration ? `${interval.duration} total` : 'Saved interval unavailable']
+        subtitle: [
+          completion.complete ? 'Complete' : '',
+          customLabel ? sourceName : '',
+          interval?.duration ? `${interval.duration} total` : 'Saved interval unavailable',
+        ]
           .filter(Boolean)
           .join(' · '),
         icon: completion.complete ? 'mdi-check-circle' : 'mdi-timer-play-outline',
@@ -248,13 +273,17 @@ function programStepRequirementItems(progress: TaskProgress): ProgramStepRequire
     return {
       id: completion.id,
       title,
-      subtitle: [completion.complete ? 'Complete' : '', reviewDetails].filter(Boolean).join(' · '),
+      subtitle: [
+        completion.complete ? 'Complete' : '',
+        customLabel ? sourceName : '',
+        reviewDetails,
+      ].filter(Boolean).join(' · '),
       icon: completion.complete ? 'mdi-check-circle' : 'mdi-cards-playing-outline',
       color: TASK_TYPE_PRESENTATION.flashcards.color,
       complete: completion.complete,
       disabled: locked || (!completion.complete && (
-        !progressIsToday(progress)
-        || progress.status !== 'pending'
+        !programStepSessionCanStart(progress)
+        || !['pending', 'missed'].includes(progress.status)
         || !reviewSet?.cardCount
       )),
     }
@@ -345,7 +374,11 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
       disabled: locked,
     })
   }
-  if (completionType === 'flashcards' && progressIsToday(progress) && progress.status === 'pending') {
+  if (
+    completionType === 'flashcards'
+    && programStepSessionCanStart(progress)
+    && ['pending', 'missed'].includes(progress.status)
+  ) {
     items.push({
       id: 'start-review',
       title: reviewSessionMatchesProgress(progress) ? 'Resume review' : 'Start review',
@@ -472,11 +505,18 @@ const archivedProgress = computed(() => store.tasks
   .filter(task => task.archived)
   .sort((left, right) => left.sortOrder - right.sortOrder)
   .map(task => store.makeProgress(task, selectedDate.value)))
-const scheduleLayout = computed(() => groupTaskProgressBySchedule(selectedProgress.value))
+const mainTaskProgress = computed(() => selectedProgress.value.filter(progress => !(
+  taskSupportsQuickLog(progress.task.type) && progress.task.quickLogEnabled
+)))
+const scheduleLayout = computed(() => groupTaskProgressBySchedule(mainTaskProgress.value))
 const allDayProgress = computed(() => scheduleLayout.value.allDay)
 const timedProgressGroups = computed(() => scheduleLayout.value.timed)
 const quickLogProgress = computed(() => selectedProgress.value
-  .filter(progress => progress.task.quickLogEnabled && progress.status !== 'rescheduled')
+  .filter(progress => (
+    taskSupportsQuickLog(progress.task.type)
+      && progress.task.quickLogEnabled
+      && progress.status !== 'rescheduled'
+  ))
   .sort((left, right) => (
     (left.task.quickLogSortOrder ?? left.task.sortOrder)
       - (right.task.quickLogSortOrder ?? right.task.sortOrder)
@@ -782,8 +822,11 @@ function taskPresentation(progress: TaskProgress) {
   return TASK_TYPE_PRESENTATION[progress.task.type]
 }
 
-function progressIsToday(progress: TaskProgress) {
-  return progress.scheduledDate === toDateKey(new Date())
+function programStepSessionCanStart(progress: TaskProgress) {
+  const today = toDateKey(new Date())
+  return progress.programStep
+    ? progress.scheduledDate <= today
+    : progress.scheduledDate === today
 }
 
 function intervalCanStart(progress: TaskProgress) {
@@ -1098,6 +1141,13 @@ function runTaskCardAction(action: TaskCardActionId) {
     if (!taskId) return
     taskSheet.value = false
     void router.push({ name: 'task-edit', params: { id: taskId } })
+    return
+  }
+  if (action === 'duplicate-task') {
+    const taskId = taskActionProgress.value?.task.id
+    if (!taskId) return
+    taskSheet.value = false
+    void router.push({ name: 'task-new', query: { duplicate: taskId } })
     return
   }
   if (action === 'toggle-task-status') {
@@ -1467,7 +1517,9 @@ async function saveTaskLogEntry() {
 </script>
 
 <template>
-  <main ref="todayPage" class="app-page today-page">
+  <main ref="todayPage" v-date-swipe="taskDateSwipe" class="app-page today-page">
+    <DateSwipeFeedback ref="dateSwipeFeedback" />
+
     <WeekDateNavigator
       v-model="selectedDate"
       v-model:week-start="visibleWeekStart"
@@ -1475,8 +1527,9 @@ async function saveTaskLogEntry() {
       class="mb-5"
     />
 
-    <section v-if="quickLogProgress.length" class="quick-log-section mb-5" aria-label="Quick log tasks">
-      <div class="quick-log-strip">
+    <div class="date-swipe-content">
+      <section v-if="quickLogProgress.length" class="quick-log-section mb-5" aria-label="Quick log tasks">
+      <div ref="quickLogStrip" class="quick-log-strip">
         <TaskQuickLogCard
           v-for="item in quickLogProgress"
           :key="visibilityKey(item)"
@@ -1663,11 +1716,11 @@ async function saveTaskLogEntry() {
       </v-expand-transition>
     </section>
 
-    <section
-      v-if="archivedProgress.length"
-      class="not-scheduled-section"
-      :class="notScheduledProgress.length ? 'mt-2' : 'mt-6'"
-    >
+      <section
+        v-if="archivedProgress.length"
+        class="not-scheduled-section"
+        :class="notScheduledProgress.length ? 'mt-2' : 'mt-6'"
+      >
       <v-btn
         block
         variant="text"
@@ -1719,7 +1772,8 @@ async function saveTaskLogEntry() {
           </v-list-item>
         </v-list>
       </v-expand-transition>
-    </section>
+      </section>
+    </div>
 
     <Transition
       name="next-task-banner"

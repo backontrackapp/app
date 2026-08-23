@@ -475,6 +475,8 @@ async function removeEntry() {
 }
 .journal-editor-reflection--fullscreen :deep(.v-input__details) { display: none; }
 :global(html.keyboard-open .journal-editor-reflection--fullscreen) { padding-bottom: 0; }
+:global(html.platform-android.keyboard-open .journal-editor-reflection--fullscreen) { padding-bottom: 4.5625rem; }
+:global(html.platform-android.keyboard-open.journal-reflection-fullscreen .form-action-bar) { z-index: 2001; }
 :global(html.journal-reflection-fullscreen .app-bar),
 :global(html.journal-reflection-fullscreen .bottom-nav) { display: none !important; }
 :global(html.journal-reflection-fullscreen),

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import AppDialog from '@/components/AppDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -82,6 +83,7 @@ const emit = defineEmits<{
 }>()
 
 const store = useFlashcardStore()
+const router = useRouter()
 const searchQuery = ref<string | null>('')
 const selectedCardIds = ref<string[]>([])
 const bulkError = ref('')
@@ -97,6 +99,10 @@ const firstSwapColumn = ref<FlashcardBulkSwapColumn>('front')
 const secondSwapColumn = ref<FlashcardBulkSwapColumn>('back')
 const clearTagsDialog = ref(false)
 const deleteCardsDialog = ref(false)
+const reviewSetDialog = ref(false)
+const reviewSetDestination = ref<'new' | 'existing'>('new')
+const reviewSetName = ref('')
+const destinationReviewSetId = ref('')
 
 const tagNameMap = computed(() => new Map(props.tags.map(tag => [tag.id, tag.name])))
 const filteredCards = computed(() => props.cards.filter(card => cardMatchesSearch(
@@ -139,6 +145,12 @@ const selectedCards = computed(() => {
   return props.cards.filter(card => selected.has(card.id))
 })
 const selectedCardsHaveTags = computed(() => selectedCards.value.some(card => card.tags.length > 0))
+const customReviewSets = computed(() => (store.reviewSets || []).filter(set => (
+  set.accessRole === 'owner' && set.selectionMode === 'cards'
+)))
+const canCreateReviewSet = computed(() => reviewSetDestination.value === 'new'
+  ? Boolean(reviewSetName.value.trim())
+  : customReviewSets.value.some(set => set.id === destinationReviewSetId.value))
 const secondSwapColumnOptions = computed(() => (
   FLASHCARD_BULK_SWAP_COLUMN_OPTIONS.filter(option => option.value !== firstSwapColumn.value)
 ))
@@ -187,6 +199,20 @@ watch(selectedCardIds, () => {
   bulkNoticeOpen.value = false
 }, { deep: true })
 
+watch(customReviewSets, (reviewSets) => {
+  if (!reviewSets.length) {
+    reviewSetDestination.value = 'new'
+    destinationReviewSetId.value = ''
+    return
+  }
+  if (
+    reviewSetDestination.value === 'existing'
+    && !reviewSets.some(set => set.id === destinationReviewSetId.value)
+  ) {
+    destinationReviewSetId.value = ''
+  }
+}, { immediate: true })
+
 watch(() => props.cards.map(card => card.id), (ids) => {
   const existing = new Set(ids)
   selectedCardIds.value = selectedCardIds.value.filter(id => existing.has(id))
@@ -208,6 +234,14 @@ function chooseBulkAction(action: FlashcardBulkAction | FlashcardSelectionAction
   }
   if (action === 'add_tags' || action === 'set_tags' || action === 'remove_tags') {
     openBulkTagAction(action)
+    return
+  }
+  if (action === 'create_review_set') {
+    reviewSetDestination.value = 'new'
+    reviewSetName.value = ''
+    destinationReviewSetId.value = ''
+    bulkError.value = ''
+    reviewSetDialog.value = true
     return
   }
   if (action === 'swap_columns') {
@@ -299,6 +333,35 @@ async function swapSelectedCardFields() {
 async function deleteSelectedCards() {
   await runBulkAction('delete')
   deleteCardsDialog.value = false
+}
+
+async function saveSelectedCardsToReviewSet() {
+  if (!canCreateReviewSet.value) return
+  const destination = reviewSetDestination.value
+  bulkError.value = ''
+  bulkSaving.value = true
+  try {
+    const reviewSet = await store.createReviewSetFromCards(
+      [...selectedCardIds.value],
+      destination === 'new'
+        ? { type: 'new', name: reviewSetName.value }
+        : { type: 'existing', reviewSetId: destinationReviewSetId.value },
+    )
+    selectedCardIds.value = []
+    reviewSetDialog.value = false
+    if (destination === 'new') {
+      await router.push({
+        name: 'flashcard-review-set-edit',
+        params: { id: reviewSet.id },
+      })
+    }
+  } catch (cause) {
+    bulkError.value = cause instanceof Error
+      ? cause.message
+      : 'Could not save the selected cards to a Review set.'
+  } finally {
+    bulkSaving.value = false
+  }
 }
 </script>
 
@@ -427,6 +490,84 @@ async function deleteSelectedCards() {
               || ('requiresTags' in item && item.requiresTags && !selectedCardsHaveTags)"
             @click="chooseBulkAction(item.action)"
           />
+        </template>
+      </ActionBottomSheet>
+
+      <ActionBottomSheet
+        v-model="reviewSetDialog"
+        title="Create Review set"
+        :description="`Use ${selectedCardIds.length} selected ${selectedCardIds.length === 1 ? 'card' : 'cards'}.`"
+        aria-label="Create a Review set from selected cards"
+      >
+        <template #content>
+          <div v-if="reviewSetDialog">
+            <v-radio-group
+              v-model="reviewSetDestination"
+              hide-details="auto"
+            >
+              <v-radio
+                label="Create a new Review set"
+                value="new"
+                hide-details="auto"
+                :disabled="bulkSaving"
+              />
+              <v-radio
+                label="Add to an existing custom Review set"
+                value="existing"
+                hide-details="auto"
+                :disabled="bulkSaving || !customReviewSets.length"
+              />
+            </v-radio-group>
+
+            <p
+              v-if="!customReviewSets.length"
+              class="text-body-2 muted mt-2"
+            >
+              No custom Review sets are available, so a new one will be created.
+            </p>
+
+            <v-row class="mt-2">
+              <v-col cols="12">
+                <v-text-field
+                  v-if="reviewSetDestination === 'new'"
+                  v-model="reviewSetName"
+                  maxlength="160"
+                  autocomplete="off"
+                  :disabled="bulkSaving"
+                >
+                  <template #label>Review set name <span class="required-mark">*</span></template>
+                </v-text-field>
+                <v-select
+                  v-else
+                  v-model="destinationReviewSetId"
+                  :items="customReviewSets"
+                  item-title="name"
+                  item-value="id"
+                  :disabled="bulkSaving"
+                >
+                  <template #label>Review set <span class="required-mark">*</span></template>
+                </v-select>
+              </v-col>
+            </v-row>
+
+            <v-alert v-if="bulkError" type="error" variant="tonal" density="compact" class="mt-2">
+              {{ bulkError }}
+            </v-alert>
+
+            <div class="review-set-dialog-actions mt-5">
+              <v-btn variant="text" :disabled="bulkSaving" @click="reviewSetDialog = false">
+                Cancel
+              </v-btn>
+              <v-btn
+                color="secondary"
+                :loading="bulkSaving"
+                :disabled="!canCreateReviewSet"
+                @click="saveSelectedCardsToReviewSet"
+              >
+                {{ reviewSetDestination === 'new' ? 'Create' : 'Add cards' }}
+              </v-btn>
+            </div>
+          </div>
         </template>
       </ActionBottomSheet>
 
@@ -597,6 +738,9 @@ async function deleteSelectedCards() {
 .swap-columns-heading__icon { display: grid; width: 3rem; height: 3rem; flex: 0 0 auto; place-items: center; border-radius: 1rem; background: rgba(var(--v-theme-secondary), .14); color: rgb(var(--v-theme-secondary)); }
 .swap-columns-actions { display: flex; justify-content: flex-end; gap: .5rem; }
 .swap-columns-actions > .v-btn { min-width: 6rem; min-height: 2.75rem; }
+.review-set-dialog-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+.review-set-dialog-actions > .v-btn { min-width: 6rem; min-height: 2.75rem; }
+.required-mark { color: rgb(var(--v-theme-error)); }
 
 @media (max-width: 31.25rem) {
   .card-filters { grid-template-columns: minmax(0, 1fr); }

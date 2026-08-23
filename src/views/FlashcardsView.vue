@@ -40,7 +40,6 @@ const ownedReviewSets = computed(() => store.reviewSets.filter(set => set.access
 const sharedReviewSets = computed(() => store.reviewSets.filter(set => set.accessRole !== 'owner'))
 const selectedActions = computed(() => selectedReviewSet.value
   ? FLASHCARD_REVIEW_SET_ACTIONS[selectedReviewSet.value.accessRole]
-      .filter(item => item.action !== 'review')
   : [])
 
 const reviewHistory = computed(() => flashcardReviewHistoryItems(store.sessions, intervalStore.sessions))
@@ -324,16 +323,20 @@ async function reorderReviewSets(result: LongPressDragResult) {
           class="review-set surface-card pa-4"
           role="button"
           tabindex="0"
-          :aria-label="`Review ${reviewSet.name}`"
-          @click="openReviewSet(reviewSet)"
-          @keydown.enter="openReviewSet(reviewSet)"
-          @keydown.space.prevent="openReviewSet(reviewSet)"
+          :aria-label="`Actions for ${reviewSet.name}`"
+          @click="openReviewSetActions(reviewSet)"
+          @keydown.enter="openReviewSetActions(reviewSet)"
+          @keydown.space.prevent="openReviewSetActions(reviewSet)"
         >
           <div class="review-set__main">
             <div class="min-width-0">
               <h3 class="text-body-1 font-weight-black text-truncate">{{ reviewSet.name }}</h3>
               <div class="review-set__meta mt-2">
-                <span v-if="!reviewSet.tags.length" class="review-set__meta-item">
+                <span v-if="reviewSet.selectionMode === 'cards'" class="review-set__meta-item">
+                  <v-icon icon="mdi-card-multiple-outline" size="small" />
+                  <span>Custom selected cards</span>
+                </span>
+                <span v-else-if="!reviewSet.tags.length" class="review-set__meta-item">
                   <v-icon icon="mdi-cards-outline" size="small" />
                   <span>All cards</span>
                 </span>
@@ -374,23 +377,6 @@ async function reorderReviewSets(result: LongPressDragResult) {
                 </span>
               </div>
             </div>
-            <div
-              class="review-set__actions"
-              @pointerdown.stop
-              @pointerup.stop
-              @touchstart.stop
-              @click.stop
-              @keydown.stop
-            >
-              <v-btn
-                class="review-set__menu-button"
-                icon="mdi-dots-horizontal"
-                variant="text"
-                size="small"
-                :aria-label="`More actions for ${reviewSet.name}`"
-                @click="openReviewSetActions(reviewSet)"
-              />
-            </div>
           </div>
         </v-card>
       </div>
@@ -415,10 +401,10 @@ async function reorderReviewSets(result: LongPressDragResult) {
           class="review-set surface-card pa-4"
           role="button"
           tabindex="0"
-          :aria-label="`Review ${reviewSet.name}`"
-          @click="openReviewSet(reviewSet)"
-          @keydown.enter="openReviewSet(reviewSet)"
-          @keydown.space.prevent="openReviewSet(reviewSet)"
+          :aria-label="`Actions for ${reviewSet.name}`"
+          @click="openReviewSetActions(reviewSet)"
+          @keydown.enter="openReviewSetActions(reviewSet)"
+          @keydown.space.prevent="openReviewSetActions(reviewSet)"
         >
           <div class="review-set__main">
             <div class="min-width-0">
@@ -433,7 +419,11 @@ async function reorderReviewSets(result: LongPressDragResult) {
                 Shared by {{ reviewSet.ownerName || 'another account' }}
               </p>
               <div class="review-set__meta mt-2">
-                <span v-if="!reviewSet.tags.length" class="review-set__meta-item">
+                <span v-if="reviewSet.selectionMode === 'cards'" class="review-set__meta-item">
+                  <v-icon icon="mdi-card-multiple-outline" size="small" />
+                  <span>Custom selected cards</span>
+                </span>
+                <span v-else-if="!reviewSet.tags.length" class="review-set__meta-item">
                   <v-icon icon="mdi-cards-outline" size="small" />
                   <span>All owner cards</span>
                 </span>
@@ -454,23 +444,6 @@ async function reorderReviewSets(result: LongPressDragResult) {
                   <span>{{ tagName(reviewSet, tag) }}</span>
                 </span>
               </div>
-            </div>
-            <div
-              class="review-set__actions"
-              @pointerdown.stop
-              @pointerup.stop
-              @touchstart.stop
-              @click.stop
-              @keydown.stop
-            >
-              <v-btn
-                class="review-set__menu-button"
-                icon="mdi-dots-horizontal"
-                variant="text"
-                size="small"
-                :aria-label="`More actions for ${reviewSet.name}`"
-                @click="openReviewSetActions(reviewSet)"
-              />
             </div>
           </div>
         </v-card>
@@ -606,7 +579,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
       v-model="reviewSetActionsOpen"
       :title="selectedReviewSet?.name || 'Review set actions'"
       hide-title
-      :aria-label="selectedReviewSet ? `${selectedReviewSet.name} management actions` : 'Review set actions'"
+      :aria-label="selectedReviewSet ? `${selectedReviewSet.name} actions` : 'Review set actions'"
     >
       <template v-if="selectedReviewSet">
         <template v-for="item in selectedActions" :key="item.action">
@@ -615,6 +588,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
             :prepend-icon="item.icon"
             :title="item.title"
             :base-color="item.color"
+            :class="{ 'font-weight-bold': item.action === 'review' }"
             rounded="lg"
             :disabled="working"
             @click="runReviewSetAction(item.action)"
@@ -664,9 +638,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
 .review-set-list { display: grid; gap: .75rem; }
 .review-set { overflow: hidden; cursor: pointer; }
 .review-set:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .1875rem; }
-.review-set__main { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) 2.75rem; align-items: center; gap: .85rem; }
-.review-set__actions { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; }
-.review-set__menu-button { width: 2.75rem; height: 2.75rem; }
+.review-set__main { min-width: 0; }
 .review-set__meta { display: flex; flex-wrap: wrap; gap: .35rem .75rem; color: rgba(var(--v-theme-on-surface), .6); font-size: .7rem; font-weight: 800; line-height: 1.35; }
 .review-set__meta-item { display: inline-flex; min-width: 0; align-items: center; gap: .25rem; }
 .review-set__meta-item :deep(.v-icon) { flex: 0 0 auto; opacity: .8; }

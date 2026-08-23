@@ -2,11 +2,13 @@
 
 The factor selector groups device-derived wellbeing data under **Health Connect**. Steps are read as daily aggregates from Health Connect. Screen time is measured from Android screen-interactive usage events and requires Usage Access because Health Connect does not define a screen-time record.
 
-Both device factors are quantitative. Insights load one value per local calendar day in the selected range, use `steps` and `minutes` as their respective units, and refresh the current day's cached value after one minute.
+Both device factors are quantitative. Insights load one value per local calendar day in the selected range, use `steps` and `minutes` as their respective units, and refresh the current day's cached value after one minute. The current day's screen-time range ends at the current instant so an ongoing interactive session never counts future time through midnight.
 
 When Android Usage Access is enabled, the main Tracking page also loads screen time for the visible week and shows it as a duration series in the weekly chart. Future dates are not requested. Like tracker series, screen time can be hidden or restored from the chart legend.
 
 The main Tracking page keeps tracker cards focused on starting a new log and managing the tracker. Cards with an entry on the selected date are greyed out, while remaining available for additional entries and tracker actions. Entries for the selected date appear together in a chronological **Log** section below the factor and outcome tracker groups. Selecting a log opens it for editing, and days without entries show an explicit empty state.
+
+Swiping left across **Things you did**, **How you felt**, or the **Log** section advances to the next date, while swiping right returns to the previous date. All three date-dependent sections move in together from the navigation direction with a quick horizontal transition, and a centered card briefly confirms the selected date before fading away.
 
 Tracker cards can be reordered within their **Things you did** or **How you felt** group by pressing and holding, then dragging. Cards animate into their prospective grid positions while dragging, with row-aware targeting for stable vertical movement across the grid. The new order is applied immediately and saved through the offline-first data layer; if persistence fails, the previous order is restored and an error is shown.
 

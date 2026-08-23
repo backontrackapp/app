@@ -102,7 +102,7 @@ case "$install_method" in
     if [[ -n "$device_serial" ]]; then
       adb_args=(-s "$device_serial")
     fi
-    adb "${adb_args[@]}" install -r "$apk_path"
+    adb "${adb_args[@]}" install -r -d "$apk_path"
     echo "Installed $application_id from $apk_path."
     ;;
 esac

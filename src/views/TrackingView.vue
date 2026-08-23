@@ -4,11 +4,13 @@ import { addDays, format, isValid, parseISO, startOfWeek } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import DateSwipeFeedback from '@/components/DateSwipeFeedback.vue'
 import TrackingLogBottomSheet from '@/components/TrackingLogBottomSheet.vue'
 import TrackingRatingValue from '@/components/TrackingRatingValue.vue'
 import TrackingTrackerCard from '@/components/TrackingTrackerCard.vue'
 import TrackingWeeklyBarChart from '@/components/TrackingWeeklyBarChart.vue'
 import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
+import { dateSwipe as vDateSwipe } from '@/directives/dateSwipe'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { getScreenTimeStatus, isNativeHealthConnectSupported, readScreenTimeForDates } from '@/services/healthConnect'
 import { formatTrackingValue, TRACKING_PRESETS, trackerDraftFromPreset } from '@/services/tracking'
@@ -38,6 +40,17 @@ const weeklyChartLoading = ref(true)
 const screenTimeEnabled = ref(false)
 const screenTimeValues = ref<Record<string, number>>({})
 let weeklyLoadRequest = 0
+const dateSwipeFeedback = ref<InstanceType<typeof DateSwipeFeedback>>()
+
+function changeTrackingDate(amount: number) {
+  selectedDate.value = addDays(selectedDate.value, amount)
+  dateSwipeFeedback.value?.show(selectedDate.value)
+}
+
+const trackingDateSwipe = {
+  onPrevious: () => changeTrackingDate(-1),
+  onNext: () => changeTrackingDate(1),
+}
 
 const dateKey = computed(() => format(selectedDate.value, 'yyyy-MM-dd'))
 const dayEntries = computed(() => store.entries
@@ -275,6 +288,8 @@ async function loadVisibleWeekEntries() {
 
 <template>
   <main class="app-page tracking-page">
+    <DateSwipeFeedback ref="dateSwipeFeedback" />
+
     <v-alert v-if="error || store.error" type="error" variant="tonal" class="mb-4">
       {{ error || store.error }}
     </v-alert>
@@ -319,7 +334,11 @@ async function loadVisibleWeekEntries() {
       <v-progress-circular indeterminate color="secondary" />
     </div>
 
-    <template v-else-if="store.trackers.length">
+    <div
+      v-else-if="store.trackers.length"
+      v-date-swipe="trackingDateSwipe"
+      class="tracking-date-swipe-content"
+    >
       <section>
         <div class="section-heading">
           <h2>Things you did</h2>
@@ -427,7 +446,7 @@ async function loadVisibleWeekEntries() {
           <p class="text-body-2 muted mt-1">Tap a tracker to add an entry for this day.</p>
         </v-card>
       </section>
-    </template>
+    </div>
 
     <template v-else-if="store.loaded">
       <div class="section-heading"><h2>Start with a tracker</h2></div>

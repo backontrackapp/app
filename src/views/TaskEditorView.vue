@@ -3,6 +3,7 @@ import { Capacitor } from '@capacitor/core'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { format } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
+import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import AppForm from '@/components/AppForm.vue'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -15,7 +16,8 @@ import { reviewSetCardCount } from '@/services/flashcards'
 import { formatIntervalDuration, intervalDuration, intervalStepCount } from '@/services/intervals'
 import { createProgramStepCompletion } from '@/services/programStepCompletions'
 import { requestTaskReminderPermission, taskReminderSettingsAvailable } from '@/services/taskReminders'
-import { TASK_TYPE_OPTIONS, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
+import { taskSupportsQuickLog, TASK_TYPE_OPTIONS, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
+import { TASK_RETIREMENT_ACTIONS, type TaskRetirementActionId } from '@/services/taskRetirementActions'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
@@ -39,12 +41,21 @@ const form = ref()
 const saving = ref(false)
 const archiving = ref(false)
 const archiveDialog = ref(false)
+const archiveActions = ref(false)
+const deleteDialog = ref(false)
+const deleting = ref(false)
 const openStep = ref<number>()
+const referencedStepIds = ref(new Set<string>())
+const checkedStepReferenceIds = ref(new Set<string>())
+const failedStepReferenceIds = ref(new Set<string>())
 const error = ref('')
 const reminderAvailable = taskReminderSettingsAvailable()
 const stepDragIds = new WeakMap<ProgramStepDraft, string>()
 let nextStepDragId = 0
-const typeLocked = computed(() => Boolean(route.params.id))
+const duplicateTaskId = computed(() => typeof route.query.duplicate === 'string'
+  ? route.query.duplicate
+  : '')
+const typeLocked = computed(() => Boolean(route.params.id || duplicateTaskId.value))
 const isEditing = computed(() => Boolean(route.params.id))
 const completionStyleItems = computed<ProgramStepCompletionStyleItem[]>(() => [
   { type: 'subheader', title: 'Basic' },
@@ -171,6 +182,7 @@ const showTarget = computed(() =>
 const showImageLogSettings = computed(() =>
   ['duration', 'daily_total', 'step_counter', 'program'].includes(draft.type),
 )
+const showQuickLogSettings = computed(() => taskSupportsQuickLog(draft.type))
 const selectedInterval = computed(() => intervalStore.templates.find((item) => item.id === draft.intervalTemplate))
 const intervalItems = computed(() => intervalStore.templates.map((item) => ({
   title: item.name,
@@ -278,13 +290,25 @@ function setCompletionStyle(
   completion.customUnit = type === 'quantity' ? completion.customUnit : undefined
   completion.intervalTemplate = type === 'interval' ? item.sourceId : undefined
   completion.flashcardReviewSet = type === 'flashcards' ? item.sourceId : undefined
+  completion.label = type === 'quantity' ? undefined : completion.label
   syncStepCompletionProjection(step)
 }
 
-function addCompletion(step: ProgramStepDraft) {
+async function addCompletion(step: ProgramStepDraft) {
   step.completions ||= []
-  step.completions.push(createProgramStepCompletion('check'))
+  const completion = createProgramStepCompletion('check')
+  step.completions.push(completion)
   syncStepCompletionProjection(step)
+  await nextTick()
+  const completionElement = Array.from(
+    document.querySelectorAll<HTMLElement>('[data-completion-id]'),
+  ).find(element => element.dataset.completionId === completion.id)
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+  completionElement?.scrollIntoView({
+    behavior: reduceMotion ? 'auto' : 'smooth',
+    block: 'center',
+    inline: 'nearest',
+  })
 }
 
 function removeCompletion(step: ProgramStepDraft, completionId: string) {
@@ -375,23 +399,53 @@ onMounted(async () => {
     flashcardStore.loaded ? Promise.resolve() : flashcardStore.load(),
     trackingStore.loaded ? Promise.resolve() : trackingStore.load(),
   ])
-  if (!route.params.id) {
+  if (!route.params.id && !duplicateTaskId.value) {
     if (draft.type === 'program' && !draft.steps.length) addStep(false)
     return
   }
-  const task = store.tasks.find((item) => item.id === route.params.id)
+  const taskId = typeof route.params.id === 'string'
+    ? route.params.id
+    : duplicateTaskId.value
+  const task = store.tasks.find((item) => item.id === taskId)
   if (!task) {
     error.value = 'That task could not be found.'
     return
   }
+  const taskSteps = orderedProgramItems(
+    store.steps
+      .filter((step) => step.active && step.task === task.id)
+      .map(({ task: _task, ...step }) => ({ ...step })),
+    task.cycleLength || 0,
+  )
+  if (duplicateTaskId.value) {
+    Object.assign(draft, {
+      ...task,
+      id: undefined,
+      name: `${task.name} copy`,
+      archived: false,
+      weekdays: [...task.weekdays],
+      trackingTrackers: [...(task.trackingTrackers ?? [])],
+      reminderTimes: [...task.reminderTimes],
+      sortOrder: store.tasks.reduce((highest, item) => Math.max(highest, item.sortOrder), -1) + 1,
+      quickLogSortOrder: store.tasks.reduce((highest, item) => Math.max(
+        highest,
+        item.quickLogSortOrder ?? item.sortOrder,
+      ), -1) + 1,
+      steps: taskSteps.map(step => ({
+        ...step,
+        id: undefined,
+        completions: step.completions?.map(completion => ({
+          ...completion,
+          id: createProgramStepCompletion(completion.type).id,
+        })),
+      })),
+    })
+    if (task.type === 'program') syncProgramSequence()
+    return
+  }
   Object.assign(draft, {
     ...task,
-    steps: orderedProgramItems(
-      store.steps
-        .filter((step) => step.active && step.task === task.id)
-        .map(({ task: _task, ...step }) => ({ ...step })),
-      task.cycleLength || 0,
-    ),
+    steps: taskSteps,
   })
   if (task.type === 'program') syncProgramSequence()
 })
@@ -428,12 +482,59 @@ function addDayOff() {
   openStep.value = undefined
 }
 
+function duplicateStep(index: number) {
+  if (draft.steps.length >= 365) return
+  const step = draft.steps[index]
+  if (!step || step.completionType === 'day_off') return
+
+  const duplicate: ProgramStepDraft = {
+    ...step,
+    id: undefined,
+    cycleDays: [...step.cycleDays],
+    completions: step.completions?.map(completion => ({
+      ...completion,
+      id: createProgramStepCompletion(completion.type).id,
+    })),
+  }
+  draft.steps.splice(index + 1, 0, duplicate)
+  syncProgramSequence()
+  openStep.value = index + 1
+}
+
 function removeStep(index: number) {
   draft.steps.splice(index, 1)
   syncProgramSequence()
   if (openStep.value === index) openStep.value = undefined
   else if (openStep.value !== undefined && openStep.value > index) openStep.value -= 1
 }
+
+function stepWillBeArchived(step: ProgramStepDraft) {
+  return Boolean(step.id && (
+    failedStepReferenceIds.value.has(step.id)
+    || referencedStepIds.value.has(step.id)
+  ))
+}
+
+function checkingStepReferences(step: ProgramStepDraft) {
+  return Boolean(step.id && !checkedStepReferenceIds.value.has(step.id))
+}
+
+async function loadStepReferences(step: ProgramStepDraft) {
+  if (!step.id || checkedStepReferenceIds.value.has(step.id)) return
+  try {
+    if (await store.programStepHasReferences(step.id)) referencedStepIds.value.add(step.id)
+  } catch {
+    failedStepReferenceIds.value.add(step.id)
+  } finally {
+    checkedStepReferenceIds.value.add(step.id)
+  }
+}
+
+watch(openStep, (index) => {
+  if (index === undefined) return
+  const step = draft.steps[index]
+  if (step) void loadStepReferences(step)
+})
 
 function moveStep(index: number, direction: -1 | 1) {
   const targetIndex = index + direction
@@ -574,6 +675,42 @@ async function setTaskArchived() {
   }
 }
 
+function openTaskRetirementActions() {
+  if (draft.archived) {
+    archiveDialog.value = true
+    return
+  }
+  archiveActions.value = true
+}
+
+function runTaskRetirementAction(action: TaskRetirementActionId) {
+  if (archiving.value || deleting.value) return
+  if (action === 'archive') {
+    archiveActions.value = false
+    void setTaskArchived()
+    return
+  }
+  archiveActions.value = false
+  deleteDialog.value = true
+}
+
+async function deleteTaskPermanently() {
+  if (!draft.id) return
+  deleting.value = true
+  error.value = ''
+  try {
+    await store.deleteTask(draft.id)
+    deleteDialog.value = false
+    archiveActions.value = false
+    await router.replace('/tasks')
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not permanently delete the task.'
+    deleteDialog.value = false
+  } finally {
+    deleting.value = false
+  }
+}
+
 </script>
 
 <template>
@@ -619,11 +756,13 @@ async function setTaskArchived() {
           <div><strong>Review if unfinished</strong><p>Ask whether to miss, carry, or reschedule</p></div>
           <v-switch v-model="draft.reviewWhenMissed" color="secondary" hide-details inset />
         </div>
-        <v-divider />
-        <div class="setting-row">
-          <div><strong>Quick log</strong><p>Show a shortcut at the top of Tasks</p></div>
-          <v-switch v-model="draft.quickLogEnabled" color="secondary" hide-details="auto" inset />
-        </div>
+        <template v-if="showQuickLogSettings">
+          <v-divider />
+          <div class="setting-row">
+            <div><strong>Quick log</strong><p>Show a shortcut at the top of Tasks</p></div>
+            <v-switch v-model="draft.quickLogEnabled" color="secondary" hide-details="auto" inset />
+          </div>
+        </template>
         <template v-if="showImageLogSettings">
           <v-divider />
           <div class="setting-row">
@@ -980,6 +1119,18 @@ async function setTaskArchived() {
               </div>
             </v-expansion-panel-title>
             <v-expansion-panel-text v-if="step.completionType !== 'day_off'">
+              <v-alert
+                v-if="stepWillBeArchived(step)"
+                type="info"
+                variant="tonal"
+                density="compact"
+                icon="mdi-archive-outline"
+                class="mt-2 mb-4"
+              >
+                {{ step.id && failedStepReferenceIds.has(step.id)
+                  ? 'History could not be checked, so this step will be archived to protect any logs.'
+                  : 'This step has history. It will be archived so its logs stay linked.' }}
+              </v-alert>
               <div class="field-stack mt-2 mb-4">
                 <v-text-field
                   v-model="step.name"
@@ -1011,14 +1162,13 @@ async function setTaskArchived() {
                     v-long-press-drag="{
                       id: completion.id,
                       group: `program-step-completions-${stepDragId(step)}`,
-                      handle: '.completion-requirement__drag-handle',
                       disabled: (step.completions?.length || 0) < 2,
                       onDrop: completionDropHandler(step),
                     }"
                     class="completion-requirement"
+                    :data-completion-id="completion.id"
                   >
-                    <div class="completion-requirement__drag-handle">
-                      <v-icon icon="mdi-drag" size="20" color="medium-emphasis" />
+                    <div class="completion-requirement__header">
                       <strong>Requirement {{ completionIndex + 1 }}</strong>
                       <v-btn
                         icon="mdi-delete-outline"
@@ -1063,11 +1213,22 @@ async function setTaskArchived() {
                         </span>
                       </template>
                     </v-select>
+                    <v-row v-if="completion.type !== 'quantity'" no-gutters class="mt-4">
+                      <v-col cols="12">
+                        <v-text-field
+                          v-model="completion.label"
+                          label="Requirement label (optional)"
+                          placeholder="e.g. Warm-up"
+                          maxlength="160"
+                          autocomplete="off"
+                        />
+                      </v-col>
+                    </v-row>
                     <div v-if="completion.type === 'check'" class="completion-check-summary">
                       <v-icon icon="mdi-check-circle-outline" color="secondary" />
                       <span>A separate check-off is required.</span>
                     </div>
-                    <div v-if="completion.type === 'quantity'" class="target-grid">
+                    <div v-if="completion.type === 'quantity'" class="target-grid mt-4">
                       <v-number-input
                         v-model="completion.targetValue"
                         label="Target"
@@ -1084,12 +1245,25 @@ async function setTaskArchived() {
               <v-btn
                 block
                 class="mt-3"
-                color="error"
                 variant="tonal"
-                prepend-icon="mdi-delete-outline"
+                prepend-icon="mdi-content-copy"
+                :disabled="draft.steps.length >= 365"
+                @click="duplicateStep(index)"
+              >
+                Duplicate step
+              </v-btn>
+              <v-btn
+                block
+                class="mt-2"
+                :color="stepWillBeArchived(step) ? 'warning' : 'error'"
+                variant="tonal"
+                :prepend-icon="stepWillBeArchived(step) ? 'mdi-archive-outline' : 'mdi-delete-outline'"
+                :disabled="checkingStepReferences(step)"
                 @click="removeStep(index)"
               >
-                Remove step
+                {{ checkingStepReferences(step)
+                  ? 'Checking history…'
+                  : stepWillBeArchived(step) ? 'Archive step' : 'Delete step' }}
               </v-btn>
             </v-expansion-panel-text>
           </v-expansion-panel>
@@ -1102,24 +1276,54 @@ async function setTaskArchived() {
       :loading="saving"
       :show-archive="isEditing"
       :archived="draft.archived"
-      :archive-label="draft.archived ? 'Restore routine' : 'Archive routine'"
-      :archive-disabled="archiving"
+      :archive-label="draft.archived ? 'Restore task' : 'Archive task'"
+      :archive-disabled="archiving || deleting"
       @submit="save"
       @cancel="router.back()"
-      @archive="archiveDialog = true"
+      @archive="openTaskRetirementActions"
     />
+
+    <ActionBottomSheet
+      v-model="archiveActions"
+      title="Archive or delete?"
+      :description="`Choose what to do with ${draft.name || 'this task'}.`"
+      aria-label="Archive or permanently delete task"
+    >
+      <template v-for="action in TASK_RETIREMENT_ACTIONS" :key="action.id">
+        <v-divider v-if="'divider' in action && action.divider" class="my-1" />
+        <v-list-item
+          :prepend-icon="action.icon"
+          :title="action.title"
+          :subtitle="action.subtitle"
+          :base-color="action.color"
+          rounded="lg"
+          :disabled="archiving || deleting"
+          @click="runTaskRetirementAction(action.id)"
+        />
+      </template>
+    </ActionBottomSheet>
 
     <ConfirmDialog
       v-model="archiveDialog"
-      :title="draft.archived ? 'Restore this routine?' : 'Archive this routine?'"
+      :title="draft.archived ? 'Restore this task?' : 'Archive this task?'"
       :message="draft.archived
-        ? 'This routine will return to the Tasks view with its previous active or paused state.'
-        : 'This routine will leave your schedule, while its settings, logged entries, and history remain available.'"
-      :confirm-text="draft.archived ? 'Restore routine' : 'Archive routine'"
+        ? 'This task will return to the Tasks view with its previous active or paused state.'
+        : 'This task will leave your schedule, while its settings, logged entries, and history remain available.'"
+      :confirm-text="draft.archived ? 'Restore task' : 'Archive task'"
       :confirm-color="draft.archived ? 'secondary' : 'warning'"
       :icon="draft.archived ? 'mdi-archive-arrow-up-outline' : 'mdi-archive-arrow-down-outline'"
       :loading="archiving"
       @confirm="setTaskArchived"
+    />
+
+    <ConfirmDialog
+      v-model="deleteDialog"
+      title="Delete this task permanently?"
+      message="This permanently removes the task, its program steps, occurrences, entries, and image logs. Saved interval and Review sessions remain in history but will no longer be linked. This cannot be undone."
+      confirm-text="Delete permanently"
+      icon="mdi-delete-forever-outline"
+      :loading="deleting"
+      @confirm="deleteTaskPermanently"
     />
   </main>
 </template>
@@ -1163,10 +1367,10 @@ async function setTaskArchived() {
 .step-panels :deep(.program-step-panel--draggable .program-step__drag-handle) { cursor: grab; }
 .step-panels :deep(.program-step-panel--day-off) { background: rgb(var(--v-theme-background)); }
 .completion-requirement-list { display: grid; }
-.completion-requirement { display: grid; padding: 0 1rem .5rem; border: .0625rem solid rgb(var(--v-theme-on-surface) / .1); border-radius: 1rem; background: rgb(var(--v-theme-background) / .6); }
+.completion-requirement { display: grid; padding: 0 1rem .5rem; border: .0625rem solid rgb(var(--v-theme-on-surface) / .1); border-radius: 1rem; background: rgb(var(--v-theme-background) / .6); cursor: grab; }
 .completion-requirement .target-grid { grid-template-columns: 1fr; }
-.completion-requirement__drag-handle { display: flex; min-height: 2.75rem; align-items: center; gap: .65rem; cursor: grab; }
-.completion-requirement__drag-handle strong { min-width: 0; flex: 1 1 auto; font-size: .78rem; }
+.completion-requirement__header { display: flex; min-height: 2.75rem; align-items: center; gap: .65rem; }
+.completion-requirement__header strong { min-width: 0; flex: 1 1 auto; font-size: .78rem; }
 .completion-check-summary { display: flex; min-height: 2.75rem; align-items: center; gap: .65rem; color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; }
 .completion-style-icon { display: grid; width: 2.125rem; height: 2.125rem; flex: 0 0 auto; place-items: center; border-radius: .6875rem; color: #17200f; }
 .completion-style-selection { display: inline-flex; min-width: 0; align-items: center; gap: .5rem; }

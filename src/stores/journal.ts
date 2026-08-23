@@ -187,6 +187,7 @@ export const useJournalStore = defineStore('journal', () => {
         record = await api.removeJournalImage(record.id)
       }
       Object.assign(entry, mapJournalEntry(record))
+      useSnackbarStore().showSaved('Reflection', entry.title || entry.body)
       return entry
     } catch (cause) {
       const optimisticIndex = entries.value.indexOf(entry)

@@ -78,6 +78,8 @@ function mapReviewSet(record: Record<string, any>): FlashcardReviewSet {
     id: record.id,
     name: record.name,
     tags: Array.isArray(record.tags) ? record.tags : [],
+    selectionMode: record.selection_mode === 'cards' ? 'cards' : 'tags',
+    includedCards: Array.isArray(record.included_cards) ? record.included_cards : [],
     tagDetails: Array.isArray(record.tag_details) ? record.tag_details.map(mapTag) : [],
     owner: record.owner || api.authStore.record?.id || '',
     ownerName: record.owner_name || api.authStore.record?.name || '',
@@ -412,7 +414,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           ? await api.updateFlashcardAudio(record.id, side, value.recording)
           : await api.removeFlashcardAudio(record.id, side)
       }
-      return cacheCard(mapCard(record), !draft.id)
+      const card = cacheCard(mapCard(record), !draft.id)
+      useSnackbarStore().showSaved('Card', card.front)
+      return card
     } catch (cause) {
       cards.value = cards.value.filter(card => card !== optimisticCard)
       if (existing) cacheCard(existing)
@@ -500,6 +504,11 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     }
     const selectedIds = new Set(uniqueCardIds)
     const previousCards = cards.value.map(card => ({ ...card, tags: [...card.tags] }))
+    const reviewSetSnapshots = reviewSets.value.map(reviewSet => ({
+      reviewSet,
+      includedCards: [...(reviewSet.includedCards || [])],
+      matchingCardCount: reviewSet.matchingCardCount,
+    }))
     const sessionSnapshots = sessions.value.map(session => ({
       session,
       queue: session.queue.map(card => ({ ...card, tags: [...card.tags] })),
@@ -514,6 +523,10 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     }
     if (action === 'delete') {
       cards.value = cards.value.filter(card => !selectedIds.has(card.id))
+      reviewSets.value.filter(set => set.selectionMode === 'cards').forEach((reviewSet) => {
+        reviewSet.includedCards = (reviewSet.includedCards || []).filter(id => !selectedIds.has(id))
+        reviewSet.matchingCardCount = reviewSet.includedCards.length
+      })
     } else {
       cards.value.filter(card => selectedIds.has(card.id)).forEach((card) => {
         if (action === 'set_tags') card.tags = [...uniqueValues]
@@ -531,6 +544,11 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       if (action === 'delete') {
         const deleted = new Set(response.deleted_ids)
         cards.value = previousCards.filter(card => !deleted.has(card.id))
+        reviewSetSnapshots.forEach(({ reviewSet, includedCards }) => {
+          if (reviewSet.selectionMode !== 'cards') return
+          reviewSet.includedCards = includedCards.filter(id => !deleted.has(id))
+          reviewSet.matchingCardCount = reviewSet.includedCards.length
+        })
         useSnackbarStore().showDeletion(deleted.size === 1 ? 'Card' : `${deleted.size} cards`)
         return []
       }
@@ -540,6 +558,10 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       return updatedCards
     } catch (cause) {
       cards.value = previousCards
+      reviewSetSnapshots.forEach(({ reviewSet, includedCards, matchingCardCount }) => {
+        reviewSet.includedCards = includedCards
+        reviewSet.matchingCardCount = matchingCardCount
+      })
       sessionSnapshots.forEach(({ session, queue, totalCards }) => {
         session.queue = queue
         session.totalCards = totalCards
@@ -553,6 +575,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       owner: api.authStore.record!.id,
       name: draft.name,
       tags: draft.tags,
+      selection_mode: draft.selectionMode || 'tags',
+      included_cards: draft.includedCards || [],
       mode: draft.mode,
       card_sides: draft.cardSides,
       indefinite: draft.mode === 'passive' && draft.indefinite,
@@ -590,11 +614,90 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         : await api.collection('flashcard_review_sets').create(payload)
       const accessibleRecords = await api.getAccessibleFlashcardReviewSets()
       reviewSets.value = accessibleRecords.map(mapReviewSet)
-      return reviewSets.value.find(item => item.id === record.id) || mapReviewSet(record)
+      const savedReviewSet = reviewSets.value.find(item => item.id === record.id) || mapReviewSet(record)
+      useSnackbarStore().showSaved('Review set', savedReviewSet.name)
+      return savedReviewSet
     } catch (cause) {
       const optimisticIndex = reviewSets.value.indexOf(reviewSet)
       if (previous && optimisticIndex >= 0) reviewSets.value.splice(optimisticIndex, 1, previous)
       else if (optimisticIndex >= 0) reviewSets.value.splice(optimisticIndex, 1)
+      throw cause
+    }
+  }
+
+  async function createReviewSetFromCards(
+    cardIds: string[],
+    destination:
+      | { type: 'new'; name: string; maxCards?: number }
+      | { type: 'existing'; reviewSetId: string },
+  ) {
+    const selected = [...new Set(cardIds)]
+    if (!selected.length) throw new Error('Select at least one card.')
+    const ownedCardIds = new Set(cards.value.map(card => card.id))
+    if (selected.some(id => !ownedCardIds.has(id))) {
+      throw new Error('Only cards from your library can be added to your Review sets.')
+    }
+
+    if (destination.type === 'new') {
+      const name = destination.name.trim()
+      if (!name) throw new Error('Review set name is required.')
+      return saveReviewSet({
+        name,
+        tags: [],
+        selectionMode: 'cards',
+        includedCards: selected,
+        excludedCards: [],
+        mode: 'manual',
+        cardSides: DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
+        indefinite: false,
+        timeLimitSeconds: 0,
+        maxCards: destination.maxCards || DEFAULT_FLASHCARD_SESSION_CARDS,
+        ejectBehavior: 'replace',
+        frontSeconds: 5,
+        backSeconds: 5,
+        backSpeechRepeatCount: DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
+        noteBeforeBack: false,
+        speechEnabled: false,
+        frontLanguage: '',
+        backLanguage: '',
+        sortMode: 'difficult',
+        sortDirection: 'asc',
+        sortOrder: reviewSets.value.filter(set => set.accessRole === 'owner').length,
+      })
+    }
+
+    const index = reviewSets.value.findIndex(set => (
+      set.id === destination.reviewSetId
+      && set.accessRole === 'owner'
+    ))
+    if (index < 0) throw new Error('Choose one of your Review sets.')
+    const reviewSet = reviewSets.value[index]!
+    const previous = {
+      ...reviewSet,
+      tags: [...reviewSet.tags],
+      includedCards: [...(reviewSet.includedCards || [])],
+    }
+    const currentCards = reviewSet.selectionMode === 'cards'
+      ? reviewSet.includedCards || []
+      : cards.value.filter(card => cardMatchesReviewSet(card, reviewSet)).map(card => card.id)
+    reviewSet.selectionMode = 'cards'
+    reviewSet.includedCards = [...new Set([...currentCards, ...selected])]
+    reviewSet.tags = []
+    reviewSet.tagDetails = []
+    reviewSet.matchingCardCount = reviewSet.includedCards.length
+    try {
+      await api.collection('flashcard_review_sets').update(reviewSet.id, {
+        selection_mode: 'cards',
+        included_cards: reviewSet.includedCards,
+        tags: [],
+      })
+      const accessibleRecords = await api.getAccessibleFlashcardReviewSets()
+      reviewSets.value = accessibleRecords.map(mapReviewSet)
+      const saved = reviewSets.value.find(set => set.id === reviewSet.id) || reviewSet
+      useSnackbarStore().showSaved('Review set', saved.name)
+      return saved
+    } catch (cause) {
+      reviewSets.value.splice(index, 1, previous)
       throw cause
     }
   }
@@ -681,7 +784,15 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       [reviewSetId]: [...importedCards, ...current],
     }
     const reviewSet = reviewSets.value.find(item => item.id === reviewSetId)
-    if (reviewSet) reviewSet.matchingCardCount = current.length + importedCards.length
+    if (reviewSet?.selectionMode === 'cards') {
+      reviewSet.includedCards = [...new Set([
+        ...(reviewSet.includedCards || []),
+        ...importedCards.map(card => card.id),
+      ])]
+    }
+    if (reviewSet) reviewSet.matchingCardCount = reviewSet.selectionMode === 'cards'
+      ? (reviewSet.includedCards || []).length
+      : current.length + importedCards.length
     if (reviewSet?.owner === api.authStore.record?.id) cards.value.unshift(...importedCards)
     return importedCards
   }
@@ -699,17 +810,28 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     const previousCards = cards.value
     const reviewSet = reviewSets.value.find(item => item.id === reviewSetId)
     const previousCount = reviewSet?.matchingCardCount
+    const previousIncludedCards = [...(reviewSet?.includedCards || [])]
     const next = previousReviewSetCards.filter(card => !deleted.has(card.id))
     reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: next }
     cards.value = cards.value.filter(card => !deleted.has(card.id))
-    if (reviewSet) reviewSet.matchingCardCount = next.length
+    if (reviewSet?.selectionMode === 'cards') {
+      reviewSet.includedCards = previousIncludedCards.filter(id => !deleted.has(id))
+    }
+    if (reviewSet) reviewSet.matchingCardCount = reviewSet.selectionMode === 'cards'
+      ? (reviewSet.includedCards || []).length
+      : next.length
     try {
       const response = await api.bulkUpdateFlashcardReviewSetCards(reviewSetId, uniqueCardIds)
       const persistedDeleted = new Set(response.deleted_ids)
       const persistedNext = previousReviewSetCards.filter(card => !persistedDeleted.has(card.id))
       reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: persistedNext }
       cards.value = previousCards.filter(card => !persistedDeleted.has(card.id))
-      if (reviewSet) reviewSet.matchingCardCount = persistedNext.length
+      if (reviewSet?.selectionMode === 'cards') {
+        reviewSet.includedCards = previousIncludedCards.filter(id => !persistedDeleted.has(id))
+      }
+      if (reviewSet) reviewSet.matchingCardCount = reviewSet.selectionMode === 'cards'
+        ? (reviewSet.includedCards || []).length
+        : persistedNext.length
       useSnackbarStore().showDeletion(
         persistedDeleted.size === 1 ? 'Card' : `${persistedDeleted.size} cards`,
       )
@@ -717,6 +839,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     } catch (cause) {
       reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: previousReviewSetCards }
       cards.value = previousCards
+      if (reviewSet) reviewSet.includedCards = previousIncludedCards
       if (reviewSet && previousCount !== undefined) reviewSet.matchingCardCount = previousCount
       throw cause
     }
@@ -806,12 +929,18 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       else next.unshift(card)
       reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: next }
       const reviewSet = reviewSets.value.find(item => item.id === reviewSetId)
-      if (reviewSet) reviewSet.matchingCardCount = next.length
+      if (reviewSet?.selectionMode === 'cards' && !reviewSet.includedCards?.includes(card.id)) {
+        reviewSet.includedCards = [...(reviewSet.includedCards || []), card.id]
+      }
+      if (reviewSet) reviewSet.matchingCardCount = reviewSet.selectionMode === 'cards'
+        ? (reviewSet.includedCards || []).length
+        : next.length
       if (reviewSet?.owner === api.authStore.record?.id) {
         const cardIndex = cards.value.findIndex(item => item.id === card.id)
         if (cardIndex >= 0) cards.value.splice(cardIndex, 1, card)
         else cards.value.unshift(card)
       }
+      useSnackbarStore().showSaved('Card', card.front)
       return card
     } catch (cause) {
       reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: previousReviewSetCards }
@@ -829,15 +958,22 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     const previousCards = cards.value
     const reviewSet = reviewSets.value.find(item => item.id === reviewSetId)
     const previousCount = reviewSet?.matchingCardCount
+    const previousIncludedCards = [...(reviewSet?.includedCards || [])]
     const next = (reviewSetCards.value[reviewSetId] || []).filter(card => card.id !== cardId)
     reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: next }
     cards.value = cards.value.filter(card => card.id !== cardId)
-    if (reviewSet) reviewSet.matchingCardCount = next.length
+    if (reviewSet?.selectionMode === 'cards') {
+      reviewSet.includedCards = (reviewSet.includedCards || []).filter(id => id !== cardId)
+    }
+    if (reviewSet) reviewSet.matchingCardCount = reviewSet.selectionMode === 'cards'
+      ? (reviewSet.includedCards || []).length
+      : next.length
     try {
       await api.deleteFlashcardReviewSetCard(reviewSetId, cardId)
     } catch (cause) {
       reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: previousReviewSetCards }
       cards.value = previousCards
+      if (reviewSet) reviewSet.includedCards = previousIncludedCards
       if (reviewSet && previousCount !== undefined) reviewSet.matchingCardCount = previousCount
       throw cause
     }
@@ -1194,6 +1330,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       const index = sessions.value.findIndex(item => item.id === session.id)
       if (index >= 0) sessions.value.splice(index, 1, session)
       else sessions.value.unshift(session)
+      useSnackbarStore().showSaved('Review session', session.name)
       return session
     } catch (cause) {
       if (current && previous) Object.assign(current, previous)
@@ -1456,6 +1593,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     importCards,
     bulkUpdateCards,
     saveReviewSet,
+    createReviewSetFromCards,
     saveReviewSetPreferences,
     reorderReviewSets,
     deleteReviewSet,

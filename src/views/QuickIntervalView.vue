@@ -8,8 +8,13 @@ import {
   endSelectionFeedback,
   startSelectionFeedback,
 } from '@/services/haptics'
-import { prepareIntervalCues } from '@/services/intervalCues'
-import { formatIntervalDuration, intervalDuration, quickIntervalDefinition } from '@/services/intervals'
+import { playIntervalGoCue, prepareIntervalCues } from '@/services/intervalCues'
+import {
+  formatIntervalDuration,
+  intervalDuration,
+  quickIntervalDefinition,
+  resolveIntervalStep,
+} from '@/services/intervals'
 import { useIntervalStore } from '@/stores/intervals'
 import type { QuickIntervalDraft, QuickIntervalSettings } from '@/types/domain'
 
@@ -82,6 +87,10 @@ async function start() {
       definition: definition.value,
       cues: draft.cues,
     })
+    const firstStep = resolveIntervalStep(session.definition, session.runtime.stepIndex)?.step
+    if (session.status === 'running' && firstStep) {
+      playIntervalGoCue(session.cues, firstStep.kind, firstStep.name)
+    }
     await router.push(`/intervals/run/${session.id}`)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not start the interval.'

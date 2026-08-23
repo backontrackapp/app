@@ -68,7 +68,7 @@ async function saveProfile() {
   try {
     await auth.updateName(name.value.trim())
     name.value = auth.user?.name || name.value.trim()
-    showNotice('success', 'Your name has been updated.')
+    showNotice('success', `Profile “${name.value}” saved.`)
   } catch {
     showNotice('error', auth.error || 'Your name could not be updated.')
   }
@@ -79,7 +79,7 @@ async function savePassword() {
   if (!result?.valid || !passwordChangeReady.value) return
 
   try {
-    const response = await auth.changePassword(currentPassword.value, newPassword.value)
+    await auth.changePassword(currentPassword.value, newPassword.value)
     currentPassword.value = ''
     newPassword.value = ''
     passwordConfirm.value = ''
@@ -87,7 +87,7 @@ async function savePassword() {
     newPasswordVisible.value = false
     passwordConfirmVisible.value = false
     passwordForm.value?.resetValidation()
-    showNotice('success', response.message)
+    showNotice('success', `Password for “${auth.user?.name || auth.user?.email || 'your account'}” saved.`)
   } catch {
     showNotice('error', auth.error || 'Your password could not be changed.')
   }

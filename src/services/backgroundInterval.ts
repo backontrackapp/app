@@ -54,7 +54,7 @@ interface BackgroundIntervalPlugin {
   stop(): Promise<void>
 }
 
-export type NativeIntervalCueName = Exclude<IntervalCueSound, 'none'> | 'eject'
+export type NativeIntervalCueName = Exclude<IntervalCueSound, 'none' | 'speech'> | 'eject'
 const BackgroundInterval = registerPlugin<BackgroundIntervalPlugin>('BackgroundInterval')
 const MAX_NATIVE_STEPS = 10_000
 let nativeBackgroundIntervalActive = false

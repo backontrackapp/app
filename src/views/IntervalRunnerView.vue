@@ -77,6 +77,7 @@ import { toDateKey } from '@/services/schedule'
 import { intervalRunnerSessionMenuItems } from '@/services/runnerSessionActions'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
+import { showSavedSnackbar } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
 import type {
   Flashcard,
@@ -393,7 +394,7 @@ const attachedProgressCandidates = computed(() => {
   return [...taskProgress, ...stepProgress]
 })
 const eligibleTaskProgress = computed(() => {
-  const today = new Date()
+  const taskDate = originTaskId.value ? parseISO(originTaskDate.value) : new Date()
   return attachedProgressCandidates.value
     .filter((item) => (item.status === 'pending' || item.status === 'missed')
       && !item.complete
@@ -409,8 +410,8 @@ const eligibleTaskProgress = computed(() => {
       && !item.task.archived
       && (Boolean(item.occurrence)
         || (item.programStep
-          ? taskStore.stepsForTaskDate(item.task, today).some((step) => step.id === item.programStep?.id)
-          : taskStore.taskIsScheduledForDate(item.task, today))))
+          ? taskStore.stepsForTaskDate(item.task, taskDate).some((step) => step.id === item.programStep?.id)
+          : taskStore.taskIsScheduledForDate(item.task, taskDate))))
 })
 function intervalCompletionId(progress: TaskProgress) {
   if (!progress.programStep) return undefined
@@ -538,7 +539,7 @@ onMounted(async () => {
           && !completion.complete
         )))
       )) {
-        error.value = 'This interval task or program step is not open today.'
+        error.value = 'This interval task or program step is not open for the selected date.'
         return
       }
     }
@@ -747,6 +748,7 @@ async function saveIntervalSettings(target: IntervalSettingsApplyTarget) {
       if (flashcardReviewSet !== currentReviewSet) {
         await store.updateSessionFlashcardReview(item.id, flashcardReview)
       }
+      showSavedSnackbar('Interval session', item.name)
       displayRemainingMs.value = updated.runtime.remainingMs
       lastCountCue = ''
       lastSpokenFlashcardKey = ''
@@ -780,6 +782,13 @@ function reconciled(item: IntervalSession) {
   return item.status === 'running'
     ? reconcileIntervalRuntime(item.definition, item.runtime)
     : { runtime: { ...item.runtime }, completed: false, transitions: 0 }
+}
+
+function playCurrentStepCue(item: IntervalSession) {
+  if (item.status !== 'running') return
+  const step = resolveIntervalStep(item.definition, item.runtime.stepIndex)?.step
+  if (!step) return
+  playIntervalGoCue(item.cues, step.kind, step.name)
 }
 
 async function syncNativeTimer(item: IntervalSession) {
@@ -866,9 +875,11 @@ async function tick() {
       return
     }
     if (!suppressCues) {
+      const nextStep = resolveIntervalStep(item.definition, result.runtime.stepIndex)?.step
       playIntervalGoCue(
         item.cues,
-        resolveIntervalStep(item.definition, result.runtime.stepIndex)?.step.kind,
+        nextStep?.kind,
+        nextStep?.name,
       )
     }
     const updated = await store.updateSession(item.id, {
@@ -1090,6 +1101,7 @@ async function startTemplate(
       activeSessionSheet.value = true
       return
     }
+    playCurrentStepCue(started)
     attributionSheet.value = false
     repetitionDialog.value = false
     repetitionDefinition.value = undefined
@@ -1184,7 +1196,7 @@ async function advanceCurrent(item: IntervalSession) {
     displayRemainingMs.value = runtime.remainingMs
     lastCountCue = ''
     if (updated.status === 'running') await syncNativeTimer(updated)
-    playIntervalGoCue(item.cues, nextStep.step.kind)
+    playIntervalGoCue(item.cues, nextStep.step.kind, nextStep.step.name)
   } finally {
     syncing.value = false
   }
@@ -1228,6 +1240,7 @@ async function previous() {
   displayRemainingMs.value = runtime.remainingMs
   lastCountCue = ''
   if (updated.status === 'running') await syncNativeTimer(updated)
+  playIntervalGoCue(item.cues, previousStep.step.kind, previousStep.step.name)
 }
 
 async function restart() {
@@ -1620,14 +1633,14 @@ async function ejectIntervalFlashcard() {
     }
     if (flashcardEjectExcludes(review.ejectBehavior)) {
       if (!reviewSet) throw new Error('The Review set for this session is no longer available.')
-      await flashcardStore.saveReviewSetPreferences(reviewSet.id, {
-        ...reviewSet,
-        excludedCards: updateFlashcardReviewExclusions(
-          previousExcludedCards,
-          'exclude',
-          [cardId],
-        ),
-      })
+        await flashcardStore.saveReviewSetPreferences(reviewSet.id, {
+          ...reviewSet,
+          excludedCards: updateFlashcardReviewExclusions(
+            previousExcludedCards,
+            'exclude',
+            [cardId],
+          ),
+        })
     }
     await updateFlashcardSnapshot({
       ...review,
@@ -1757,6 +1770,7 @@ async function saveFlashcardSettings(target: FlashcardSettingsApplyTarget = 'ses
         await flashcardStore.saveReviewSet(settings)
       } else {
         await flashcardStore.saveReviewSetPreferences(context.reviewSet.id, settings)
+        showSavedSnackbar('Review set', context.reviewSet.name)
       }
     }
 
@@ -1775,6 +1789,7 @@ async function saveFlashcardSettings(target: FlashcardSettingsApplyTarget = 'ses
             }
           : {}),
       })
+      showSavedSnackbar('Review session', context.reviewSet.name)
     }
     await closeFlashcardSettings()
   } catch (cause) {
@@ -1852,6 +1867,7 @@ async function runAgain(repetitions?: number) {
       template: item.template,
       flashcardReview,
     })
+    playCurrentStepCue(nextSession)
     repetitionDialog.value = false
     repetitionDefinition.value = undefined
     pendingRepetitionStart.value = undefined
@@ -2546,7 +2562,7 @@ async function runAgain(repetitions?: number) {
       aria-label="Choose an interval task or standalone run"
     >
       <p class="text-body-2 muted px-4 pb-3">Choose one open task for today, or run the interval on its own.</p>
-      <p v-if="!eligibleTaskProgress.length" class="text-caption muted px-4 pb-2">No attached tasks are open today.</p>
+      <p v-if="!eligibleTaskProgress.length" class="text-caption muted px-4 pb-2">No attached tasks are open for this date.</p>
       <v-list-item
         v-for="item in eligibleTaskProgress"
         :key="`${item.task.id}-${item.programStep?.id || ''}`"

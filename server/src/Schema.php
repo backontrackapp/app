@@ -65,6 +65,8 @@ final class Schema
                 'fields' => [
                     'name' => self::text(160, true),
                     'tags' => self::jsonArray(5000),
+                    'selection_mode' => self::choice(['tags', 'cards'], true),
+                    'included_cards' => self::jsonArray(200000),
                     'excluded_cards' => self::jsonArray(200000),
                     'mode' => self::choice(['manual', 'passive'], true),
                     'card_sides' => self::choice(['both', 'front', 'back'], true),

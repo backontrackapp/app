@@ -24,6 +24,9 @@ final class Config
         public readonly string $mailEncryption,
         public readonly string $mailFromAddress,
         public readonly string $mailFromName,
+        public readonly string $openAiApiKey,
+        public readonly string $openAiBaseUrl,
+        public readonly string $openAiModel,
         public readonly bool $debug,
     ) {
     }
@@ -87,6 +90,12 @@ final class Config
         }
         $mailFromAddress = strtolower(trim((string) $value('BACKONTRACK_MAIL_FROM_ADDRESS', '')));
         $mailFromName = trim((string) $value('BACKONTRACK_MAIL_FROM_NAME', 'BackOnTrack'));
+        $openAiApiKey = trim((string) $value('BACKONTRACK_OPENAI_API_KEY', ''));
+        $openAiBaseUrl = rtrim(trim((string) $value(
+            'BACKONTRACK_OPENAI_BASE_URL',
+            'https://api.openai.com/v1',
+        )), '/');
+        $openAiModel = trim((string) $value('BACKONTRACK_OPENAI_MODEL', 'gpt-5.6-terra'));
         $debug = strtolower(trim((string) $value('DEBUG', ''))) === 'dev';
 
         if ($secret === '' || strlen($secret) < 32) {
@@ -184,6 +193,24 @@ final class Config
         if (strlen($mailFromName) > 160) {
             throw new ApiException(500, 'BACKONTRACK_MAIL_FROM_NAME is too long.');
         }
+        $openAiUrl = parse_url($openAiBaseUrl);
+        $openAiHost = is_array($openAiUrl) ? strtolower((string) ($openAiUrl['host'] ?? '')) : '';
+        $openAiScheme = is_array($openAiUrl) ? strtolower((string) ($openAiUrl['scheme'] ?? '')) : '';
+        if (
+            !is_array($openAiUrl)
+            || $openAiHost === ''
+            || !in_array($openAiScheme, ['http', 'https'], true)
+            || ($openAiScheme !== 'https' && !in_array($openAiHost, ['127.0.0.1', 'localhost'], true))
+            || isset($openAiUrl['user'])
+            || isset($openAiUrl['pass'])
+            || isset($openAiUrl['query'])
+            || isset($openAiUrl['fragment'])
+        ) {
+            throw new ApiException(500, 'BACKONTRACK_OPENAI_BASE_URL must be an HTTPS API URL.');
+        }
+        if ($openAiModel === '' || strlen($openAiModel) > 100) {
+            throw new ApiException(500, 'BACKONTRACK_OPENAI_MODEL is invalid.');
+        }
         return new self(
             $databasePath,
             $secret,
@@ -202,6 +229,9 @@ final class Config
             $mailEncryption,
             $mailFromAddress,
             $mailFromName,
+            $openAiApiKey,
+            $openAiBaseUrl,
+            $openAiModel,
             $debug,
         );
     }

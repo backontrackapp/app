@@ -14,6 +14,7 @@ import {
 import { dailyTotalCompletionPercent, isTaskScheduled, meetsTarget, programCycleDay, progressPercent, stepsForDate, toDateKey } from '@/services/schedule'
 import { taskNeedsReview } from '@/services/taskCardActions'
 import { reconcileTaskReminders } from '@/services/taskReminders'
+import { taskSupportsQuickLog } from '@/services/taskTypes'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useJournalStore } from '@/stores/journal'
 import { useTrackingStore } from '@/stores/tracking'
@@ -68,7 +69,7 @@ function mapTask(record: Record<string, any>): Task {
     cycleLength: record.cycle_length || undefined,
     programRepeat: record.program_repeat,
     programStrict: record.program_strict,
-    quickLogEnabled: record.quick_log_enabled === true,
+    quickLogEnabled: taskSupportsQuickLog(record.type) && record.quick_log_enabled === true,
     quickLogSortOrder: Number(record.quick_log_sort_order || 0),
     logWithImagesEnabled: record.log_with_images_enabled === true,
     sortOrder: record.sort_order || 0,
@@ -495,6 +496,23 @@ export const useTaskStore = defineStore('tasks', () => {
     const result: TaskProgress[] = []
     const includedStatusKeys = new Set<string>()
     const dateKey = toDateKey(date)
+    const dateOccurrences = occurrenceIndex.value.byDate.get(dateKey) || []
+    const anchoredProgramTasks = new Set(dateOccurrences.flatMap((occurrence) => {
+      if (!occurrence.programStep) return []
+      const statusKey = occurrenceStatusKey(
+        occurrence.task,
+        dateKey,
+        occurrence.programStep,
+      )
+      const effectiveStatus = optimisticOccurrencePatches.value[statusKey]?.status
+        ?? occurrence.status
+      const hasActivity = Boolean(
+        occurrence.sealed
+        || Object.values(occurrence.completionState || {}).some(Boolean)
+        || taskEntryIndex.value.get(statusKey)?.length,
+      )
+      return effectiveStatus !== 'pending' || hasActivity ? [occurrence.task] : []
+    }))
     for (const task of activeTasks.value) {
       if (!taskIsScheduledForDate(task, date)) continue
       if (task.type !== 'program') {
@@ -503,11 +521,16 @@ export const useTaskStore = defineStore('tasks', () => {
         continue
       }
       for (const step of stepsForTaskDate(task, date)) {
+        const statusKey = occurrenceStatusKey(task.id, dateKey, step.id)
+        if (
+          anchoredProgramTasks.has(task.id)
+          && !occurrenceIndex.value.byStatusKey.has(statusKey)
+        ) continue
         result.push(makeProgress(task, date, step))
-        includedStatusKeys.add(occurrenceStatusKey(task.id, dateKey, step.id))
+        includedStatusKeys.add(statusKey)
       }
     }
-    for (const occurrence of occurrenceIndex.value.byDate.get(dateKey) || []) {
+    for (const occurrence of dateOccurrences) {
       const statusKey = occurrenceStatusKey(occurrence.task, dateKey, occurrence.programStep)
       if (includedStatusKeys.has(statusKey)) continue
       includedStatusKeys.add(statusKey)
@@ -1497,7 +1520,7 @@ export const useTaskStore = defineStore('tasks', () => {
       cycle_length: draft.type === 'program' ? draft.steps.length : draft.cycleLength || 0,
       program_repeat: draft.programRepeat ?? true,
       program_strict: draft.programStrict ?? false,
-      quick_log_enabled: draft.quickLogEnabled === true,
+      quick_log_enabled: taskSupportsQuickLog(draft.type) && draft.quickLogEnabled === true,
       quick_log_sort_order: quickLogSortOrder,
       log_with_images_enabled: draft.logWithImagesEnabled,
       sort_order: sortOrder,
@@ -1548,10 +1571,32 @@ export const useTaskStore = defineStore('tasks', () => {
       })
       steps.value = [
         ...steps.value.filter(step => step.task !== optimisticTask.id),
+        ...steps.value.filter(step => step.task === optimisticTask.id && !step.active),
         ...optimisticSteps,
       ]
     }
     try {
+      const existingSteps = draft.id && draft.type === 'program'
+        ? previousSteps.filter(step => step.active && step.task === draft.id)
+        : []
+      const retainedStepIds = new Set(draft.steps.map(step => step.id).filter(Boolean))
+      const removedSteps = existingSteps.filter(step => !retainedStepIds.has(step.id))
+      const referencedStepIds = new Set<string>()
+      if (removedSteps.length) {
+        const referenceChecks = await Promise.all(removedSteps.map(async step => ({
+          id: step.id,
+          referenced: await programStepHasReferences(step.id),
+        })))
+        referenceChecks
+          .filter(check => check.referenced)
+          .forEach(check => referencedStepIds.add(check.id))
+      }
+      steps.value = [
+        ...steps.value,
+        ...removedSteps
+          .filter(step => referencedStepIds.has(step.id))
+          .map(step => ({ ...step, active: false })),
+      ]
       const record = draft.id
         ? await api.collection('tasks').update(draft.id, payload)
         : await api.collection('tasks').create(payload)
@@ -1562,15 +1607,9 @@ export const useTaskStore = defineStore('tasks', () => {
       })
 
       if (draft.type === 'program') {
-        const existing = previousSteps.filter((step) => step.task === taskId)
-        const retainedIds = new Set(draft.steps.map((step) => step.id).filter(Boolean))
-        await Promise.all(existing.filter((step) => !retainedIds.has(step.id)).map((step) =>
-          api.collection('program_steps').update(step.id, {
-            active: false,
-            interval_template: '',
-            flashcard_review_set: '',
-            completions: [],
-          }),
+        await Promise.all(removedSteps.map((step) => referencedStepIds.has(step.id)
+          ? api.collection('program_steps').update(step.id, { active: false })
+          : api.collection('program_steps').delete(step.id),
         ))
         const stepRecords = await Promise.all(
           draft.steps.map((step, index) => {
@@ -1604,6 +1643,7 @@ export const useTaskStore = defineStore('tasks', () => {
         })
       }
       void syncTaskReminders()
+      useSnackbarStore().showSaved('Task', optimisticTask.name)
       return taskId
     } catch (cause) {
       tasks.value = previousTasks
@@ -1612,6 +1652,15 @@ export const useTaskStore = defineStore('tasks', () => {
       void syncTaskReminders()
       throw cause
     }
+  }
+
+  async function programStepHasReferences(stepId: string) {
+    const filter = `program_step = "${stepId}"`
+    const collections = ['occurrences', 'entries', 'interval_sessions', 'flashcard_review_sessions']
+    const results = await Promise.all(collections.map(collection =>
+      api.collection(collection).getList(1, 1, { filter }),
+    ))
+    return results.some(result => result.totalItems > 0)
   }
 
   async function toggleTaskActive(task: Task) {
@@ -1756,7 +1805,9 @@ export const useTaskStore = defineStore('tasks', () => {
     const uniqueIds = [...new Set(orderedIds)]
     const orderedIdSet = new Set(uniqueIds)
     const orderedTasks = uniqueIds
-      .map(id => tasks.value.find(task => task.id === id && task.quickLogEnabled))
+      .map(id => tasks.value.find(task => (
+        task.id === id && taskSupportsQuickLog(task.type) && task.quickLogEnabled
+      )))
       .filter((task): task is Task => Boolean(task))
     if (orderedTasks.length < 2 || orderedTasks.length !== uniqueIds.length) return
 
@@ -1766,7 +1817,7 @@ export const useTaskStore = defineStore('tasks', () => {
       task.quickLogSortOrder ?? task.sortOrder,
     ]))
     const quickLogTasks = tasks.value
-      .filter(task => task.quickLogEnabled)
+      .filter(task => taskSupportsQuickLog(task.type) && task.quickLogEnabled)
       .sort((left, right) => (
         (left.quickLogSortOrder ?? left.sortOrder) - (right.quickLogSortOrder ?? right.sortOrder)
         || left.sortOrder - right.sortOrder
@@ -1805,10 +1856,12 @@ export const useTaskStore = defineStore('tasks', () => {
     const previousSteps = steps.value
     const previousOccurrences = occurrences.value
     const previousEntries = entries.value
+    const previousTaskLogImages = taskLogImages.value
     tasks.value = tasks.value.filter((task) => task.id !== taskId)
     steps.value = steps.value.filter((step) => step.task !== taskId)
     occurrences.value = occurrences.value.filter((occurrence) => occurrence.task !== taskId)
     entries.value = entries.value.filter((entry) => entry.task !== taskId)
+    taskLogImages.value = taskLogImages.value.filter((image) => image.task !== taskId)
     try {
       await api.collection('tasks').delete(taskId)
     } catch (cause) {
@@ -1816,11 +1869,12 @@ export const useTaskStore = defineStore('tasks', () => {
       steps.value = previousSteps
       occurrences.value = previousOccurrences
       entries.value = previousEntries
+      taskLogImages.value = previousTaskLogImages
       throw cause
     } finally {
       void syncTaskReminders()
     }
-    useSnackbarStore().showDeletion('Routine')
+    useSnackbarStore().showDeletion('Task')
   }
 
   async function shiftProgram(progress: TaskProgress) {
@@ -2062,6 +2116,7 @@ export const useTaskStore = defineStore('tasks', () => {
     undoReviewResolution,
     bulkResolveReview,
     saveTask,
+    programStepHasReferences,
     reorderQuickLogs,
     toggleTaskActive,
     setTaskArchived,

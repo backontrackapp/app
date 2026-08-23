@@ -20,6 +20,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(BackgroundIntervalPlugin.class);
         registerPlugin(BackgroundSyncStagePlugin.class);
         registerPlugin(FlashcardSpeechPlugin.class);
+        registerPlugin(PhoneSpeechRecognitionPlugin.class);
         registerPlugin(ScreenWakeLockPlugin.class);
         registerPlugin(HealthConnectPlugin.class);
         registerPlugin(PasskeyPlugin.class);

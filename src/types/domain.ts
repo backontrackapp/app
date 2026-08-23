@@ -81,6 +81,7 @@ export interface ProgramStep {
 export interface ProgramStepCompletion {
   id: string
   type: ProgramStepCompletionType
+  label?: string
   targetValue?: number
   targetOperator?: TargetOperator
   unit?: string
@@ -208,6 +209,7 @@ export type IntervalCueSound =
   | 'complete'
   | 'count'
   | 'copper-bell'
+  | 'speech'
   | 'none'
 export type IntervalTypeSoundSettings = Record<IntervalStepKind, IntervalCueSound>
 
@@ -378,6 +380,7 @@ export interface RunnerSessionMenuItem {
 }
 
 export type FlashcardBulkAction =
+  | 'create_review_set'
   | 'swap_columns'
   | 'swap_front_back'
   | 'swap_note_back'
@@ -387,7 +390,10 @@ export type FlashcardBulkAction =
   | 'clear_tags'
   | 'export_clipboard'
   | 'delete'
-export type FlashcardBulkRecordAction = Exclude<FlashcardBulkAction, 'export_clipboard'>
+export type FlashcardBulkRecordAction = Exclude<
+  FlashcardBulkAction,
+  'create_review_set' | 'export_clipboard'
+>
 export type FlashcardBulkSwapColumn = 'front' | 'back' | 'transliteration' | 'note'
 export type FlashcardSelectionAction = 'exclude' | 'include'
 export interface FlashcardSelectionActionItem {
@@ -397,6 +403,7 @@ export interface FlashcardSelectionActionItem {
   color?: string
 }
 export type FlashcardReviewSetAccessRole = 'owner' | 'readonly' | 'editor'
+export type FlashcardReviewSetSelectionMode = 'tags' | 'cards'
 export type SquareImageSource = 'none' | 'url' | 'upload'
 
 export interface SquareImageSourceValue {
@@ -480,6 +487,8 @@ export interface FlashcardReviewSet extends FlashcardReviewSettings {
   id: string
   name: string
   tags: string[]
+  selectionMode?: FlashcardReviewSetSelectionMode
+  includedCards?: string[]
   tagDetails: FlashcardTag[]
   owner: string
   ownerName: string
@@ -615,6 +624,81 @@ export interface FlashcardReviewEvent {
   front: string
   back: string
   tags: string[]
+}
+
+export type AssistantMessageRole = 'user' | 'assistant'
+export type AssistantToolName =
+  | 'list_owned_review_sets'
+  | 'get_owned_review_set_cards'
+  | 'create_flashcard_review_set'
+  | 'add_flashcards_to_review_set'
+
+export interface AssistantMessageItem {
+  type: 'message'
+  role: AssistantMessageRole
+  content: string
+}
+
+export interface AssistantToolCallItem {
+  type: 'function_call'
+  callId: string
+  name: AssistantToolName
+  arguments: Record<string, unknown>
+}
+
+export interface AssistantToolOutputItem {
+  type: 'function_call_output'
+  callId: string
+  output: Record<string, unknown>
+}
+
+export interface AssistantReasoningItem {
+  type: 'reasoning'
+  id: string
+  summary: Array<{ type: 'summary_text'; text: string }>
+  content?: Array<{ type: 'reasoning_text'; text: string }>
+  encrypted_content?: string
+  status?: 'in_progress' | 'completed' | 'incomplete'
+}
+
+export type AssistantConversationItem =
+  | AssistantMessageItem
+  | AssistantToolCallItem
+  | AssistantToolOutputItem
+  | AssistantReasoningItem
+
+export interface AssistantFlashcardDraft {
+  front: string
+  back: string
+  transliteration: string
+  note: string
+}
+
+export interface AssistantWritePlan {
+  call: AssistantToolCallItem
+  title: string
+  description: string
+  destinationName: string
+  newCards: AssistantFlashcardDraft[]
+  existingCardIds: string[]
+  reusedCardIds: string[]
+  convertsTagSelection: boolean
+  maxCards: number
+}
+
+export type PhoneSpeechPermission = 'prompt' | 'granted' | 'denied' | 'restricted'
+
+export interface PhoneSpeechStatus {
+  available: boolean
+  permission: PhoneSpeechPermission
+}
+
+export interface PhoneSpeechPartialResult {
+  transcript: string
+}
+
+export interface PhoneSpeechResult extends PhoneSpeechPartialResult {
+  locale: string
 }
 
 export type TrackerRole = 'factor' | 'outcome'

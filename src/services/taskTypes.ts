@@ -23,3 +23,7 @@ export const TASK_TYPE_OPTIONS: TaskTypePresentation[] = [
 export const TASK_TYPE_PRESENTATION = Object.fromEntries(
   TASK_TYPE_OPTIONS.map(option => [option.type, option]),
 ) as Record<TaskType, TaskTypePresentation>
+
+export function taskSupportsQuickLog(type: TaskType) {
+  return type !== 'program' && type !== 'tracking'
+}

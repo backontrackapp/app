@@ -1,5 +1,21 @@
 # Flashcards
 
+## AI assistant
+
+The sparkle button between synchronization and the account menu is enabled on Flashcards and its nested card and Review set screens. It opens the flashcard assistant as a right-side panel on larger screens and a full-screen drawer on phones. The conversation lasts only for the open panel session.
+
+Android and iOS users can dictate a request with the phone's speech recognizer. The operating system converts speech to text; BackOnTrack does not send raw microphone audio to its server or to OpenAI. The transcript stays in the composer so it can be reviewed or edited before sending. Typed requests remain available everywhere.
+
+The POC declares exactly four assistant tools: list the current user's owned Review sets, read matching cards and current-user review statistics from one owned set, propose a new selected-card Review set, and propose adding cards to an owned set. The model cannot invoke undeclared CRUD operations. Read tools run automatically against the local account data. Every create or add proposal shows a preview and requires confirmation; cancellation is returned to the model as a cancelled tool result.
+
+Confirmed writes use one `flashcards.assistant_apply` offline-sync command. New cards and the selected-card Review set relationship are changed together in the local database and replayed together in one server transaction. Adding cards to a tag-based set converts it to a fixed card selection while preserving all cards that matched before the change.
+
+The PHP server owns the OpenAI credential and calls the Responses API with response storage disabled, parallel tool calls disabled, a pseudonymous safety identifier, and strict schemas for the four declared tools. Tool results are scoped to the authenticated account before they enter the conversation. Assistant requests and confirmed writes are rate limited per account.
+
+## Review set card actions
+
+Selecting an owned or shared Review set card opens its action menu. **Review** is the first action, followed by the management actions available for that set's access level.
+
 ## Recent session history
 
 Recent reviews are grouped by day, with every group collapsed by default.
@@ -15,6 +31,14 @@ The card importer shows an example with the `front,back,transliteration,note,tag
 ## Bulk column swaps
 
 The card manager and owned Review set card table expose one **Swap column content** bulk action. Its modal can swap any two of Front, Back, Transliteration, and Note across the selected cards. Apply stays disabled when the result would leave a required face empty or move content beyond the destination column's length limit. Repeating the same swap restores the original content.
+
+## Custom selected-card Review sets
+
+The card manager and owned Review set card tables expose **Create Review set** in their bulk menu. The dialog can create a named Review set from the selected cards or add the selection to an existing owned custom set. When no custom set is available, the dialog keeps the new-set option selected.
+
+Selected-card Review sets persist explicit card membership instead of deriving membership from tags. They are created from a card list's bulk menu. After creation, their editor replaces the Review set tag field with an information area explaining the custom selection; more cards can be added from the same bulk workflow.
+
+Creating a custom Review set from the bulk dialog redirects directly to its editor. Review sets already present in the local store initialize that editor immediately, without a page-level loading state.
 
 ## Runner settings
 
