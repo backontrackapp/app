@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { format, subDays } from 'date-fns'
 import { storeToRefs } from 'pinia'
-import { goalState, isTaskScheduled, stepsForDate, toDateKey } from '@/services/schedule'
+import { goalState, toDateKey } from '@/services/schedule'
 import { useTaskStore } from '@/stores/tasks'
 import type { TaskProgress } from '@/types/domain'
 
@@ -15,9 +15,9 @@ const days = computed(() => Array.from({ length: 14 }, (_, index) => subDays(new
 function progressFor(date: Date): TaskProgress[] {
   const result: TaskProgress[] = []
   for (const task of tasks.value) {
-    if (!isTaskScheduled(task, date)) continue
+    if (!store.taskIsScheduledForDate(task, date)) continue
     if (task.type !== 'program') result.push(store.makeProgress(task, date))
-    else for (const step of stepsForDate(task, steps.value, date)) result.push(store.makeProgress(task, date, step))
+    else for (const step of store.stepsForTaskDate(task, date)) result.push(store.makeProgress(task, date, step))
   }
   const key = toDateKey(date)
   for (const occurrence of occurrences.value.filter((item) => item.scheduledDate === key)) {

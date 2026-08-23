@@ -324,7 +324,7 @@ onBeforeUnmount(() => {
     @keydown.enter.self.prevent="emit('actions', progress)"
     @keydown.space.self.prevent="emit('actions', progress)"
   >
-    <div class="d-flex align-start ga-3" data-task-drag-handle>
+    <div class="task-card-header d-flex align-start ga-3" data-task-drag-handle>
       <div class="task-icon-area">
         <div
           class="check-control check-control--status"
@@ -517,11 +517,11 @@ onBeforeUnmount(() => {
         <v-icon icon="mdi-lock-outline" size="1rem" /> Complete or resolve earlier program steps first
       </div>
 
-      <div v-if="progress.status === 'missed'" class="status-banner mt-3 text-error">
+      <div v-if="progress.status === 'missed'" class="task-resolution-status status-banner mt-3 text-error">
         <v-icon icon="mdi-alert-circle-outline" size="1rem" /> Missed
       </div>
 
-      <div v-if="progress.status === 'rescheduled'" class="status-banner mt-3 muted">
+      <div v-if="progress.status === 'rescheduled'" class="task-resolution-status status-banner mt-3 text-info">
         <v-icon icon="mdi-calendar-arrow-right" size="1rem" /> Shifted
       </div>
     </div>
@@ -562,8 +562,14 @@ onBeforeUnmount(() => {
   outline-offset: .2rem;
 }
 
-.task-card--done,
-.task-card--resolved-inactive {
+.task-card--done {
+  filter: grayscale(1);
+  opacity: .55;
+}
+
+.task-card--resolved-inactive:not(.task-card--done) .task-card-header,
+.task-card--resolved-inactive:not(.task-card--done) .task-card-body > :not(.task-resolution-status),
+.task-card--resolved-inactive:not(.task-card--done) > .task-image-deck {
   filter: grayscale(1);
   opacity: .55;
 }
