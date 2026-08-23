@@ -16,7 +16,7 @@ import { reviewSetCardCount } from '@/services/flashcards'
 import { formatIntervalDuration, intervalDuration, intervalStepCount } from '@/services/intervals'
 import { createProgramStepCompletion } from '@/services/programStepCompletions'
 import { requestTaskReminderPermission, taskReminderSettingsAvailable } from '@/services/taskReminders'
-import { TASK_TYPE_OPTIONS, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
+import { taskSupportsQuickLog, TASK_TYPE_OPTIONS, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import { TASK_RETIREMENT_ACTIONS, type TaskRetirementActionId } from '@/services/taskRetirementActions'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
@@ -176,6 +176,7 @@ const showTarget = computed(() =>
 const showImageLogSettings = computed(() =>
   ['duration', 'daily_total', 'step_counter', 'program'].includes(draft.type),
 )
+const showQuickLogSettings = computed(() => taskSupportsQuickLog(draft.type))
 const selectedInterval = computed(() => intervalStore.templates.find((item) => item.id === draft.intervalTemplate))
 const intervalItems = computed(() => intervalStore.templates.map((item) => ({
   title: item.name,
@@ -680,11 +681,13 @@ async function deleteTaskPermanently() {
           <div><strong>Review if unfinished</strong><p>Ask whether to miss, carry, or reschedule</p></div>
           <v-switch v-model="draft.reviewWhenMissed" color="secondary" hide-details inset />
         </div>
-        <v-divider />
-        <div class="setting-row">
-          <div><strong>Quick log</strong><p>Show a shortcut at the top of Tasks</p></div>
-          <v-switch v-model="draft.quickLogEnabled" color="secondary" hide-details="auto" inset />
-        </div>
+        <template v-if="showQuickLogSettings">
+          <v-divider />
+          <div class="setting-row">
+            <div><strong>Quick log</strong><p>Show a shortcut at the top of Tasks</p></div>
+            <v-switch v-model="draft.quickLogEnabled" color="secondary" hide-details="auto" inset />
+          </div>
+        </template>
         <template v-if="showImageLogSettings">
           <v-divider />
           <div class="setting-row">

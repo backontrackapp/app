@@ -14,6 +14,7 @@ import {
 import { dailyTotalCompletionPercent, isTaskScheduled, meetsTarget, programCycleDay, progressPercent, stepsForDate, toDateKey } from '@/services/schedule'
 import { taskNeedsReview } from '@/services/taskCardActions'
 import { reconcileTaskReminders } from '@/services/taskReminders'
+import { taskSupportsQuickLog } from '@/services/taskTypes'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useJournalStore } from '@/stores/journal'
 import { useTrackingStore } from '@/stores/tracking'
@@ -68,7 +69,7 @@ function mapTask(record: Record<string, any>): Task {
     cycleLength: record.cycle_length || undefined,
     programRepeat: record.program_repeat,
     programStrict: record.program_strict,
-    quickLogEnabled: record.quick_log_enabled === true,
+    quickLogEnabled: taskSupportsQuickLog(record.type) && record.quick_log_enabled === true,
     quickLogSortOrder: Number(record.quick_log_sort_order || 0),
     logWithImagesEnabled: record.log_with_images_enabled === true,
     sortOrder: record.sort_order || 0,
@@ -1519,7 +1520,7 @@ export const useTaskStore = defineStore('tasks', () => {
       cycle_length: draft.type === 'program' ? draft.steps.length : draft.cycleLength || 0,
       program_repeat: draft.programRepeat ?? true,
       program_strict: draft.programStrict ?? false,
-      quick_log_enabled: draft.quickLogEnabled === true,
+      quick_log_enabled: taskSupportsQuickLog(draft.type) && draft.quickLogEnabled === true,
       quick_log_sort_order: quickLogSortOrder,
       log_with_images_enabled: draft.logWithImagesEnabled,
       sort_order: sortOrder,
@@ -1778,7 +1779,9 @@ export const useTaskStore = defineStore('tasks', () => {
     const uniqueIds = [...new Set(orderedIds)]
     const orderedIdSet = new Set(uniqueIds)
     const orderedTasks = uniqueIds
-      .map(id => tasks.value.find(task => task.id === id && task.quickLogEnabled))
+      .map(id => tasks.value.find(task => (
+        task.id === id && taskSupportsQuickLog(task.type) && task.quickLogEnabled
+      )))
       .filter((task): task is Task => Boolean(task))
     if (orderedTasks.length < 2 || orderedTasks.length !== uniqueIds.length) return
 
@@ -1788,7 +1791,7 @@ export const useTaskStore = defineStore('tasks', () => {
       task.quickLogSortOrder ?? task.sortOrder,
     ]))
     const quickLogTasks = tasks.value
-      .filter(task => task.quickLogEnabled)
+      .filter(task => taskSupportsQuickLog(task.type) && task.quickLogEnabled)
       .sort((left, right) => (
         (left.quickLogSortOrder ?? left.sortOrder) - (right.quickLogSortOrder ?? right.sortOrder)
         || left.sortOrder - right.sortOrder

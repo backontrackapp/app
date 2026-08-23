@@ -32,7 +32,7 @@ import {
   tasksWithoutProgress,
 } from '@/services/taskScheduleLayout'
 import { taskIdsFromProgressDrag, taskProgressDragKey } from '@/services/taskReordering'
-import { TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
+import { taskSupportsQuickLog, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import { useIntervalStore } from '@/stores/intervals'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useJournalStore } from '@/stores/journal'
@@ -490,7 +490,11 @@ const scheduleLayout = computed(() => groupTaskProgressBySchedule(selectedProgre
 const allDayProgress = computed(() => scheduleLayout.value.allDay)
 const timedProgressGroups = computed(() => scheduleLayout.value.timed)
 const quickLogProgress = computed(() => selectedProgress.value
-  .filter(progress => progress.task.quickLogEnabled && progress.status !== 'rescheduled')
+  .filter(progress => (
+    taskSupportsQuickLog(progress.task.type)
+      && progress.task.quickLogEnabled
+      && progress.status !== 'rescheduled'
+  ))
   .sort((left, right) => (
     (left.task.quickLogSortOrder ?? left.task.sortOrder)
       - (right.task.quickLogSortOrder ?? right.task.sortOrder)
