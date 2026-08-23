@@ -12,10 +12,11 @@ import {
   nativeBackgroundIntervalOwnsCues,
   playNativeIntervalCue,
 } from '@/services/backgroundInterval'
+import { speakFlashcardText } from '@/services/flashcardSpeech'
 export { requestScreenWakeLock as requestIntervalWakeLock } from '@/services/screenWakeLock'
 
 let audioContext: AudioContext | undefined
-type PlayableIntervalCueSound = Exclude<IntervalCueSound, 'none'>
+type PlayableIntervalCueSound = Exclude<IntervalCueSound, 'none' | 'speech'>
 type AppCueSound = PlayableIntervalCueSound | 'eject'
 const cueUrls = {
   cash: '/sounds/cash.mp3',
@@ -90,7 +91,7 @@ export async function preloadIntervalCueAudio(
 ) {
   const names = new Set<CueName>(['count', 'complete'])
   for (const sound of sounds) {
-    if (sound !== 'none') names.add(sound)
+    if (sound !== 'none' && sound !== 'speech') names.add(sound)
   }
   await Promise.all([...names].map(loadCue))
 }
@@ -181,25 +182,45 @@ export function playIntervalCountCue(cues: IntervalCueSettings) {
   playCue('count', cues)
 }
 
-function playIntervalSignalCue(name: IntervalCueSound, cues: IntervalCueSettings) {
+function intervalSpeechLanguage() {
+  return typeof navigator === 'undefined' ? 'en-US' : navigator.language || 'en-US'
+}
+
+async function speakIntervalStepName(name: string) {
+  const stepName = name.trim()
+  if (!stepName) return
+  await speakFlashcardText(stepName, intervalSpeechLanguage())
+}
+
+function playIntervalSignalCue(
+  name: IntervalCueSound,
+  cues: IntervalCueSettings,
+  stepName = '',
+) {
   if (nativeBackgroundIntervalOwnsCues()) return
-  if (name !== 'none') playCue(name, cues, true)
+  if (name === 'speech') void speakIntervalStepName(stepName).catch(() => undefined)
+  else if (name !== 'none') playCue(name, cues, true)
   if (cues.vibrationEnabled && 'vibrate' in navigator) navigator.vibrate([120, 60, 120])
 }
 
 export function playIntervalGoCue(
   cues: IntervalCueSettings,
   kind?: IntervalStepKind | '',
+  stepName = '',
 ) {
-  playIntervalSignalCue(intervalTypeSound(cues.typeSounds, kind), cues)
+  playIntervalSignalCue(intervalTypeSound(cues.typeSounds, kind), cues, stepName)
 }
 
 export function playIntervalCompleteCue(cues: IntervalCueSettings) {
   playIntervalSignalCue('complete', cues)
 }
 
-export async function previewIntervalCueSound(sound: IntervalCueSound) {
+export async function previewIntervalCueSound(sound: IntervalCueSound, stepName = '') {
   if (sound === 'none') return
+  if (sound === 'speech') {
+    await speakIntervalStepName(stepName)
+    return
+  }
   await prepareAudioCue(sound)
   playCue(sound, { soundEnabled: true, vibrationEnabled: false }, true)
 }

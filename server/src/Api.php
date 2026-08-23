@@ -38,6 +38,8 @@ final class Api
         'go',
         'complete',
         'count',
+        'copper-bell',
+        'speech',
         'none',
     ];
     private const FLASHCARD_REVIEW_SETTING_FIELDS = [

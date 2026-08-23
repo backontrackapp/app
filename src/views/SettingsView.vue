@@ -27,6 +27,7 @@ import {
 import { previewIntervalCueSound } from '@/services/intervalCues'
 import {
   defaultIntervalTypeSounds,
+  INTERVAL_TYPE_PRESENTATION,
   normalizeIntervalTypeSounds,
 } from '@/services/intervalTypes'
 import type {
@@ -252,7 +253,7 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
   previewingIntervalType.value = kind
   error.value = ''
   try {
-    await previewIntervalCueSound(sound)
+    await previewIntervalCueSound(sound, INTERVAL_TYPE_PRESENTATION[kind].title)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'The interval sound could not be previewed.'
   } finally {

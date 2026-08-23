@@ -57,10 +57,13 @@ public class BackgroundIntervalService extends Service {
     private final List<ReviewCard> reviewCards = new ArrayList<>();
     private PowerManager.WakeLock wakeLock;
     private TextToSpeech speech;
+    private TextToSpeech intervalSpeech;
     private TtsVolumeBoost volumeBoost;
     private FlashcardRecordingPlayer recordingPlayer;
     private ReviewSetAudioFocus reviewSetAudioFocus;
     private boolean speechReady;
+    private boolean intervalSpeechReady;
+    private String pendingIntervalStepName = "";
     private String sessionId = "";
     private String sessionName = "Interval";
     private int stepIndex;
@@ -184,6 +187,14 @@ public class BackgroundIntervalService extends Service {
                     }
                 });
                 speakPendingReviewSide();
+            }
+        });
+        intervalSpeech = new TextToSpeech(this, status -> {
+            intervalSpeechReady = status == TextToSpeech.SUCCESS;
+            TextToSpeech currentSpeech = intervalSpeech;
+            if (intervalSpeechReady && currentSpeech != null) {
+                currentSpeech.setAudioAttributes(ReviewSetAudioFocus.speechAudioAttributes());
+                speakPendingIntervalStepName();
             }
         });
     }
@@ -609,8 +620,34 @@ public class BackgroundIntervalService extends Service {
     }
 
     private void playStepCue() {
-        if (soundEnabled) IntervalCuePlayer.playSignal(this, steps.get(stepIndex).cueSound);
+        if (soundEnabled) {
+            IntervalStep step = steps.get(stepIndex);
+            if ("speech".equals(step.cueSound)) speakIntervalStepName(step.name);
+            else IntervalCuePlayer.playSignal(this, step.cueSound);
+        }
         if (vibrationEnabled) vibrate();
+    }
+
+    private void speakIntervalStepName(String name) {
+        pendingIntervalStepName = name == null ? "" : name.trim();
+        speakPendingIntervalStepName();
+    }
+
+    private void speakPendingIntervalStepName() {
+        if (
+            !intervalSpeechReady
+            || intervalSpeech == null
+            || pendingIntervalStepName.isEmpty()
+            || MainActivity.isAppVisible()
+        ) return;
+        String stepName = pendingIntervalStepName;
+        pendingIntervalStepName = "";
+        intervalSpeech.speak(
+            stepName,
+            TextToSpeech.QUEUE_FLUSH,
+            null,
+            "backontrack-background-interval-step-" + System.nanoTime()
+        );
     }
 
     private void playCompleteCue() {
@@ -729,6 +766,11 @@ public class BackgroundIntervalService extends Service {
             speech.stop();
             speech.shutdown();
             speech = null;
+        }
+        if (intervalSpeech != null) {
+            intervalSpeech.stop();
+            intervalSpeech.shutdown();
+            intervalSpeech = null;
         }
         super.onDestroy();
     }

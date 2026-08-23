@@ -782,6 +782,13 @@ function reconciled(item: IntervalSession) {
     : { runtime: { ...item.runtime }, completed: false, transitions: 0 }
 }
 
+function playCurrentStepCue(item: IntervalSession) {
+  if (item.status !== 'running') return
+  const step = resolveIntervalStep(item.definition, item.runtime.stepIndex)?.step
+  if (!step) return
+  playIntervalGoCue(item.cues, step.kind, step.name)
+}
+
 async function syncNativeTimer(item: IntervalSession) {
   try {
     await syncBackgroundInterval(item)
@@ -866,9 +873,11 @@ async function tick() {
       return
     }
     if (!suppressCues) {
+      const nextStep = resolveIntervalStep(item.definition, result.runtime.stepIndex)?.step
       playIntervalGoCue(
         item.cues,
-        resolveIntervalStep(item.definition, result.runtime.stepIndex)?.step.kind,
+        nextStep?.kind,
+        nextStep?.name,
       )
     }
     const updated = await store.updateSession(item.id, {
@@ -1090,6 +1099,7 @@ async function startTemplate(
       activeSessionSheet.value = true
       return
     }
+    playCurrentStepCue(started)
     attributionSheet.value = false
     repetitionDialog.value = false
     repetitionDefinition.value = undefined
@@ -1184,7 +1194,7 @@ async function advanceCurrent(item: IntervalSession) {
     displayRemainingMs.value = runtime.remainingMs
     lastCountCue = ''
     if (updated.status === 'running') await syncNativeTimer(updated)
-    playIntervalGoCue(item.cues, nextStep.step.kind)
+    playIntervalGoCue(item.cues, nextStep.step.kind, nextStep.step.name)
   } finally {
     syncing.value = false
   }
@@ -1852,6 +1862,7 @@ async function runAgain(repetitions?: number) {
       template: item.template,
       flashcardReview,
     })
+    playCurrentStepCue(nextSession)
     repetitionDialog.value = false
     repetitionDefinition.value = undefined
     pendingRepetitionStart.value = undefined
