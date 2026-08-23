@@ -1121,6 +1121,13 @@ function runTaskCardAction(action: TaskCardActionId) {
     void router.push({ name: 'task-edit', params: { id: taskId } })
     return
   }
+  if (action === 'duplicate-task') {
+    const taskId = taskActionProgress.value?.task.id
+    if (!taskId) return
+    taskSheet.value = false
+    void router.push({ name: 'task-new', query: { duplicate: taskId } })
+    return
+  }
   if (action === 'toggle-task-status') {
     if (!taskActionProgress.value) return
     taskSheet.value = false

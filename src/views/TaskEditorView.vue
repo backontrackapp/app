@@ -49,7 +49,10 @@ const error = ref('')
 const reminderAvailable = taskReminderSettingsAvailable()
 const stepDragIds = new WeakMap<ProgramStepDraft, string>()
 let nextStepDragId = 0
-const typeLocked = computed(() => Boolean(route.params.id))
+const duplicateTaskId = computed(() => typeof route.query.duplicate === 'string'
+  ? route.query.duplicate
+  : '')
+const typeLocked = computed(() => Boolean(route.params.id || duplicateTaskId.value))
 const isEditing = computed(() => Boolean(route.params.id))
 const completionStyleItems = computed<ProgramStepCompletionStyleItem[]>(() => [
   { type: 'subheader', title: 'Basic' },
@@ -393,23 +396,53 @@ onMounted(async () => {
     flashcardStore.loaded ? Promise.resolve() : flashcardStore.load(),
     trackingStore.loaded ? Promise.resolve() : trackingStore.load(),
   ])
-  if (!route.params.id) {
+  if (!route.params.id && !duplicateTaskId.value) {
     if (draft.type === 'program' && !draft.steps.length) addStep(false)
     return
   }
-  const task = store.tasks.find((item) => item.id === route.params.id)
+  const taskId = typeof route.params.id === 'string'
+    ? route.params.id
+    : duplicateTaskId.value
+  const task = store.tasks.find((item) => item.id === taskId)
   if (!task) {
     error.value = 'That task could not be found.'
     return
   }
+  const taskSteps = orderedProgramItems(
+    store.steps
+      .filter((step) => step.active && step.task === task.id)
+      .map(({ task: _task, ...step }) => ({ ...step })),
+    task.cycleLength || 0,
+  )
+  if (duplicateTaskId.value) {
+    Object.assign(draft, {
+      ...task,
+      id: undefined,
+      name: `${task.name} copy`,
+      archived: false,
+      weekdays: [...task.weekdays],
+      trackingTrackers: [...(task.trackingTrackers ?? [])],
+      reminderTimes: [...task.reminderTimes],
+      sortOrder: store.tasks.reduce((highest, item) => Math.max(highest, item.sortOrder), -1) + 1,
+      quickLogSortOrder: store.tasks.reduce((highest, item) => Math.max(
+        highest,
+        item.quickLogSortOrder ?? item.sortOrder,
+      ), -1) + 1,
+      steps: taskSteps.map(step => ({
+        ...step,
+        id: undefined,
+        completions: step.completions?.map(completion => ({
+          ...completion,
+          id: createProgramStepCompletion(completion.type).id,
+        })),
+      })),
+    })
+    if (task.type === 'program') syncProgramSequence()
+    return
+  }
   Object.assign(draft, {
     ...task,
-    steps: orderedProgramItems(
-      store.steps
-        .filter((step) => step.active && step.task === task.id)
-        .map(({ task: _task, ...step }) => ({ ...step })),
-      task.cycleLength || 0,
-    ),
+    steps: taskSteps,
   })
   if (task.type === 'program') syncProgramSequence()
 })

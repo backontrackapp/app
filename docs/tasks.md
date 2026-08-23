@@ -4,6 +4,8 @@ Opening the Tasks view selects the current day. Choosing another date remains in
 
 The task editor's archive action offers a choice between archiving and permanent deletion. Archiving removes a task from its schedule and reminders while preserving its settings, entries, and history. Archived tasks appear in the collapsible Archive section below Not scheduled, where selecting one opens the editor so it can be restored. Permanent deletion removes the task, its program steps, occurrences, entries, and image logs; saved interval and Review sessions remain in history without task attribution.
 
+The task action menu includes **Duplicate**, which opens a new task prefilled with the original task's settings. The copy receives an independent name, ordering, and program steps, and is not created until the editor is saved.
+
 Program steps can be duplicated from their expanded editor. The copy is inserted on the following program day with independent completion requirements and opens immediately for editing. Check-off, Interval, and Review set requirements can also have an optional label that identifies the requirement on its task card.
 
 On mobile, the next incomplete task banner appears only when no incomplete task card is visible between the app bar and bottom navigation. It links to the nearest incomplete task farther down the page.

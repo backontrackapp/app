@@ -8,6 +8,11 @@ export const TASK_CARD_ACTION_ITEMS = [
     icon: 'mdi-pencil-outline',
   },
   {
+    id: 'duplicate-task',
+    title: 'Duplicate',
+    icon: 'mdi-content-copy',
+  },
+  {
     id: 'skip-task',
     title: 'Skip',
     icon: 'mdi-skip-next-outline',
