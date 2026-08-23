@@ -1,4 +1,6 @@
 import type {
+  AssistantConversationItem,
+  AssistantFlashcardDraft,
   Flashcard,
   FlashcardBulkRecordAction,
   FlashcardBulkSwapColumn,
@@ -492,6 +494,151 @@ class ApiClient {
 
   autoCancellation(_enabled: boolean) {
     // Kept as a no-op so existing store initialization remains compatible.
+  }
+
+  assistantRespond(items: AssistantConversationItem[]) {
+    return request<{ items: AssistantConversationItem[] }>(
+      '/assistant/respond',
+      { method: 'POST', body: { items } },
+      this.authStore,
+    )
+  }
+
+  async applyAssistantFlashcards(input: {
+    mode: 'create' | 'add'
+    cards: AssistantFlashcardDraft[]
+    existingCardIds: string[]
+    reviewSetId?: string
+    name?: string
+    maxCards?: number
+  }) {
+    const accountId = this.authStore.record?.id || ''
+    const cardDrafts = input.cards.map(card => ({
+      id: createLocalRecordId(),
+      front: card.front,
+      back: card.back,
+      transliteration: card.transliteration || '',
+      note: card.note || '',
+    }))
+    const requestedReviewSetId = input.mode === 'create'
+      ? createLocalRecordId()
+      : input.reviewSetId || ''
+    const body = {
+      mode: input.mode,
+      cards: cardDrafts,
+      existing_card_ids: [...new Set(input.existingCardIds)],
+      review_set_id: requestedReviewSetId,
+      name: input.name || '',
+      max_cards: input.maxCards || 20,
+    }
+    if (!accountId || !await hasLocalBootstrap(accountId)) {
+      return request<{ cards: RecordModel[]; review_set: RecordModel }>(
+        '/assistant/flashcards/apply',
+        { method: 'POST', body },
+        this.authStore,
+      )
+    }
+
+    const now = new Date().toISOString()
+    const [localCards, localSets] = await Promise.all([
+      listLocalRecords(accountId, 'flashcards'),
+      listLocalRecords(accountId, 'flashcard_review_sets'),
+    ])
+    const ownedCardIds = new Set(localCards.map(card => card.id))
+    if (body.existing_card_ids.some(id => !ownedCardIds.has(id))) {
+      throw new ApiError(422, 'Only cards from your library can be added to your Review sets.')
+    }
+    const cards = cardDrafts.map(card => ({
+      id: card.id,
+      owner: accountId,
+      ...localCreateDefaults('flashcards', { ...card, tags: [] }),
+    }))
+
+    let reviewSet: RecordModel
+    if (input.mode === 'create') {
+      const name = String(input.name || '').trim()
+      if (!name) throw new ApiError(422, 'Review set name is required.')
+      reviewSet = {
+        id: requestedReviewSetId,
+        owner: accountId,
+        name,
+        tags: [],
+        selection_mode: 'cards',
+        included_cards: [...new Set([...body.existing_card_ids, ...cards.map(card => card.id)])],
+        excluded_cards: [],
+        mode: 'manual',
+        card_sides: 'both',
+        indefinite: false,
+        time_limit_seconds: 0,
+        max_cards: Math.min(100, Math.max(1, Number(input.maxCards) || 20)),
+        eject_behavior: 'replace',
+        front_seconds: 5,
+        back_seconds: 5,
+        back_speech_repeat_count: 1,
+        note_before_back: false,
+        speech_enabled: false,
+        front_language: '',
+        back_language: '',
+        sort_mode: 'difficult',
+        sort_direction: 'asc',
+        sort_order: localSets.length,
+        created_at: now,
+        updated_at: now,
+      }
+    } else {
+      const current = localSets.find(set => set.id === input.reviewSetId)
+      if (!current) throw new ApiError(404, 'Review set not found.')
+      const currentIds = current.selection_mode === 'cards'
+        ? Array.isArray(current.included_cards) ? current.included_cards : []
+        : localCards.filter((card) => {
+          const tagIds = Array.isArray(current.tags) ? current.tags : []
+          return !tagIds.length || (Array.isArray(card.tags) && card.tags.some((tag: string) => tagIds.includes(tag)))
+        }).map(card => card.id)
+      reviewSet = {
+        ...current,
+        selection_mode: 'cards',
+        tags: [],
+        included_cards: [...new Set([
+          ...currentIds,
+          ...body.existing_card_ids,
+          ...cards.map(card => card.id),
+        ])],
+        updated_at: now,
+      }
+    }
+
+    const projection = {
+      ...reviewSet,
+      access_role: 'owner',
+      share_id: '',
+      owner_name: this.authStore.record?.name || '',
+      owner_avatar: this.authStore.record?.avatar || '',
+      tag_details: [],
+      matching_card_count: reviewSet.included_cards.length,
+    }
+    await putLocalCommandWithResourceChanges(
+      accountId,
+      'flashcards.assistant_apply',
+      { ...body, review_set_id: reviewSet.id },
+      [
+        ...cards.map(card => ({
+          resource: 'flashcards', id: card.id, patch: card, create: card,
+        })),
+        {
+          resource: 'flashcard_review_sets',
+          id: reviewSet.id,
+          patch: reviewSet,
+          ...(input.mode === 'create' ? { create: reviewSet } : {}),
+        },
+        {
+          resource: 'accessible_flashcard_review_sets',
+          id: reviewSet.id,
+          patch: projection,
+          create: projection,
+        },
+      ],
+    )
+    return { cards, review_set: projection }
   }
 
   async bulkResolveTaskReview(input: TaskReviewBulkInput) {

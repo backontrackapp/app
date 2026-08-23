@@ -56,6 +56,7 @@ final class Api
     ];
     private readonly Mailer $mailer;
     private readonly SyncService $syncService;
+    private readonly AssistantService $assistantService;
 
     public function __construct(
         private readonly Config $config,
@@ -63,6 +64,7 @@ final class Api
     ) {
         $this->mailer = new Mailer($config);
         $this->syncService = new SyncService($database, $config);
+        $this->assistantService = new AssistantService($config);
     }
 
     public function run(): never
@@ -203,6 +205,19 @@ final class Api
             }
             if ($method === 'POST' && $path === '/client-errors') {
                 $this->storeClientErrors($this->authenticate());
+            }
+            if ($method === 'POST' && $path === '/assistant/respond') {
+                $user = $this->authenticate();
+                $this->rateLimit('assistant:' . (string) $user['id'], 30, 300, true);
+                $this->respond($this->assistantService->respond($this->jsonBody(), $user));
+            }
+            if ($method === 'POST' && $path === '/assistant/flashcards/apply') {
+                $user = $this->authenticate();
+                $this->rateLimit('assistant-write:' . (string) $user['id'], 20, 300, true);
+                $this->respond($this->syncService->applyAssistantFlashcards(
+                    $user,
+                    $this->jsonBody(),
+                ));
             }
             if ($method === 'POST' && $path === '/task-session-progress/reconcile') {
                 $this->reconcileSessionTaskProgress($this->authenticate());
@@ -8178,7 +8193,12 @@ final class Api
         ];
     }
 
-    private function rateLimit(string $key, int $maximum, int $windowSeconds): void
+    private function rateLimit(
+        string $key,
+        int $maximum,
+        int $windowSeconds,
+        bool $enforce = false,
+    ): void
     {
         $now = time();
         $cutoff = $now - $windowSeconds;
@@ -8197,9 +8217,9 @@ final class Api
         );
         $statement->execute(['rate_key' => $rateKey]);
         $limit = $statement->fetch();
-        if (is_array($limit) && (int) $limit['hits'] > $maximum) {
-            // header('Retry-After: ' . max(1, (int) $limit['window_start'] + $windowSeconds - $now));
-            // throw new ApiException(429, 'Too many attempts. Please try again later.');
+        if ($enforce && is_array($limit) && (int) $limit['hits'] > $maximum) {
+            header('Retry-After: ' . max(1, (int) $limit['window_start'] + $windowSeconds - $now));
+            throw new ApiException(429, 'Too many attempts. Please try again later.');
         }
 
         if (random_int(1, 100) === 1) {

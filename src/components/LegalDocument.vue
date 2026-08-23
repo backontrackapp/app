@@ -25,7 +25,7 @@ const contactEmailHref = `mailto:${contactEmail}`
           />
           <div>
             <h1>{{ isPrivacyPolicy ? 'Privacy policy' : 'Terms and conditions' }}</h1>
-            <p>Effective August 20, 2026</p>
+            <p>Effective August 23, 2026</p>
           </div>
         </header>
 
@@ -52,6 +52,10 @@ const contactEmailHref = `mailto:${contactEmail}`
               <p>On Android, and only after you grant permission, BackOnTrack reads aggregate daily step totals from Health Connect. It uses those totals to update step-counter tasks and build insights. A step total saved as task progress is synchronized with your account like other task data. BackOnTrack does not write to Health Connect.</p>
               <p>After you separately grant Android Usage Access, BackOnTrack reads screen-interactive events and calculates daily screen-time minutes on your device for tracking insights. Raw app-usage details and screen events are not uploaded to BackOnTrack's server. These permissions are optional and can be revoked in Android or Health Connect settings.</p>
 
+              <h3>AI assistant and voice requests</h3>
+              <p>If you use the optional AI flashcard assistant, we process the request you submit, the assistant conversation for that open session, and the limited flashcard or Review set information needed to answer the request. Confirmed flashcards and Review sets are stored with your other account content. We send assistant text and relevant tool results to OpenAI with response storage disabled and a pseudonymous safety identifier instead of your account ID.</p>
+              <p>On Android and iOS, voice requests use the phone's speech-recognition service. The operating system may process microphone audio on the device or through its platform provider according to your device settings and that provider's terms. BackOnTrack and OpenAI receive only the editable transcript after you choose to send it, not the raw microphone audio.</p>
+
               <h3>Technical and diagnostic information</h3>
               <p>We process information needed to operate and secure the service, such as IP address for authentication rate limits, device or sync-client identifiers, browser or device type, app version, push-notification subscription details, and request timestamps. Authenticated clients may send bounded JavaScript and network error reports containing an error message, source path without query strings, request method and status, stack trace, platform, app version, and user agent. Request bodies are not included.</p>
 
@@ -66,6 +70,7 @@ const contactEmailHref = `mailto:${contactEmail}`
                 <li>Authenticate accounts, send account emails, and support passkeys.</li>
                 <li>Schedule reminders and deliver notifications you enable.</li>
                 <li>Enable Review set sharing with people you invite.</li>
+                <li>Generate and organize flashcards when you choose to use the AI assistant.</li>
                 <li>Maintain security, prevent abuse, troubleshoot errors, and improve reliability.</li>
                 <li>Comply with legal obligations and enforce our terms.</li>
               </ul>
@@ -78,6 +83,7 @@ const contactEmailHref = `mailto:${contactEmail}`
               <ul>
                 <li><strong>People you invite.</strong> Review set recipients receive the set and cards covered by the role you grant. Editors can change matching source cards, as described before you grant access.</li>
                 <li><strong>Infrastructure providers.</strong> Hosting, email-delivery, and push-notification providers process the limited information needed to perform those services for us.</li>
+                <li><strong>AI provider.</strong> OpenAI processes assistant prompts and the relevant flashcard data returned by declared tools when you use the optional AI assistant. BackOnTrack requests that responses not be stored by the API.</li>
                 <li><strong>Legal and safety reasons.</strong> We may preserve or disclose information when reasonably necessary to comply with law, protect rights or safety, investigate abuse, or defend legal claims.</li>
                 <li><strong>Business transfer.</strong> Information may transfer as part of a merger, financing, reorganization, or sale, subject to this policy and applicable law.</li>
               </ul>
@@ -102,7 +108,7 @@ const contactEmailHref = `mailto:${contactEmail}`
 
             <section>
               <h2>8. Your choices and rights</h2>
-              <p>Depending on where you live, you may have rights to access, correct, export, delete, or restrict certain uses of your personal information, withdraw consent, or complain to a privacy regulator. You can change much of your content and settings directly in the app. You may also revoke Health Connect, Usage Access, microphone, camera, or notification permissions in device settings.</p>
+              <p>Depending on where you live, you may have rights to access, correct, export, delete, or restrict certain uses of your personal information, withdraw consent, or complain to a privacy regulator. You can change much of your content and settings directly in the app. You can avoid the optional AI assistant and may revoke Health Connect, Usage Access, microphone, speech recognition, camera, or notification permissions in device settings.</p>
               <p>To make a privacy request, contact us. We may need to verify your identity before acting on a request.</p>
             </section>
 
@@ -140,6 +146,7 @@ const contactEmailHref = `mailto:${contactEmail}`
             <section>
               <h2>3. The service</h2>
               <p>BackOnTrack provides tools for planning tasks, running intervals, reviewing flashcards, tracking personal information, exploring patterns, and journaling. Features may work offline and synchronize later. We may add, change, suspend, or discontinue features, and we may set reasonable technical limits to keep the service reliable and secure.</p>
+              <p>AI-generated flashcards, translations, and replies may be incomplete or incorrect. Review every proposed change before confirming it and do not rely on generated content where an error could cause harm.</p>
               <p>Offline changes, delayed synchronization, notification delivery, background timers, device permissions, and third-party platform behavior can be affected by your device, operating system, connectivity, or provider. Keep independent copies of information you cannot afford to lose and do not rely on BackOnTrack as your only record.</p>
             </section>
 

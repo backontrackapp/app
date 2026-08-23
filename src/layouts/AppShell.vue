@@ -5,6 +5,7 @@ import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
 import AccountMenu from '@/components/AccountMenu.vue'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
+import AssistantPanel from '@/components/AssistantPanel.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import MainNavigationIcon from '@/components/MainNavigationIcon.vue'
 import { localDataChangedEvent } from '@/lib/localDatabase'
@@ -50,6 +51,7 @@ const unsyncedLogoutCount = ref<number>()
 const discardAllIssuesDialog = ref(false)
 const discardingAllIssues = ref(false)
 const syncSheet = ref(false)
+const assistantPanel = ref(false)
 const pageTransition = ref('page-level-forward')
 const pageTransitionStage = ref<HTMLElement>()
 const pendingMainNavigationPath = ref<string>()
@@ -122,8 +124,14 @@ const lastSyncedLabel = computed(() => {
 const visibleSyncIssues = computed(() => syncStore.issues.slice(0, 5))
 
 const immersive = computed(() => Boolean(router.currentRoute.value.meta.immersive))
+const assistantAvailable = computed(() => router.currentRoute.value.path.startsWith('/flashcards'))
 const pageTitle = computed(() => String(router.currentRoute.value.meta.title || 'BackOnTrack'))
 const canGoBack = computed(() => Number(router.currentRoute.value.meta.pageDepth ?? 0) > 0)
+
+watch(assistantAvailable, (available) => {
+  if (!available) assistantPanel.value = false
+})
+
 const accountName = computed(() => auth.user?.name || auth.firstName || 'You')
 const accountEmail = computed(() => auth.user?.email || '')
 const accountAvatar = computed(() => auth.user?.avatar || '')
@@ -606,7 +614,7 @@ function releaseLeavingPage(element: Element) {
 
           <h1 class="app-bar__title">{{ pageTitle }}</h1>
 
-          <div class="app-bar__actions d-flex align-center ga-3">
+          <div class="app-bar__actions d-flex align-center ga-1">
             <v-btn
               :icon="syncIcon"
               :color="syncColor"
@@ -622,6 +630,16 @@ function releaseLeavingPage(element: Element) {
                 floating
               />
             </v-btn>
+            <v-btn
+              icon="mdi-creation-outline"
+              color="secondary"
+              variant="text"
+              :aria-label="assistantAvailable
+                ? 'Open AI flashcard assistant'
+                : 'AI assistant is available in Flashcards'"
+              :disabled="!assistantAvailable"
+              @click="assistantPanel = true"
+            />
             <AccountMenu
               :account-name="accountName"
               :account-email="accountEmail"
@@ -635,6 +653,8 @@ function releaseLeavingPage(element: Element) {
         </div>
       </header>
     </transition>
+
+    <AssistantPanel v-if="assistantAvailable" v-model="assistantPanel" />
 
     <v-main
       tag="div"
@@ -851,14 +871,14 @@ function releaseLeavingPage(element: Element) {
   height: 60px;
   margin: 0 auto;
   padding: 0 1rem;
-  grid-template-columns: 0 minmax(0, 1fr) 88px;
+  grid-template-columns: 0 minmax(0, 1fr) 8.75rem;
   align-items: center;
   gap: 0;
 }
 
 .app-bar__actions {
   display: flex;
-  width: 88px;
+  width: 8.75rem;
   align-items: center;
   justify-content: flex-end;
 }
@@ -924,13 +944,13 @@ function releaseLeavingPage(element: Element) {
 }
 
 .app-bar--back .app-bar__inner {
-  grid-template-columns: 44px minmax(0, 1fr) 88px;
+  grid-template-columns: 2.75rem minmax(0, 1fr) 8.75rem;
   gap: 1rem;
 }
 
 .app-bar--ios .app-bar__inner {
   padding: 0 .5rem;
-  grid-template-columns: 44px minmax(0, 1fr) 88px;
+  grid-template-columns: 2.75rem minmax(0, 1fr) 8.75rem;
   gap: .5rem;
 }
 

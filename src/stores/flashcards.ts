@@ -627,7 +627,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
 
   async function createReviewSetFromCards(
     cardIds: string[],
-    destination: { type: 'new'; name: string } | { type: 'existing'; reviewSetId: string },
+    destination:
+      | { type: 'new'; name: string; maxCards?: number }
+      | { type: 'existing'; reviewSetId: string },
   ) {
     const selected = [...new Set(cardIds)]
     if (!selected.length) throw new Error('Select at least one card.')
@@ -649,7 +651,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         cardSides: DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
         indefinite: false,
         timeLimitSeconds: 0,
-        maxCards: DEFAULT_FLASHCARD_SESSION_CARDS,
+        maxCards: destination.maxCards || DEFAULT_FLASHCARD_SESSION_CARDS,
         ejectBehavior: 'replace',
         frontSeconds: 5,
         backSeconds: 5,
@@ -667,16 +669,21 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     const index = reviewSets.value.findIndex(set => (
       set.id === destination.reviewSetId
       && set.accessRole === 'owner'
-      && set.selectionMode === 'cards'
     ))
-    if (index < 0) throw new Error('Choose one of your custom Review sets.')
+    if (index < 0) throw new Error('Choose one of your Review sets.')
     const reviewSet = reviewSets.value[index]!
     const previous = {
       ...reviewSet,
       tags: [...reviewSet.tags],
       includedCards: [...(reviewSet.includedCards || [])],
     }
-    reviewSet.includedCards = [...new Set([...(reviewSet.includedCards || []), ...selected])]
+    const currentCards = reviewSet.selectionMode === 'cards'
+      ? reviewSet.includedCards || []
+      : cards.value.filter(card => cardMatchesReviewSet(card, reviewSet)).map(card => card.id)
+    reviewSet.selectionMode = 'cards'
+    reviewSet.includedCards = [...new Set([...currentCards, ...selected])]
+    reviewSet.tags = []
+    reviewSet.tagDetails = []
     reviewSet.matchingCardCount = reviewSet.includedCards.length
     try {
       await api.collection('flashcard_review_sets').update(reviewSet.id, {

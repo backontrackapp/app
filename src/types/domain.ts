@@ -626,6 +626,81 @@ export interface FlashcardReviewEvent {
   tags: string[]
 }
 
+export type AssistantMessageRole = 'user' | 'assistant'
+export type AssistantToolName =
+  | 'list_owned_review_sets'
+  | 'get_owned_review_set_cards'
+  | 'create_flashcard_review_set'
+  | 'add_flashcards_to_review_set'
+
+export interface AssistantMessageItem {
+  type: 'message'
+  role: AssistantMessageRole
+  content: string
+}
+
+export interface AssistantToolCallItem {
+  type: 'function_call'
+  callId: string
+  name: AssistantToolName
+  arguments: Record<string, unknown>
+}
+
+export interface AssistantToolOutputItem {
+  type: 'function_call_output'
+  callId: string
+  output: Record<string, unknown>
+}
+
+export interface AssistantReasoningItem {
+  type: 'reasoning'
+  id: string
+  summary: Array<{ type: 'summary_text'; text: string }>
+  content?: Array<{ type: 'reasoning_text'; text: string }>
+  encrypted_content?: string
+  status?: 'in_progress' | 'completed' | 'incomplete'
+}
+
+export type AssistantConversationItem =
+  | AssistantMessageItem
+  | AssistantToolCallItem
+  | AssistantToolOutputItem
+  | AssistantReasoningItem
+
+export interface AssistantFlashcardDraft {
+  front: string
+  back: string
+  transliteration: string
+  note: string
+}
+
+export interface AssistantWritePlan {
+  call: AssistantToolCallItem
+  title: string
+  description: string
+  destinationName: string
+  newCards: AssistantFlashcardDraft[]
+  existingCardIds: string[]
+  reusedCardIds: string[]
+  convertsTagSelection: boolean
+  maxCards: number
+}
+
+export type PhoneSpeechPermission = 'prompt' | 'granted' | 'denied' | 'restricted'
+
+export interface PhoneSpeechStatus {
+  available: boolean
+  permission: PhoneSpeechPermission
+}
+
+export interface PhoneSpeechPartialResult {
+  transcript: string
+}
+
+export interface PhoneSpeechResult extends PhoneSpeechPartialResult {
+  locale: string
+}
+
 export type TrackerRole = 'factor' | 'outcome'
 export type TrackerKind = 'yes_no' | 'event' | 'number' | 'rating' | 'duration'
 export type TrackerCategory = 'mindfulness' | 'medication' | 'nutrition' | 'mood' | 'symptom' | 'sleep' | 'activity' | 'other'

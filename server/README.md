@@ -41,6 +41,9 @@ Configuration may be supplied through the root `.env`, process environment varia
 | `BACKONTRACK_MAIL_ENCRYPTION` | `tls`, `ssl`, or `none` for trusted local development | `tls` |
 | `BACKONTRACK_MAIL_FROM_ADDRESS` | Sender email address | Required for account email |
 | `BACKONTRACK_MAIL_FROM_NAME` | Sender display name | BackOnTrack |
+| `BACKONTRACK_OPENAI_API_KEY` | Server-only OpenAI API key for the optional flashcard assistant | Assistant disabled |
+| `BACKONTRACK_OPENAI_BASE_URL` | OpenAI-compatible Responses API base URL; HTTPS is required outside loopback development | `https://api.openai.com/v1` |
+| `BACKONTRACK_OPENAI_MODEL` | Responses API model used by the assistant | `gpt-5.6-terra` |
 | `BACKONTRACK_PASSKEY_RP_ID` | Android passkey relying-party domain | Disabled |
 | `BACKONTRACK_PASSKEY_ANDROID_PACKAGE` | Trusted Android application ID | Disabled |
 | `BACKONTRACK_PASSKEY_ANDROID_KEY_HASHES` | Comma-separated base64url SHA-256 signing-certificate hashes | Disabled |
@@ -54,6 +57,16 @@ php -r 'echo bin2hex(random_bytes(32)), PHP_EOL;'
 Generate separate values for `BACKONTRACK_API_SECRET` and `BACKONTRACK_MIGRATION_KEY`. Never commit either secret.
 
 Only `VITE_API_URL` is exposed to the browser build. Variables beginning with `BACKONTRACK_` remain PHP-only.
+
+## Flashcard AI assistant
+
+`POST /assistant/respond` sends an authenticated, bounded conversation to the configured OpenAI Responses API. The server fixes the instruction set and exposes only four strict function schemas: list owned Review sets, read cards and reviewer statistics from an owned set, propose a Review set creation, and propose adding cards to an owned set. The client executes read calls only after filtering its synchronized data to the current owner. Write calls pause for explicit user confirmation.
+
+The OpenAI request uses `store: false`, disables parallel tool calls, and includes an HMAC-derived safety identifier instead of an account ID. The API key never enters the web or native bundle. Assistant responses are rate limited to 30 requests per five minutes per account.
+
+Confirmed changes use `POST /assistant/flashcards/apply` before local bootstrap or the `flashcards.assistant_apply` sync command afterward. Both paths validate card limits and ownership again and create all cards plus the Review set relationship in one SQLite transaction. This command does not support updates, archives, deletes, sharing changes, or writes outside flashcards.
+
+Voice capture is not handled by this API. Android SpeechRecognizer and iOS Speech framework return an editable transcript in the native app; only text submitted by the user reaches `/assistant/respond`.
 
 For a native Android client, the allowed origins normally include `http://localhost`. For iOS Capacitor, include `capacitor://localhost`. Include the exact HTTPS origin of every browser client.
 
