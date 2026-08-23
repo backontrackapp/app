@@ -2,7 +2,7 @@
 
 ## AI assistant
 
-The sparkle button between synchronization and the account menu is enabled on Flashcards and its nested card and Review set screens. It opens the flashcard assistant as a right-side panel on larger screens and a full-screen drawer on phones. The conversation lasts only for the open panel session.
+The sparkle button between synchronization and the account menu is enabled on Flashcards and its nested card and Review set screens. It opens the flashcard assistant as a right-side panel on larger screens and a full-screen drawer on phones. The conversation lasts only for the open panel session. Its empty state offers three bullet-style example requests, and the composer keeps its microphone and send actions together inside the input.
 
 Android and iOS users can dictate a request with the phone's speech recognizer. The operating system converts speech to text; BackOnTrack does not send raw microphone audio to its server or to OpenAI. The transcript stays in the composer so it can be reviewed or edited before sending. Typed requests remain available everywhere.
 
