@@ -279,6 +279,22 @@ final class SyncService
         }
     }
 
+    public function bulkResolveTaskReview(array $user, array $body): array
+    {
+        $pdo = $this->database->pdo;
+        $pdo->exec('BEGIN IMMEDIATE');
+        try {
+            $this->applyTaskReviewBulk($body, (string) $user['id']);
+            $pdo->exec('COMMIT');
+            return ['applied' => true];
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->exec('ROLLBACK');
+            }
+            throw $exception;
+        }
+    }
+
     private function applyOperation(array $operation, string $account, string $clientId): array
     {
         $operationId = $this->identifier($operation['operationId'] ?? null, 'operationId', 120);
@@ -583,6 +599,11 @@ final class SyncService
             return ['status' => 'applied'];
         }
 
+        if ($command === 'task_review.bulk') {
+            $this->applyTaskReviewBulk($payload, $account);
+            return ['status' => 'applied'];
+        }
+
         if ($command === 'review_set_preferences.patch') {
             $reviewSetId = $this->recordId($payload['review_set_id'] ?? null);
             $reviewSet = $this->accessibleReviewSet($reviewSetId, $account);
@@ -810,6 +831,152 @@ final class SyncService
         }
 
         throw new ApiException(422, 'The sync command is not supported.');
+    }
+
+    private function applyTaskReviewBulk(array $payload, string $account): void
+    {
+        $action = (string) ($payload['action'] ?? '');
+        if (!in_array($action, ['missed', 'carried', 'shift'], true)) {
+            throw new ApiException(422, 'Choose a valid bulk review action.');
+        }
+        $items = $payload['items'] ?? null;
+        if (!is_array($items) || !array_is_list($items) || count($items) < 1 || count($items) > 500) {
+            throw new ApiException(422, 'Choose between 1 and 500 open-work items.');
+        }
+
+        $findOccurrence = $this->database->pdo->prepare(
+            'SELECT id FROM occurrences
+             WHERE owner = :owner AND task = :task AND program_step = :step AND scheduled_date = :date
+             LIMIT 1',
+        );
+        $insertOccurrence = $this->database->pdo->prepare(
+            'INSERT INTO occurrences (
+                id, owner, task, program_step, scheduled_date, status, sealed, completed_at,
+                snapshot_name, snapshot_target, snapshot_unit, completion_state
+             ) VALUES (
+                :id, :owner, :task, :step, :date, :status, FALSE, \'\',
+                :snapshot_name, :snapshot_target, :snapshot_unit, :completion_state
+             )',
+        );
+        $updateOccurrence = $this->database->pdo->prepare(
+            'UPDATE occurrences
+             SET status = :status, sealed = FALSE, completed_at = \'\'
+             WHERE id = :id AND owner = :owner',
+        );
+        $shiftCounts = [];
+        $seen = [];
+
+        foreach ($items as $item) {
+            if (!is_array($item) || array_is_list($item) || !is_array($item['occurrence'] ?? null)) {
+                throw new ApiException(422, 'A bulk review item is invalid.');
+            }
+            $record = $item['occurrence'];
+            $id = $this->recordId($record['id'] ?? null);
+            $taskId = $this->recordId($record['task'] ?? null);
+            $stepId = (string) ($record['program_step'] ?? '');
+            if ($stepId !== '') {
+                $this->recordId($stepId);
+            }
+            $date = (string) ($record['scheduled_date'] ?? '');
+            $parsedDate = \DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+            if (!$parsedDate || $parsedDate->format('Y-m-d') !== $date) {
+                throw new ApiException(422, 'A bulk review date is invalid.');
+            }
+            $key = $taskId . ':' . $stepId . ':' . $date;
+            if (isset($seen[$key])) {
+                throw new ApiException(422, 'The same open-work item was included more than once.');
+            }
+            $seen[$key] = true;
+
+            $task = $this->ownedRecord('tasks', $taskId, $account);
+            if ($stepId !== '') {
+                $step = $this->ownedRecord('program_steps', $stepId, $account);
+                if (!hash_equals((string) $step['task'], $taskId)) {
+                    throw new ApiException(422, 'A program step does not belong to its task.');
+                }
+            }
+            if ($action === 'shift' && ($stepId === '' || (string) $task['type'] !== 'program')) {
+                throw new ApiException(422, 'Only program steps can shift a program.');
+            }
+
+            $findOccurrence->execute([
+                'owner' => $account,
+                'task' => $taskId,
+                'step' => $stepId,
+                'date' => $date,
+            ]);
+            $existingId = $findOccurrence->fetchColumn();
+            $status = $action === 'shift' ? 'rescheduled' : $action;
+            if (is_string($existingId)) {
+                $updateOccurrence->execute(['status' => $status, 'id' => $existingId, 'owner' => $account]);
+            } else {
+                $insertOccurrence->execute([
+                    'id' => $id,
+                    'owner' => $account,
+                    'task' => $taskId,
+                    'step' => $stepId,
+                    'date' => $date,
+                    'status' => $status,
+                    'snapshot_name' => mb_substr((string) ($record['snapshot_name'] ?? ''), 0, 200),
+                    'snapshot_target' => (float) ($record['snapshot_target'] ?? 0),
+                    'snapshot_unit' => mb_substr((string) ($record['snapshot_unit'] ?? ''), 0, 80),
+                    'completion_state' => json_encode(
+                        is_array($record['completion_state'] ?? null) ? $record['completion_state'] : [],
+                        JSON_THROW_ON_ERROR,
+                    ),
+                ]);
+            }
+
+            if ($action === 'carried') {
+                $carriedDate = $parsedDate->modify('+1 day')->format('Y-m-d');
+                $findOccurrence->execute([
+                    'owner' => $account,
+                    'task' => $taskId,
+                    'step' => $stepId,
+                    'date' => $carriedDate,
+                ]);
+                if (!is_string($findOccurrence->fetchColumn())) {
+                    $carried = $item['carried_occurrence'] ?? null;
+                    if (!is_array($carried) || array_is_list($carried)) {
+                        throw new ApiException(422, 'A carried occurrence is required.');
+                    }
+                    $insertOccurrence->execute([
+                        'id' => $this->recordId($carried['id'] ?? null),
+                        'owner' => $account,
+                        'task' => $taskId,
+                        'step' => $stepId,
+                        'date' => $carriedDate,
+                        'status' => 'pending',
+                        'snapshot_name' => mb_substr((string) ($record['snapshot_name'] ?? ''), 0, 200),
+                        'snapshot_target' => (float) ($record['snapshot_target'] ?? 0),
+                        'snapshot_unit' => mb_substr((string) ($record['snapshot_unit'] ?? ''), 0, 80),
+                        'completion_state' => json_encode(
+                            is_array($record['completion_state'] ?? null) ? $record['completion_state'] : [],
+                            JSON_THROW_ON_ERROR,
+                        ),
+                    ]);
+                }
+            }
+            if ($action === 'shift') {
+                $shiftCounts[$taskId] = ($shiftCounts[$taskId] ?? 0) + 1;
+            }
+        }
+
+        foreach ($shiftCounts as $taskId => $count) {
+            $task = $this->ownedRecord('tasks', $taskId, $account);
+            $start = \DateTimeImmutable::createFromFormat('!Y-m-d', (string) $task['start_date']);
+            if (!$start) {
+                throw new ApiException(422, 'The program start date is invalid.');
+            }
+            $update = $this->database->pdo->prepare(
+                'UPDATE tasks SET start_date = :start WHERE id = :id AND owner = :owner',
+            );
+            $update->execute([
+                'start' => $start->modify('+' . $count . ' days')->format('Y-m-d'),
+                'id' => $taskId,
+                'owner' => $account,
+            ]);
+        }
     }
 
     private function createOwnedRecord(

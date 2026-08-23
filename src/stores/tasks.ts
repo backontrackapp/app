@@ -30,6 +30,8 @@ import type {
   TaskProgress,
 } from '@/types/domain'
 
+const TASK_PROGRESS_HISTORY_DAYS = 120
+
 const asNumberArray = (value: unknown, fallback: number[] = []) =>
   Array.isArray(value) ? value.map(Number) : fallback
 
@@ -497,7 +499,46 @@ export const useTaskStore = defineStore('tasks', () => {
 
   function reviewProgressForDate(date: Date) {
     const currentDate = toDateKey(date)
-    return progressForDate(subDays(date, 1)).filter(item => taskNeedsReview(item, currentDate))
+    const candidates = new Map<string, TaskProgress>()
+    const addCandidate = (item: TaskProgress) => {
+      candidates.set(
+        occurrenceStatusKey(item.task.id, item.scheduledDate, item.programStep?.id),
+        item,
+      )
+    }
+
+    progressForDate(subDays(date, 1)).forEach(addCandidate)
+
+    for (const task of activeTasks.value) {
+      if (
+        task.type !== 'program'
+        || (!task.programStrict && !task.reviewWhenMissed)
+      ) continue
+      const retainedHistoryStart = subDays(date, TASK_PROGRESS_HISTORY_DAYS)
+      const taskStart = parseISO(task.startDate)
+      const reviewStart = taskStart > retainedHistoryStart ? taskStart : retainedHistoryStart
+      for (
+        let reviewDate = reviewStart;
+        reviewDate < date;
+        reviewDate = addDays(reviewDate, 1)
+      ) {
+        for (const step of stepsForDate(task, steps.value, reviewDate)) {
+          addCandidate(makeProgress(task, reviewDate, step))
+        }
+      }
+    }
+
+    return [...candidates.values()]
+      .filter(item => taskNeedsReview(item, currentDate) || Boolean(
+        item.programStep
+        && item.task.programStrict
+        && item.scheduledDate < currentDate
+        && item.status === 'pending'
+        && !item.complete,
+      ))
+      .sort((left, right) => left.scheduledDate.localeCompare(right.scheduledDate)
+        || left.task.sortOrder - right.task.sortOrder
+        || (left.programStep?.sortOrder ?? 0) - (right.programStep?.sortOrder ?? 0))
   }
 
   const completionRate = computed(() => completionRateForDate(selectedDate.value) || 0)
@@ -557,7 +598,7 @@ export const useTaskStore = defineStore('tasks', () => {
     error.value = ''
     try {
       await repairLegacyHealthConnectEntrySync(api.authStore.record.id)
-      const since = toDateKey(subDays(new Date(), 120))
+      const since = toDateKey(subDays(new Date(), TASK_PROGRESS_HISTORY_DAYS))
       const [taskRecords, stepRecords, occurrenceRecords, entryRecords] = await Promise.all([
         api.collection('tasks').getFullList({ sort: 'sort_order' }),
         api.collection('program_steps').getFullList({ sort: 'sort_order' }),
@@ -1677,6 +1718,114 @@ export const useTaskStore = defineStore('tasks', () => {
     }
   }
 
+  async function bulkResolveReview(
+    progressItems: TaskProgress[],
+    action: 'missed' | 'carried' | 'shift',
+  ) {
+    if (!progressItems.length) return
+    const previousOccurrences = occurrences.value.map(item => ({
+      ...item,
+      completionState: { ...(item.completionState || {}) },
+    }))
+    const previousTaskStarts = new Map(
+      progressItems.map(item => [item.task.id, item.task.startDate]),
+    )
+    const resolvedStatus: Occurrence['status'] = action === 'shift' ? 'rescheduled' : action
+    const payloadItems: Array<{
+      occurrence: Record<string, any> & { id: string }
+      carriedOccurrence?: Record<string, any> & { id: string }
+    }> = []
+    const shiftCounts = new Map<string, number>()
+
+    const occurrenceRecord = (occurrence: Occurrence) => ({
+      id: occurrence.id,
+      task: occurrence.task,
+      program_step: occurrence.programStep || '',
+      scheduled_date: occurrence.scheduledDate,
+      status: occurrence.status,
+      sealed: occurrence.sealed,
+      completed_at: occurrence.completedAt || '',
+      snapshot_name: occurrence.snapshotName,
+      snapshot_target: occurrence.snapshotTarget || 0,
+      snapshot_unit: occurrence.snapshotUnit || '',
+      completion_state: occurrence.completionState || {},
+    })
+
+    try {
+      for (const progress of progressItems) {
+        const progressDate = parseISO(progress.scheduledDate)
+        let occurrence = occurrenceFor(progress.task, progressDate, progress.programStep)
+        if (!occurrence) {
+          occurrence = {
+            id: createLocalRecordId(),
+            task: progress.task.id,
+            programStep: progress.programStep?.id,
+            scheduledDate: progress.scheduledDate,
+            status: 'pending',
+            sealed: false,
+            snapshotName: progress.programStep?.name || progress.task.name,
+            snapshotTarget: (progress.programStep?.completions?.length || 0) > 1
+              ? progress.programStep!.completions!.length
+              : progress.programStep?.completions?.[0]?.targetValue
+                ?? progress.programStep?.targetValue
+                ?? progress.task.targetValue
+                ?? 0,
+            snapshotUnit: progress.programStep?.customUnit
+              || progress.programStep?.unit
+              || progress.task.customUnit
+              || progress.task.unit
+              || '',
+            completionState: {},
+          }
+          occurrences.value.push(occurrence)
+        }
+        occurrence.status = resolvedStatus
+        occurrence.sealed = false
+        occurrence.completedAt = undefined
+
+        let carriedOccurrence: Occurrence | undefined
+        if (action === 'carried') {
+          const carriedDate = addDays(progressDate, 1)
+          carriedOccurrence = occurrenceFor(progress.task, carriedDate, progress.programStep)
+          if (!carriedOccurrence) {
+            carriedOccurrence = {
+              ...occurrence,
+              id: createLocalRecordId(),
+              scheduledDate: toDateKey(carriedDate),
+              status: 'pending',
+            }
+            occurrences.value.push(carriedOccurrence)
+          }
+        }
+        if (action === 'shift') {
+          shiftCounts.set(progress.task.id, (shiftCounts.get(progress.task.id) || 0) + 1)
+        }
+        payloadItems.push({
+          occurrence: occurrenceRecord(occurrence),
+          ...(carriedOccurrence ? { carriedOccurrence: occurrenceRecord(carriedOccurrence) } : {}),
+        })
+      }
+
+      const taskPatches = [...shiftCounts].map(([taskId, count]) => {
+        const task = taskById.value.get(taskId)!
+        task.startDate = toDateKey(addDays(parseISO(task.startDate), count))
+        return { id: task.id, startDate: task.startDate }
+      })
+      occurrenceMutationRevision += 1
+      await api.bulkResolveTaskReview({ action, items: payloadItems, taskPatches })
+    } catch (cause) {
+      occurrences.value = previousOccurrences
+      for (const [taskId, startDate] of previousTaskStarts) {
+        const task = taskById.value.get(taskId)
+        if (task) task.startDate = startDate
+      }
+      throw cause
+    } finally {
+      occurrenceMutationRevision += 1
+      void syncTaskReminders()
+    }
+  }
+
   return {
     tasks,
     steps,
@@ -1719,6 +1868,7 @@ export const useTaskStore = defineStore('tasks', () => {
     progressIsScheduled,
     toggleSkipped,
     shiftProgram,
+    bulkResolveReview,
     saveTask,
     toggleTaskActive,
     setTaskArchived,

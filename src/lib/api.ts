@@ -16,6 +16,7 @@ import {
   listLocalRecords,
   putLocalCreate,
   putLocalCommand,
+  putLocalCommandWithResourceChanges,
   putLocalDelete,
   putLocalPatch,
   putLocalProjectionCreate,
@@ -90,6 +91,18 @@ interface FlashcardImportResponse {
 interface FlashcardBulkActionResponse {
   cards: RecordModel[]
   deleted_ids: string[]
+}
+
+export interface TaskReviewBulkInput {
+  action: 'missed' | 'carried' | 'shift'
+  items: Array<{
+    occurrence: RecordModel
+    carriedOccurrence?: RecordModel
+  }>
+  taskPatches: Array<{
+    id: string
+    startDate: string
+  }>
 }
 
 const AUTH_STORAGE_KEY = 'backontrack-api-auth'
@@ -464,6 +477,50 @@ class ApiClient {
 
   autoCancellation(_enabled: boolean) {
     // Kept as a no-op so existing store initialization remains compatible.
+  }
+
+  async bulkResolveTaskReview(input: TaskReviewBulkInput) {
+    const accountId = this.authStore.record?.id || ''
+    const body = {
+      action: input.action,
+      items: input.items.map(item => ({
+        occurrence: item.occurrence,
+        ...(item.carriedOccurrence ? { carried_occurrence: item.carriedOccurrence } : {}),
+      })),
+    }
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const changes = input.items.flatMap(item => [
+        {
+          resource: 'occurrences',
+          id: item.occurrence.id,
+          patch: item.occurrence,
+          create: item.occurrence,
+        },
+        ...(item.carriedOccurrence ? [{
+          resource: 'occurrences',
+          id: item.carriedOccurrence.id,
+          patch: item.carriedOccurrence,
+          create: item.carriedOccurrence,
+        }] : []),
+      ])
+      changes.push(...input.taskPatches.map(task => ({
+        resource: 'tasks',
+        id: task.id,
+        patch: { start_date: task.startDate },
+      })))
+      await putLocalCommandWithResourceChanges(
+        accountId,
+        'task_review.bulk',
+        body,
+        changes,
+      )
+      return { applied: true }
+    }
+    return request<{ applied: true }>(
+      '/task-review/bulk',
+      { method: 'POST', body },
+      this.authStore,
+    )
   }
 
   registerAccount(name: string, email: string, password: string, timezone: string) {

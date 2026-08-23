@@ -16,6 +16,12 @@ Task occurrence updates remain optimistic while progress reloads are running. A 
 
 Opening a completed program-step requirement shows a **Mark incomplete** action instead of changing it immediately. The action resets only the selected check, interval, or flashcard requirement while preserving its session history. Opening the completed step card outside its requirements offers the same action for all manually completed requirements. Quantity requirements continue to derive completion from their logged amounts, which can be adjusted from log history.
 
+Programs with **Review if unfinished** enabled expose every unresolved step from earlier days in the retained task history under **Resolve open work**, including steps before a repeating-program cycle boundary. Strict programs provide the same backlog even when **Review if unfinished** is disabled. Each item shows its scheduled date and can be marked missed, carried forward, or used to shift the program. Resolving one item removes only that dated occurrence from the open-work list; the remaining backlog stays available.
+
+When **Resolve open work** contains more than three items, it also offers confirmed bulk actions to mark the full backlog missed, carry the full backlog forward, or shift every affected program once for each of its unresolved steps. Each bulk action updates offline state and queues one command in a single local transaction; the server applies the complete command atomically so it cannot persist only part of the selection.
+
+Task cards for missed, skipped, and shifted occurrences remain available in their dated history but use the same muted grayscale treatment as other inactive work. Shifted occurrences also show an explicit **Shifted** status.
+
 ## Health Connect
 
 Step Counter tasks can load daily step totals from Android Health Connect after the user connects it in Settings. Health Connect does not expose screen-time or app-usage records, so Screen time is not offered as an automatically populated Duration-task unit. Supporting device screen time would require a separate Android `UsageStatsManager` integration and usage-access permission.

@@ -205,6 +205,12 @@ final class Api
             if ($method === 'POST' && $path === '/task-session-progress/reconcile') {
                 $this->reconcileSessionTaskProgress($this->authenticate());
             }
+            if ($method === 'POST' && $path === '/task-review/bulk') {
+                $this->respond($this->syncService->bulkResolveTaskReview(
+                    $this->authenticate(),
+                    $this->jsonBody(),
+                ));
+            }
             if ($method === 'POST' && $path === '/auth/passkeys/register/options') {
                 $this->passkeyRegistrationOptions();
             }

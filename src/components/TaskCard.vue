@@ -193,6 +193,7 @@ const taskTypePresentation = computed(() => TASK_TYPE_PRESENTATION[task.value.ty
 const taskColor = computed(() => task.value.color || taskTypePresentation.value.color)
 const isPausedTask = computed(() => props.scheduleStatus === 'paused')
 const isSkippedTask = computed(() => props.scheduleStatus === 'skipped')
+const isResolvedInactive = computed(() => ['missed', 'skipped', 'rescheduled'].includes(props.progress.status))
 const stateColor = computed(() => {
   if (isSkippedTask.value) return 'warning'
   if (numericGoalStatus.value?.tone === 'text-success') return 'success'
@@ -255,7 +256,8 @@ const hasPersistentDetails = computed(() => showsProgress.value
   || Boolean(props.stepCountError)
   || Boolean(numericGoalStatus.value)
   || props.progress.locked
-  || props.progress.status === 'missed')
+  || props.progress.status === 'missed'
+  || props.progress.status === 'rescheduled')
 
 watch(() => props.valuePulse, async (pulse, previousPulse) => {
   if (!pulse || pulse === previousPulse) return
@@ -310,6 +312,7 @@ onBeforeUnmount(() => {
     class="task-card surface-card pa-4"
     :class="{
       'task-card--done': progress.complete,
+      'task-card--resolved-inactive': isResolvedInactive,
       'task-card--sealed': progress.sealed,
       'task-card--outside-schedule': scheduleStatus,
     }"
@@ -517,6 +520,10 @@ onBeforeUnmount(() => {
       <div v-if="progress.status === 'missed'" class="status-banner mt-3 text-error">
         <v-icon icon="mdi-alert-circle-outline" size="1rem" /> Missed
       </div>
+
+      <div v-if="progress.status === 'rescheduled'" class="status-banner mt-3 muted">
+        <v-icon icon="mdi-calendar-arrow-right" size="1rem" /> Shifted
+      </div>
     </div>
     <div
       v-if="taskLogImageDeck.length"
@@ -555,7 +562,8 @@ onBeforeUnmount(() => {
   outline-offset: .2rem;
 }
 
-.task-card--done {
+.task-card--done,
+.task-card--resolved-inactive {
   filter: grayscale(1);
   opacity: .55;
 }

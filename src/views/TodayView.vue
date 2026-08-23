@@ -89,6 +89,10 @@ const lockInUpdating = ref(false)
 const todayPage = ref<HTMLElement>()
 const nextIncompleteProgress = ref<TaskProgress>()
 const reviewSheet = ref(false)
+const reviewBulkDialog = ref(false)
+const reviewBulkAction = ref<'missed' | 'carried' | 'shift'>('missed')
+const reviewBulkItems = ref<TaskProgress[]>([])
+const reviewBulkUpdating = ref(false)
 const taskSheet = ref(false)
 const taskSheetMode = ref<'actions' | 'history'>('actions')
 const taskActionProgress = ref<TaskProgress>()
@@ -441,6 +445,30 @@ const progressByVisibilityKey = computed(() => new Map(
   selectedProgress.value.map(progress => [visibilityKey(progress), progress]),
 ))
 const reviewItems = computed(() => store.reviewProgressForDate(selectedDate.value))
+const reviewProgramItems = computed(() => reviewItems.value.filter(item => Boolean(item.programStep)))
+const reviewBulkPresentation = computed(() => ({
+  missed: {
+    title: 'Mark all open work missed?',
+    message: `${reviewBulkItems.value.length} open items will be marked missed. Their programs will keep their current schedules.`,
+    confirmText: 'Mark all missed',
+    color: 'error',
+    icon: 'mdi-close-circle-outline',
+  },
+  carried: {
+    title: 'Carry all open work forward?',
+    message: `${reviewBulkItems.value.length} open items will be carried to their following days. Existing scheduled work will remain there too.`,
+    confirmText: 'Carry all forward',
+    color: 'warning',
+    icon: 'mdi-arrow-right-bold',
+  },
+  shift: {
+    title: 'Shift all affected programs?',
+    message: `${reviewBulkItems.value.length} open program steps will be rescheduled and their programs shifted forward once per step.`,
+    confirmText: 'Shift all programs',
+    color: 'warning',
+    icon: 'mdi-calendar-arrow-right',
+  },
+})[reviewBulkAction.value])
 const scoredProgress = computed(() => selectedProgress.value.filter(item => item.status !== 'skipped'))
 const doneCount = computed(() => scoredProgress.value.filter((item) => item.complete).length)
 const taskLogImageDeckByTask = computed(() => {
@@ -801,6 +829,30 @@ async function resolveReview(item: TaskProgress, status: 'missed' | 'carried') {
   const update = runForProgress(item, () => store.setStatus(item, status))
   if (!reviewItems.value.length) reviewSheet.value = false
   await update
+}
+
+function requestBulkReview(action: 'missed' | 'carried' | 'shift') {
+  const items = action === 'shift' ? reviewProgramItems.value : reviewItems.value
+  if (reviewItems.value.length <= 3 || !items.length) return
+  reviewBulkAction.value = action
+  reviewBulkItems.value = [...items]
+  reviewSheet.value = false
+  reviewBulkDialog.value = true
+}
+
+async function confirmBulkReview() {
+  if (reviewBulkUpdating.value || !reviewBulkItems.value.length) return
+  reviewBulkUpdating.value = true
+  reviewBulkDialog.value = false
+  try {
+    await store.bulkResolveReview(reviewBulkItems.value, reviewBulkAction.value)
+    reviewBulkItems.value = []
+  } catch (cause) {
+    store.error = cause instanceof Error ? cause.message : 'Could not resolve all open work.'
+    reviewSheet.value = true
+  } finally {
+    reviewBulkUpdating.value = false
+  }
 }
 
 function openTaskActions(progress: TaskProgress) {
@@ -1935,20 +1987,78 @@ async function saveTaskLogEntry() {
       @confirm="confirmTaskLogDeletion"
     />
 
+    <ConfirmDialog
+      v-model="reviewBulkDialog"
+      :title="reviewBulkPresentation.title"
+      :message="reviewBulkPresentation.message"
+      :confirm-text="reviewBulkPresentation.confirmText"
+      :confirm-color="reviewBulkPresentation.color"
+      :icon="reviewBulkPresentation.icon"
+      :loading="reviewBulkUpdating"
+      @confirm="confirmBulkReview"
+    />
+
     <ActionBottomSheet
       v-model="reviewSheet"
       title="Resolve open work"
       aria-label="Resolve open task actions"
     >
-      <div v-for="item in reviewItems" :key="`${item.task.id}-${item.programStep?.id || ''}`" class="review-row px-2 py-3">
-        <div class="flex-grow-1"><strong>{{ item.programStep?.name || item.task.name }}</strong><p class="text-caption muted">Choose how this attempt ends.</p></div>
+      <div v-if="reviewItems.length > 3" class="review-bulk-actions px-2 pb-3">
+        <p class="text-caption muted mb-2">Apply one resolution to the full backlog.</p>
+        <v-row dense>
+          <v-col cols="12" md="4">
+            <v-btn
+              block
+              size="large"
+              variant="tonal"
+              color="error"
+              prepend-icon="mdi-close-circle-multiple-outline"
+              :disabled="reviewBulkUpdating"
+              @click="requestBulkReview('missed')"
+            >
+              Mark all missed
+            </v-btn>
+          </v-col>
+          <v-col cols="12" md="4">
+            <v-btn
+              block
+              size="large"
+              variant="tonal"
+              prepend-icon="mdi-arrow-right-bold"
+              :disabled="reviewBulkUpdating"
+              @click="requestBulkReview('carried')"
+            >
+              Carry all forward
+            </v-btn>
+          </v-col>
+          <v-col v-if="reviewProgramItems.length" cols="12" md="4">
+            <v-btn
+              block
+              size="large"
+              variant="tonal"
+              prepend-icon="mdi-calendar-arrow-right"
+              :disabled="reviewBulkUpdating"
+              @click="requestBulkReview('shift')"
+            >
+              Shift all programs
+            </v-btn>
+          </v-col>
+        </v-row>
+      </div>
+      <div v-for="item in reviewItems" :key="`${item.scheduledDate}-${item.task.id}-${item.programStep?.id || ''}`" class="review-row px-2 py-3">
+        <div class="flex-grow-1">
+          <strong>{{ item.programStep?.name || item.task.name }}</strong>
+          <p class="text-caption muted">
+            {{ format(parseISO(item.scheduledDate), 'EEE, MMM d') }} · Choose how this attempt ends.
+          </p>
+        </div>
         <div class="review-actions">
           <v-btn
             size="large"
             variant="tonal"
             color="error"
             prepend-icon="mdi-close-circle-outline"
-            :disabled="progressIsBusy(item)"
+            :disabled="reviewBulkUpdating || progressIsBusy(item)"
             @click="resolveReview(item, 'missed')"
           >
             Mark missed
@@ -1957,7 +2067,7 @@ async function saveTaskLogEntry() {
             size="large"
             variant="tonal"
             prepend-icon="mdi-arrow-right-bold"
-            :disabled="progressIsBusy(item)"
+            :disabled="reviewBulkUpdating || progressIsBusy(item)"
             @click="resolveReview(item, 'carried')"
           >
             Carry forward
@@ -1967,7 +2077,7 @@ async function saveTaskLogEntry() {
             size="large"
             variant="tonal"
             prepend-icon="mdi-calendar-arrow-right"
-            :disabled="progressIsBusy(item)"
+            :disabled="reviewBulkUpdating || progressIsBusy(item)"
             @click="runForProgress(item, () => store.shiftProgram(item))"
           >
             Shift program
