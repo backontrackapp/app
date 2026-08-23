@@ -8,7 +8,7 @@ When Android Usage Access is enabled, the main Tracking page also loads screen t
 
 The main Tracking page keeps tracker cards focused on starting a new log and managing the tracker. Cards with an entry on the selected date are greyed out, while remaining available for additional entries and tracker actions. Entries for the selected date appear together in a chronological **Log** section below the factor and outcome tracker groups. Selecting a log opens it for editing, and days without entries show an explicit empty state.
 
-Swiping left across the **Log** section advances to the next date, while swiping right returns to the previous date. The newly selected log moves in from the navigation direction with a quick horizontal transition.
+Swiping left across **Things you did**, **How you felt**, or the **Log** section advances to the next date, while swiping right returns to the previous date. All three date-dependent sections move in together from the navigation direction with a quick horizontal transition, and a centered card briefly confirms the selected date before fading away.
 
 Tracker cards can be reordered within their **Things you did** or **How you felt** group by pressing and holding, then dragging. Cards animate into their prospective grid positions while dragging, with row-aware targeting for stable vertical movement across the grid. The new order is applied immediately and saved through the offline-first data layer; if persistence fails, the previous order is restored and an error is shown.
 

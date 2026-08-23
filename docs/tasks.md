@@ -2,7 +2,7 @@
 
 Opening the Tasks view selects the current day. Choosing another date remains in effect while working in that view, but returning to Tasks starts from today again.
 
-Swiping left across the Tasks view advances to the next date, while swiping right returns to the previous date. Date-dependent content moves in from the navigation direction with a quick horizontal transition. The week selector and horizontally scrollable Quick log row keep their own swipe behavior.
+Swiping left across the Tasks view advances to the next date, while swiping right returns to the previous date. Date-dependent content moves in from the navigation direction with a quick horizontal transition, a centered card briefly confirms the newly selected date before fading away, and the Quick log row resets to its left edge. The week selector and horizontally scrollable Quick log row keep their own swipe behavior.
 
 The task editor's archive action offers a choice between archiving and permanent deletion. Archiving removes a task from its schedule and reminders while preserving its settings, entries, and history. Archived tasks appear in the collapsible Archive section below Not scheduled, where selecting one opens the editor so it can be restored. Permanent deletion removes the task, its program steps, occurrences, entries, and image logs; saved interval and Review sessions remain in history without task attribution.
 

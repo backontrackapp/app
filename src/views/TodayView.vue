@@ -9,6 +9,7 @@ import { useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import AppDialog from '@/components/AppDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import DateSwipeFeedback from '@/components/DateSwipeFeedback.vue'
 import StickyActionBanner from '@/components/StickyActionBanner.vue'
 import TaskCard from '@/components/TaskCard.vue'
 import TaskImageLogBottomSheet from '@/components/TaskImageLogBottomSheet.vue'
@@ -121,9 +122,20 @@ const notScheduledExpanded = ref(false)
 const archiveExpanded = ref(false)
 const reorderingTasks = ref(false)
 const reorderingQuickLogs = ref(false)
+const dateSwipeFeedback = ref<InstanceType<typeof DateSwipeFeedback>>()
+const quickLogStrip = ref<HTMLElement>()
+
+function changeTaskDate(amount: number) {
+  selectedDate.value = addDays(selectedDate.value, amount)
+  dateSwipeFeedback.value?.show(selectedDate.value)
+  void nextTick(() => {
+    if (quickLogStrip.value) quickLogStrip.value.scrollLeft = 0
+  })
+}
+
 const taskDateSwipe = {
-  onPrevious: () => { selectedDate.value = addDays(selectedDate.value, -1) },
-  onNext: () => { selectedDate.value = addDays(selectedDate.value, 1) },
+  onPrevious: () => changeTaskDate(-1),
+  onNext: () => changeTaskDate(1),
   ignore: '.week-date-navigator, .quick-log-section',
   transitionTarget: '.date-swipe-content',
 }
@@ -1506,6 +1518,8 @@ async function saveTaskLogEntry() {
 
 <template>
   <main ref="todayPage" v-date-swipe="taskDateSwipe" class="app-page today-page">
+    <DateSwipeFeedback ref="dateSwipeFeedback" />
+
     <WeekDateNavigator
       v-model="selectedDate"
       v-model:week-start="visibleWeekStart"
@@ -1515,7 +1529,7 @@ async function saveTaskLogEntry() {
 
     <div class="date-swipe-content">
       <section v-if="quickLogProgress.length" class="quick-log-section mb-5" aria-label="Quick log tasks">
-      <div class="quick-log-strip">
+      <div ref="quickLogStrip" class="quick-log-strip">
         <TaskQuickLogCard
           v-for="item in quickLogProgress"
           :key="visibilityKey(item)"
