@@ -156,6 +156,14 @@ html.keyboard-open .page-action-area {
   display: none !important;
 }
 
+html.platform-android.keyboard-open .form-action-bar {
+  display: block !important;
+}
+
+html.platform-android.keyboard-open .form-action-bar:not(.form-action-bar--embedded) {
+  bottom: 0;
+}
+
 /* Android document scrolling stops cleanly at the viewport boundaries. */
 html.platform-android,
 html.platform-android body {
