@@ -46,6 +46,8 @@ export interface Task {
   cycleLength?: number
   programRepeat?: boolean
   programStrict?: boolean
+  quickLogEnabled?: boolean
+  quickLogSortOrder?: number
   logWithImagesEnabled: boolean
   sortOrder: number
   intervalTemplate?: string

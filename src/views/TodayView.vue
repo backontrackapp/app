@@ -12,6 +12,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import StickyActionBanner from '@/components/StickyActionBanner.vue'
 import TaskCard from '@/components/TaskCard.vue'
 import TaskImageLogBottomSheet from '@/components/TaskImageLogBottomSheet.vue'
+import TaskQuickLogCard from '@/components/TaskQuickLogCard.vue'
 import TrackingLogBottomSheet from '@/components/TrackingLogBottomSheet.vue'
 import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
@@ -119,6 +120,7 @@ const valuePulseVersions = ref<Record<string, number>>({})
 const notScheduledExpanded = ref(false)
 const archiveExpanded = ref(false)
 const reorderingTasks = ref(false)
+const reorderingQuickLogs = ref(false)
 const exactAmount = computed(() => {
   if (!exactAmountInput.value || exactAmountInput.value === '.') return null
   const value = Number(exactAmountInput.value)
@@ -441,6 +443,14 @@ const archivedProgress = computed(() => store.tasks
 const scheduleLayout = computed(() => groupTaskProgressBySchedule(selectedProgress.value))
 const allDayProgress = computed(() => scheduleLayout.value.allDay)
 const timedProgressGroups = computed(() => scheduleLayout.value.timed)
+const quickLogProgress = computed(() => selectedProgress.value
+  .filter(progress => progress.task.quickLogEnabled && progress.status !== 'rescheduled')
+  .sort((left, right) => (
+    (left.task.quickLogSortOrder ?? left.task.sortOrder)
+      - (right.task.quickLogSortOrder ?? right.task.sortOrder)
+    || left.task.sortOrder - right.task.sortOrder
+    || (left.programStep?.sortOrder ?? 0) - (right.programStep?.sortOrder ?? 0)
+  )))
 const progressByVisibilityKey = computed(() => new Map(
   selectedProgress.value.map(progress => [visibilityKey(progress), progress]),
 ))
@@ -702,6 +712,19 @@ async function reorderTaskCards(result: LongPressDragResult, progressItems: Task
     // The store restores the previous order and exposes the save error.
   } finally {
     reorderingTasks.value = false
+  }
+}
+
+async function reorderQuickLogCards(result: LongPressDragResult) {
+  const orderedTaskIds = taskIdsFromProgressDrag(result, quickLogProgress.value)
+  if (orderedTaskIds.length < 2) return
+  reorderingQuickLogs.value = true
+  try {
+    await store.reorderQuickLogs(orderedTaskIds)
+  } catch {
+    // The store restores the previous order and exposes the save error.
+  } finally {
+    reorderingQuickLogs.value = false
   }
 }
 
@@ -1406,6 +1429,25 @@ async function saveTaskLogEntry() {
       :markers="taskDateMarkers"
       class="mb-5"
     />
+
+    <section v-if="quickLogProgress.length" class="quick-log-section mb-5" aria-label="Quick log tasks">
+      <div class="quick-log-strip">
+        <TaskQuickLogCard
+          v-for="item in quickLogProgress"
+          :key="visibilityKey(item)"
+          v-long-press-drag="{
+            id: progressKey(item),
+            group: 'quick-log-cards',
+            handle: '.task-quick-log__action',
+            disabled: draggableTaskCount(quickLogProgress) < 2 || reorderingQuickLogs,
+            onDrop: reorderQuickLogCards,
+          }"
+          :progress="item"
+          :class="{ 'quick-log-item--draggable': draggableTaskCount(quickLogProgress) > 1 }"
+          @actions="openTaskActions"
+        />
+      </div>
+    </section>
 
     <v-card class="score-card pa-5" color="surface">
       <div class="score-pattern" />
@@ -2119,6 +2161,30 @@ async function saveTaskLogEntry() {
 </template>
 
 <style scoped>
+.quick-log-section {
+  width: calc(100% + 2rem);
+  margin-right: -1rem;
+  margin-left: -1rem;
+  overflow: hidden;
+}
+.quick-log-strip {
+  display: flex;
+  overflow-x: auto;
+  padding: 0 1rem .25rem;
+  gap: .75rem;
+  overscroll-behavior-inline: contain;
+  scroll-padding-inline: 1rem;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+.quick-log-strip::-webkit-scrollbar { display: none; }
+.quick-log-strip > * { scroll-snap-align: start; }
+.quick-log-strip :deep(.long-press-drag-placeholder) {
+  width: 8rem;
+  min-width: 8rem;
+  flex: 0 0 8rem;
+}
+.quick-log-item--draggable :deep(.task-quick-log__action) { cursor: grab; }
 .score-card { position: relative; overflow: hidden; }
 .score-pattern { position: absolute; top: -4.375rem; right: -2.5rem; width: 13.75rem; height: 13.75rem; border: 2.1875rem solid rgba(199,244,100,.07); border-radius: 50%; }
 .score-number { font-family: Impact, "Arial Narrow", sans-serif; font-size: 3.2rem; line-height: .9; letter-spacing: -.03em; }

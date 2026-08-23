@@ -123,6 +123,8 @@ final class Schema
                     'cycle_length' => self::integer(0, 365),
                     'program_repeat' => self::boolean(),
                     'program_strict' => self::boolean(),
+                    'quick_log_enabled' => self::boolean(),
+                    'quick_log_sort_order' => self::integer(),
                     'log_with_images_enabled' => self::boolean(),
                     'sort_order' => self::integer(),
                     'color' => self::text(20),

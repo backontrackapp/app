@@ -68,6 +68,8 @@ function mapTask(record: Record<string, any>): Task {
     cycleLength: record.cycle_length || undefined,
     programRepeat: record.program_repeat,
     programStrict: record.program_strict,
+    quickLogEnabled: record.quick_log_enabled === true,
+    quickLogSortOrder: Number(record.quick_log_sort_order || 0),
     logWithImagesEnabled: record.log_with_images_enabled === true,
     sortOrder: record.sort_order || 0,
     intervalTemplate: record.interval_template || undefined,
@@ -1402,6 +1404,12 @@ export const useTaskStore = defineStore('tasks', () => {
     const sortOrder = draft.id
       ? draft.sortOrder
       : tasks.value.reduce((highest, task) => Math.max(highest, task.sortOrder), -1) + 1
+    const quickLogSortOrder = draft.id
+      ? draft.quickLogSortOrder ?? draft.sortOrder
+      : tasks.value.reduce((highest, task) => Math.max(
+          highest,
+          task.quickLogSortOrder ?? task.sortOrder,
+        ), -1) + 1
     const payload = {
       owner: api.authStore.record!.id,
       name: draft.name,
@@ -1427,6 +1435,8 @@ export const useTaskStore = defineStore('tasks', () => {
       cycle_length: draft.type === 'program' ? draft.steps.length : draft.cycleLength || 0,
       program_repeat: draft.programRepeat ?? true,
       program_strict: draft.programStrict ?? false,
+      quick_log_enabled: draft.quickLogEnabled === true,
+      quick_log_sort_order: quickLogSortOrder,
       log_with_images_enabled: draft.logWithImagesEnabled,
       sort_order: sortOrder,
       interval_template: draft.type === 'interval' ? draft.intervalTemplate || '' : '',
@@ -1680,6 +1690,54 @@ export const useTaskStore = defineStore('tasks', () => {
     }
   }
 
+  async function reorderQuickLogs(orderedIds: string[]) {
+    const uniqueIds = [...new Set(orderedIds)]
+    const orderedIdSet = new Set(uniqueIds)
+    const orderedTasks = uniqueIds
+      .map(id => tasks.value.find(task => task.id === id && task.quickLogEnabled))
+      .filter((task): task is Task => Boolean(task))
+    if (orderedTasks.length < 2 || orderedTasks.length !== uniqueIds.length) return
+
+    const previousTasks = tasks.value.map(task => ({ ...task }))
+    const previousSortOrders = new Map(previousTasks.map(task => [
+      task.id,
+      task.quickLogSortOrder ?? task.sortOrder,
+    ]))
+    const quickLogTasks = tasks.value
+      .filter(task => task.quickLogEnabled)
+      .sort((left, right) => (
+        (left.quickLogSortOrder ?? left.sortOrder) - (right.quickLogSortOrder ?? right.sortOrder)
+        || left.sortOrder - right.sortOrder
+      ))
+    let orderedIndex = 0
+    quickLogTasks.forEach((task, index) => {
+      const orderedTask = orderedIdSet.has(task.id)
+        ? orderedTasks[orderedIndex++] ?? task
+        : task
+      orderedTask.quickLogSortOrder = index
+    })
+    const changedTasks = quickLogTasks.filter(task => (
+      previousSortOrders.get(task.id) !== task.quickLogSortOrder
+    ))
+    if (!changedTasks.length) return
+
+    error.value = ''
+    try {
+      await Promise.all(changedTasks.map(task => api.collection('tasks').update(task.id, {
+        quick_log_sort_order: task.quickLogSortOrder,
+      })))
+    } catch (cause) {
+      tasks.value = previousTasks
+      await Promise.allSettled(changedTasks.map(task => api.collection('tasks').update(task.id, {
+        quick_log_sort_order: previousSortOrders.get(task.id),
+      })))
+      error.value = cause instanceof Error
+        ? cause.message
+        : 'Could not save the quick-log order.'
+      throw cause
+    }
+  }
+
   async function deleteTask(taskId: string) {
     const previousTasks = tasks.value
     const previousSteps = steps.value
@@ -1870,6 +1928,7 @@ export const useTaskStore = defineStore('tasks', () => {
     shiftProgram,
     bulkResolveReview,
     saveTask,
+    reorderQuickLogs,
     toggleTaskActive,
     setTaskArchived,
     upsertOccurrenceRecord,

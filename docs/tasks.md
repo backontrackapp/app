@@ -10,6 +10,8 @@ When a Daily Total log exactly fills the positive amount remaining to its target
 
 Logged amounts update task progress immediately. Background persistence and synchronization refreshes preserve that optimistic value so totals do not temporarily revert while the save is in flight.
 
+Tasks with **Quick log** enabled appear in a horizontally scrollable shortcut row at the top of the Tasks view whenever they are scheduled for the selected date. Each shortcut uses the task color and opens the same action sheet as its full task card. Numeric, tracking, duration-goal, and multi-requirement tasks show their current progress bar; simple action tasks do not add an empty progress treatment. Holding and dragging a shortcut reorders quick logs independently from the full task schedule, updates the local order immediately, and scrolls the shortcut row near its horizontal edges.
+
 Completed interval and flashcard sessions reconcile their attributed program-step requirement only when its effective completion state changes. Repeated local refreshes preserve the original completion instead of creating another occurrence update.
 
 Task occurrence updates remain optimistic while progress reloads are running. A completed program-step requirement that is marked incomplete stays incomplete after persistence finishes: older progress responses cannot replace it, and historical session reconciliation respects its recorded incomplete state.

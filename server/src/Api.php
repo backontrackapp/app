@@ -2637,6 +2637,8 @@ final class Api
         if ($collection['name'] === 'tasks') {
             $body += [
                 'archived' => false,
+                'quick_log_enabled' => false,
+                'quick_log_sort_order' => 0,
                 'log_with_images_enabled' => false,
                 'schedule_mode' => 'all_day',
                 'scheduled_time' => '',

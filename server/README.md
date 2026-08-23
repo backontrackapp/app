@@ -120,6 +120,7 @@ The reconstructed PHP-era history is:
 | `202608200005` | Removed server-side desktop notification storage |
 | `202608200006` | Added optional flashcard transliteration storage and sync support |
 | `202608200007` | Added non-destructive task archiving |
+| `202608220001` | Added opt-in, independently reorderable quick-log shortcuts for tasks |
 
 Existing PHP databases are advanced without recreating application data. The schema is validated after migration, including required columns.
 

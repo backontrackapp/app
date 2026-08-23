@@ -46,6 +46,7 @@ interface DragGesture {
   layoutTransitionElements?: Set<HTMLElement>
   layoutTransitionBounds?: Map<HTMLElement, DOMRect>
   autoScrollFrame?: number
+  horizontalScrollElement?: HTMLElement
   sourceDropZone?: DropState
   activeDropZone?: DropState
   fromIndex: number
@@ -566,12 +567,48 @@ function pageAutoScrollAmount(clientY: number) {
   return direction * Math.max(1, Math.round(AUTO_SCROLL_MAX_PX * intensity * intensity))
 }
 
+function horizontalScrollContainer(element: HTMLElement) {
+  let candidate = element.parentElement
+  while (candidate) {
+    const overflow = getComputedStyle(candidate).overflowX
+    if (
+      ['auto', 'scroll'].includes(overflow)
+      && candidate.scrollWidth > candidate.clientWidth
+    ) return candidate
+    candidate = candidate.parentElement
+  }
+  return undefined
+}
+
+function horizontalAutoScrollAmount(gesture: DragGesture) {
+  const container = gesture.horizontalScrollElement
+  if (!container) return 0
+  const bounds = container.getBoundingClientRect()
+  const edge = Math.min(AUTO_SCROLL_EDGE_PX, bounds.width / 3)
+  if (edge <= 0) return 0
+
+  let direction = 0
+  let intensity = 0
+  if (gesture.clientX < bounds.left + edge) {
+    direction = -1
+    intensity = Math.min(1, (bounds.left + edge - gesture.clientX) / edge)
+  } else if (gesture.clientX > bounds.right - edge) {
+    direction = 1
+    intensity = Math.min(1, (gesture.clientX - (bounds.right - edge)) / edge)
+  }
+  if (!direction || intensity <= 0) return 0
+  return direction * Math.max(1, Math.round(AUTO_SCROLL_MAX_PX * intensity * intensity))
+}
+
 function schedulePageAutoScroll(state: DragState) {
   const gesture = state.gesture
   if (
     !gesture?.active
     || gesture.autoScrollFrame !== undefined
-    || pageAutoScrollAmount(gesture.clientY) === 0
+    || (
+      pageAutoScrollAmount(gesture.clientY) === 0
+      && horizontalAutoScrollAmount(gesture) === 0
+    )
   ) return
 
   gesture.autoScrollFrame = window.requestAnimationFrame(() => {
@@ -579,12 +616,21 @@ function schedulePageAutoScroll(state: DragState) {
     if (!current?.active) return
     current.autoScrollFrame = undefined
 
+    let scrolled = false
     const amount = pageAutoScrollAmount(current.clientY)
-    if (!amount) return
     const scrollingElement = document.scrollingElement || document.documentElement
-    const previousScrollTop = scrollingElement.scrollTop
-    scrollingElement.scrollTop += amount
-    if (scrollingElement.scrollTop === previousScrollTop) return
+    if (amount) {
+      const previousScrollTop = scrollingElement.scrollTop
+      scrollingElement.scrollTop += amount
+      scrolled ||= scrollingElement.scrollTop !== previousScrollTop
+    }
+    const horizontalAmount = horizontalAutoScrollAmount(current)
+    if (horizontalAmount && current.horizontalScrollElement) {
+      const previousScrollLeft = current.horizontalScrollElement.scrollLeft
+      current.horizontalScrollElement.scrollLeft += horizontalAmount
+      scrolled ||= current.horizontalScrollElement.scrollLeft !== previousScrollLeft
+    }
+    if (!scrolled) return
 
     updatePlaceholder(state, current.clientX, current.clientY)
     schedulePageAutoScroll(state)
@@ -612,6 +658,7 @@ function activateDrag(state: DragState) {
     : siblings
   gesture.fromIndex = sourceItems.findIndex((candidate) => candidate.element === state.element)
   gesture.horizontalSlots = hasHorizontalSlots(sourceItems)
+  gesture.horizontalScrollElement = horizontalScrollContainer(state.element)
   gesture.active = true
   gesture.sourceBounds = state.element.getBoundingClientRect()
   gesture.originalDisplay = state.element.style.display
