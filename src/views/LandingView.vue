@@ -696,15 +696,22 @@ function scrollToFeatures() {
 
   .landing-footer {
     min-height: 5rem;
-    align-items: flex-start;
+    align-items: center;
     flex-direction: column;
     gap: .5rem;
     padding-block: 1.25rem;
+    text-align: center;
   }
 
   .landing-footer__brand {
     width: 100%;
-    justify-content: space-between;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1rem;
+  }
+
+  .landing-footer__links {
+    justify-content: center;
   }
 
 }
