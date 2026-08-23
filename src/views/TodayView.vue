@@ -493,7 +493,10 @@ const archivedProgress = computed(() => store.tasks
   .filter(task => task.archived)
   .sort((left, right) => left.sortOrder - right.sortOrder)
   .map(task => store.makeProgress(task, selectedDate.value)))
-const scheduleLayout = computed(() => groupTaskProgressBySchedule(selectedProgress.value))
+const mainTaskProgress = computed(() => selectedProgress.value.filter(progress => !(
+  taskSupportsQuickLog(progress.task.type) && progress.task.quickLogEnabled
+)))
+const scheduleLayout = computed(() => groupTaskProgressBySchedule(mainTaskProgress.value))
 const allDayProgress = computed(() => scheduleLayout.value.allDay)
 const timedProgressGroups = computed(() => scheduleLayout.value.timed)
 const quickLogProgress = computed(() => selectedProgress.value
