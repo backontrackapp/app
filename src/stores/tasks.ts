@@ -1627,6 +1627,7 @@ export const useTaskStore = defineStore('tasks', () => {
         })
       }
       void syncTaskReminders()
+      useSnackbarStore().showSaved('Task', optimisticTask.name)
       return taskId
     } catch (cause) {
       tasks.value = previousTasks

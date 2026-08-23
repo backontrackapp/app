@@ -412,7 +412,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           ? await api.updateFlashcardAudio(record.id, side, value.recording)
           : await api.removeFlashcardAudio(record.id, side)
       }
-      return cacheCard(mapCard(record), !draft.id)
+      const card = cacheCard(mapCard(record), !draft.id)
+      useSnackbarStore().showSaved('Card', card.front)
+      return card
     } catch (cause) {
       cards.value = cards.value.filter(card => card !== optimisticCard)
       if (existing) cacheCard(existing)
@@ -590,7 +592,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         : await api.collection('flashcard_review_sets').create(payload)
       const accessibleRecords = await api.getAccessibleFlashcardReviewSets()
       reviewSets.value = accessibleRecords.map(mapReviewSet)
-      return reviewSets.value.find(item => item.id === record.id) || mapReviewSet(record)
+      const savedReviewSet = reviewSets.value.find(item => item.id === record.id) || mapReviewSet(record)
+      useSnackbarStore().showSaved('Review set', savedReviewSet.name)
+      return savedReviewSet
     } catch (cause) {
       const optimisticIndex = reviewSets.value.indexOf(reviewSet)
       if (previous && optimisticIndex >= 0) reviewSets.value.splice(optimisticIndex, 1, previous)
@@ -812,6 +816,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         if (cardIndex >= 0) cards.value.splice(cardIndex, 1, card)
         else cards.value.unshift(card)
       }
+      useSnackbarStore().showSaved('Card', card.front)
       return card
     } catch (cause) {
       reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: previousReviewSetCards }
@@ -1194,6 +1199,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       const index = sessions.value.findIndex(item => item.id === session.id)
       if (index >= 0) sessions.value.splice(index, 1, session)
       else sessions.value.unshift(session)
+      useSnackbarStore().showSaved('Review session', session.name)
       return session
     } catch (cause) {
       if (current && previous) Object.assign(current, previous)

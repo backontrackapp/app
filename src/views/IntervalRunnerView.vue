@@ -77,6 +77,7 @@ import { toDateKey } from '@/services/schedule'
 import { intervalRunnerSessionMenuItems } from '@/services/runnerSessionActions'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
+import { showSavedSnackbar } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
 import type {
   Flashcard,
@@ -747,6 +748,7 @@ async function saveIntervalSettings(target: IntervalSettingsApplyTarget) {
       if (flashcardReviewSet !== currentReviewSet) {
         await store.updateSessionFlashcardReview(item.id, flashcardReview)
       }
+      showSavedSnackbar('Interval session', item.name)
       displayRemainingMs.value = updated.runtime.remainingMs
       lastCountCue = ''
       lastSpokenFlashcardKey = ''
@@ -1767,6 +1769,7 @@ async function saveFlashcardSettings(target: FlashcardSettingsApplyTarget = 'ses
         await flashcardStore.saveReviewSet(settings)
       } else {
         await flashcardStore.saveReviewSetPreferences(context.reviewSet.id, settings)
+        showSavedSnackbar('Review set', context.reviewSet.name)
       }
     }
 
@@ -1785,6 +1788,7 @@ async function saveFlashcardSettings(target: FlashcardSettingsApplyTarget = 'ses
             }
           : {}),
       })
+      showSavedSnackbar('Review session', context.reviewSet.name)
     }
     await closeFlashcardSettings()
   } catch (cause) {

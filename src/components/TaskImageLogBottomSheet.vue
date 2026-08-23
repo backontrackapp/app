@@ -5,6 +5,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import SquareImageUpload from '@/components/SquareImageUpload.vue'
 import { longPress as vLongPress } from '@/directives/longPress'
 import { TASK_IMAGE_LOG_ACTIONS, type TaskImageLogActionId } from '@/services/taskImageLogActions'
+import { useSnackbarStore } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
 import type { TaskLogImage, TaskProgress } from '@/types/domain'
 
@@ -19,6 +20,7 @@ const emit = defineEmits<{
 
 const model = defineModel<boolean>({ default: false })
 const store = useTaskStore()
+const snackbar = useSnackbarStore()
 const imageUpload = ref<InstanceType<typeof SquareImageUpload>>()
 const mode = ref<'gallery' | 'new' | 'edit'>('gallery')
 const loading = ref(false)
@@ -167,6 +169,7 @@ async function saveNew() {
       amount: amount.value!,
       image: upload.value,
     }, props.completionId)
+    snackbar.showSaved('Image log', label.value)
     model.value = false
     emit('logged', amount.value!)
   } catch (cause) {
@@ -186,6 +189,7 @@ async function saveEdit() {
       amount: amount.value!,
       image: upload.value,
     })
+    snackbar.showSaved('Image log', label.value)
     mode.value = 'gallery'
     editingImage.value = undefined
     upload.value = undefined

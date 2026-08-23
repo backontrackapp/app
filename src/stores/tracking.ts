@@ -133,6 +133,7 @@ export const useTrackingStore = defineStore('tracking', () => {
         ? await api.collection('tracking_trackers').update(draft.id, payload)
         : await api.collection('tracking_trackers').create(payload)
       Object.assign(tracker, mapTrackingTracker(record))
+      useSnackbarStore().showSaved('Tracker', tracker.name)
       return tracker
     } catch (cause) {
       const optimisticIndex = trackers.value.indexOf(tracker)

@@ -4,6 +4,7 @@ import { format, isToday, isValid, parseISO } from 'date-fns'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import DateTimePickerField from '@/components/DateTimePickerField.vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
+import { useSnackbarStore } from '@/stores/snackbar'
 import { useTrackingStore } from '@/stores/tracking'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
 
@@ -23,6 +24,7 @@ const emit = defineEmits<{
 }>()
 
 const store = useTrackingStore()
+const snackbar = useSnackbarStore()
 const value = ref(1)
 const occurredLocal = ref('')
 const note = ref('')
@@ -79,6 +81,7 @@ async function save(explicitValue?: number) {
       : store.addEntry(draft)
     if (!props.keepOpenOnSave) open.value = false
     const savedEntry = await persistence
+    snackbar.showSaved('Log', tracker.name)
     emit('saved', savedEntry)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not save this log.'

@@ -45,6 +45,7 @@ import {
   sessionAccuracy,
 } from '@/services/flashcards'
 import { useFlashcardStore } from '@/stores/flashcards'
+import { showSavedSnackbar } from '@/stores/snackbar'
 import type {
   BackgroundFlashcardReviewState,
   Flashcard,
@@ -1098,6 +1099,7 @@ async function saveSessionSettings(target: FlashcardSettingsApplyTarget = 'sessi
         await store.saveReviewSet(settings)
       } else {
         await store.saveReviewSetPreferences(reviewSet.id, settings)
+        showSavedSnackbar('Review set', reviewSet.name)
       }
     }
 

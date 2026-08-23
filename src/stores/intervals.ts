@@ -214,6 +214,7 @@ export const useIntervalStore = defineStore('intervals', () => {
         : await api.collection('interval_templates').create(payload)
       Object.assign(template, mapTemplate(record))
       templates.value.sort((a, b) => a.sortOrder - b.sortOrder)
+      useSnackbarStore().showSaved('Interval', template.name)
       return template.id
     } catch (cause) {
       const optimisticIndex = templates.value.indexOf(template)

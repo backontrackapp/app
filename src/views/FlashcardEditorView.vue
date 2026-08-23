@@ -22,7 +22,6 @@ const saving = ref(false)
 const deleting = ref(false)
 const deleteDialog = ref(false)
 const error = ref('')
-const savedNotice = ref(false)
 const original = ref('')
 const draft = reactive<FlashcardDraft>({ front: '', back: '', transliteration: '', note: '', tags: [] })
 const frontAudio = ref<FlashcardAudioValue>(emptyAudio())
@@ -130,7 +129,6 @@ async function save() {
   if (!result?.valid || !canSave.value) return
   saving.value = true
   error.value = ''
-  savedNotice.value = false
   try {
     const cardDraft = {
       id: draft.id,
@@ -171,7 +169,6 @@ async function save() {
     frontAudio.value = emptyAudio()
     backAudio.value = emptyAudio()
     original.value = signature.value
-    savedNotice.value = true
     await nextTick()
     form.value?.resetValidation()
     focusFrontWithoutScrolling()
@@ -209,18 +206,6 @@ async function remove() {
 <template>
   <main class="app-page app-page--editor flashcard-editor-page">
     <v-alert v-if="error" type="error" variant="tonal" class="mb-4">{{ error }}</v-alert>
-    <v-alert
-      v-if="savedNotice && !isEditing"
-      type="success"
-      variant="tonal"
-      density="compact"
-      class="mb-4"
-      closable
-      @click:close="savedNotice = false"
-    >
-      Card added. Ready for the next one; your tags remain selected.
-    </v-alert>
-
     <div v-if="loading" class="flashcard-editor-loading py-12">
       <v-progress-circular indeterminate color="secondary" />
       <span class="text-body-2 muted">Loading flashcard…</span>

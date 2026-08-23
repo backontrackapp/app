@@ -24,6 +24,7 @@ import {
   loadFlashcardSpeechSupport,
 } from '@/services/flashcardSpeech'
 import { useFlashcardStore } from '@/stores/flashcards'
+import { showSavedSnackbar } from '@/stores/snackbar'
 import type {
   Flashcard,
   FlashcardBulkAction,
@@ -194,7 +195,10 @@ async function save() {
   error.value = ''
   try {
     if (isOwner.value) await store.saveReviewSet(draft)
-    else if (draft.id) await store.saveReviewSetPreferences(draft.id, draft)
+    else if (draft.id) {
+      await store.saveReviewSetPreferences(draft.id, draft)
+      showSavedSnackbar('Review set', draft.name)
+    }
     await router.replace('/flashcards')
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not save this Review set.'
