@@ -836,7 +836,7 @@ final class SyncService
     private function applyTaskReviewBulk(array $payload, string $account): void
     {
         $action = (string) ($payload['action'] ?? '');
-        if (!in_array($action, ['missed', 'carried', 'shift'], true)) {
+        if (!in_array($action, ['missed', 'carried', 'shift', 'undo'], true)) {
             throw new ApiException(422, 'Choose a valid bulk review action.');
         }
         $items = $payload['items'] ?? null;
@@ -845,7 +845,7 @@ final class SyncService
         }
 
         $findOccurrence = $this->database->pdo->prepare(
-            'SELECT id FROM occurrences
+            'SELECT id, status FROM occurrences
              WHERE owner = :owner AND task = :task AND program_step = :step AND scheduled_date = :date
              LIMIT 1',
         );
@@ -864,6 +864,7 @@ final class SyncService
              WHERE id = :id AND owner = :owner',
         );
         $shiftCounts = [];
+        $undoShiftCounts = [];
         $seen = [];
 
         foreach ($items as $item) {
@@ -905,11 +906,22 @@ final class SyncService
                 'step' => $stepId,
                 'date' => $date,
             ]);
-            $existingId = $findOccurrence->fetchColumn();
-            $status = $action === 'shift' ? 'rescheduled' : $action;
-            if (is_string($existingId)) {
+            $existing = $findOccurrence->fetch();
+            $status = $action === 'shift' ? 'rescheduled' : ($action === 'undo' ? 'pending' : $action);
+            if (is_array($existing)) {
+                $existingId = (string) $existing['id'];
+                $existingStatus = (string) $existing['status'];
+                if ($action === 'undo' && !in_array($existingStatus, ['missed', 'rescheduled'], true)) {
+                    throw new ApiException(409, 'This task resolution has already changed.');
+                }
                 $updateOccurrence->execute(['status' => $status, 'id' => $existingId, 'owner' => $account]);
+                if ($action === 'undo' && $existingStatus === 'rescheduled') {
+                    $undoShiftCounts[$taskId] = ($undoShiftCounts[$taskId] ?? 0) + 1;
+                }
             } else {
+                if ($action === 'undo') {
+                    throw new ApiException(409, 'This task resolution no longer exists.');
+                }
                 $insertOccurrence->execute([
                     'id' => $id,
                     'owner' => $account,
@@ -935,7 +947,7 @@ final class SyncService
                     'step' => $stepId,
                     'date' => $carriedDate,
                 ]);
-                if (!is_string($findOccurrence->fetchColumn())) {
+                if (!is_array($findOccurrence->fetch())) {
                     $carried = $item['carried_occurrence'] ?? null;
                     if (!is_array($carried) || array_is_list($carried)) {
                         throw new ApiException(422, 'A carried occurrence is required.');
@@ -973,6 +985,21 @@ final class SyncService
             );
             $update->execute([
                 'start' => $start->modify('+' . $count . ' days')->format('Y-m-d'),
+                'id' => $taskId,
+                'owner' => $account,
+            ]);
+        }
+        foreach ($undoShiftCounts as $taskId => $count) {
+            $task = $this->ownedRecord('tasks', $taskId, $account);
+            $start = \DateTimeImmutable::createFromFormat('!Y-m-d', (string) $task['start_date']);
+            if (!$start) {
+                throw new ApiException(422, 'The program start date is invalid.');
+            }
+            $update = $this->database->pdo->prepare(
+                'UPDATE tasks SET start_date = :start WHERE id = :id AND owner = :owner',
+            );
+            $update->execute([
+                'start' => $start->modify('-' . $count . ' days')->format('Y-m-d'),
                 'id' => $taskId,
                 'owner' => $account,
             ]);

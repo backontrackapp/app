@@ -17,12 +17,12 @@ function comparableTaskValue(value: number) {
   return Number(value.toFixed(2))
 }
 
-export function isTaskScheduled(task: Task, date: Date): boolean {
+export function isTaskScheduled(task: Task, date: Date, programShiftDates: readonly string[] = []): boolean {
   const start = parseISO(task.startDate)
-  if (isBefore(date, start)) return false
   if (task.endDate && isAfter(date, parseISO(task.endDate))) return false
 
-  if (task.type === 'program') return programCycleDay(task, date) !== null
+  if (task.type === 'program') return programCycleDay(task, date, programShiftDates) !== null
+  if (isBefore(date, start)) return false
   if (task.recurrenceType === 'daily') return true
   if (task.recurrenceType === 'weekdays') return task.weekdays.includes(date.getDay())
 
@@ -34,16 +34,27 @@ export function isTaskScheduled(task: Task, date: Date): boolean {
   return weeks >= 0 && weeks % Math.max(task.intervalWeeks, 1) === 0 && task.weekdays.includes(date.getDay())
 }
 
-export function programCycleDay(task: Task, date: Date): number | null {
+export function programCycleDay(
+  task: Task,
+  date: Date,
+  programShiftDates: readonly string[] = [],
+): number | null {
   if (task.type !== 'program' || !task.cycleLength) return null
-  const elapsed = differenceInCalendarDays(date, parseISO(task.startDate))
+  const dateKey = toDateKey(date)
+  const restoredDays = programShiftDates.filter(shiftDate => shiftDate >= dateKey).length
+  const elapsed = differenceInCalendarDays(date, parseISO(task.startDate)) + restoredDays
   if (elapsed < 0) return null
   if (!task.programRepeat && elapsed >= task.cycleLength) return null
   return (elapsed % task.cycleLength) + 1
 }
 
-export function stepsForDate(task: Task, steps: ProgramStep[], date: Date): ProgramStep[] {
-  const cycleDay = programCycleDay(task, date)
+export function stepsForDate(
+  task: Task,
+  steps: ProgramStep[],
+  date: Date,
+  programShiftDates: readonly string[] = [],
+): ProgramStep[] {
+  const cycleDay = programCycleDay(task, date, programShiftDates)
   if (!cycleDay) return []
   return steps.filter((step) =>
     step.active

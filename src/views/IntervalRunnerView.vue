@@ -73,7 +73,7 @@ import {
   MIN_GLOBAL_REPETITIONS,
   validateIntervalDefinition,
 } from '@/services/intervals'
-import { isTaskScheduled, stepsForDate, toDateKey } from '@/services/schedule'
+import { toDateKey } from '@/services/schedule'
 import { intervalRunnerSessionMenuItems } from '@/services/runnerSessionActions'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
@@ -409,8 +409,8 @@ const eligibleTaskProgress = computed(() => {
       && !item.task.archived
       && (Boolean(item.occurrence)
         || (item.programStep
-          ? stepsForDate(item.task, taskStore.steps, today).some((step) => step.id === item.programStep?.id)
-          : isTaskScheduled(item.task, today))))
+          ? taskStore.stepsForTaskDate(item.task, today).some((step) => step.id === item.programStep?.id)
+          : taskStore.taskIsScheduledForDate(item.task, today))))
 })
 function intervalCompletionId(progress: TaskProgress) {
   if (!progress.programStep) return undefined

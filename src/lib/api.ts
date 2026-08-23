@@ -94,7 +94,7 @@ interface FlashcardBulkActionResponse {
 }
 
 export interface TaskReviewBulkInput {
-  action: 'missed' | 'carried' | 'shift'
+  action: 'missed' | 'carried' | 'shift' | 'undo'
   items: Array<{
     occurrence: RecordModel
     carriedOccurrence?: RecordModel

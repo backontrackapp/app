@@ -2,7 +2,7 @@
 import { Capacitor } from '@capacitor/core'
 import { App } from '@capacitor/app'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { addDays, format, isAfter, parseISO, startOfDay, startOfWeek } from 'date-fns'
+import { addDays, format, isAfter, isBefore, parseISO, startOfDay, startOfWeek, subDays } from 'date-fns'
 import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
@@ -60,7 +60,6 @@ const { mdAndUp, smAndUp } = useDisplay()
 const {
   selectedDate,
   selectedProgress,
-  completionRate,
   loading,
   error,
   stepCountLoading,
@@ -161,6 +160,8 @@ const taskSheetDescription = computed(() => taskSheetMode.value === 'history'
   : undefined)
 type TaskMainActionId =
   | 'toggle-complete'
+  | 'undo-resolution'
+  | 'undo-resolution-following'
   | 'start-interval'
   | 'start-review'
   | 'log-amount'
@@ -173,6 +174,7 @@ type TaskMainActionId =
 interface TaskMainActionItem {
   id: TaskMainActionId
   title: string
+  subtitle?: string
   icon: string
   disabled?: boolean
 }
@@ -270,6 +272,36 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
   const progress = taskActionProgress.value
   if (!progress || !taskActionIsScheduled.value || progress.status === 'skipped') return []
   const items: TaskMainActionItem[] = []
+  if (progress.status === 'missed' || progress.status === 'rescheduled') {
+    const beforeYesterday = isBefore(
+      parseISO(progress.scheduledDate),
+      startOfDay(subDays(new Date(), 1)),
+    )
+    if (beforeYesterday) {
+      return [
+        {
+          id: 'undo-resolution',
+          title: 'Undo this day only',
+          subtitle: 'Keep later Missed and Shifted days unchanged',
+          icon: 'mdi-undo-variant',
+          disabled: false,
+        },
+        {
+          id: 'undo-resolution-following',
+          title: 'Undo this and later days',
+          subtitle: 'Reset later Missed and Shifted states; completed work and logs stay',
+          icon: 'mdi-backup-restore',
+          disabled: false,
+        },
+      ]
+    }
+    return [{
+      id: 'undo-resolution',
+      title: progress.status === 'rescheduled' ? 'Undo shift' : 'Undo missed',
+      icon: 'mdi-backup-restore',
+      disabled: false,
+    }]
+  }
   if (taskActionCompletion.value) {
     if (taskActionCompletion.value.complete && taskActionCompletion.value.type !== 'quantity') {
       items.push({
@@ -479,8 +511,6 @@ const reviewBulkPresentation = computed(() => ({
     icon: 'mdi-calendar-arrow-right',
   },
 })[reviewBulkAction.value])
-const scoredProgress = computed(() => selectedProgress.value.filter(item => item.status !== 'skipped'))
-const doneCount = computed(() => scoredProgress.value.filter((item) => item.complete).length)
 const taskLogImageDeckByTask = computed(() => {
   const imageById = new Map(store.taskLogImages.map(item => [item.id, item]))
   const decks = new Map<string, TaskLogImage[]>()
@@ -900,10 +930,25 @@ function openProgramStepRequirementActions(progress: TaskProgress, completionId:
   taskSheet.value = true
 }
 
+async function performUndoResolution(progress: TaskProgress, cleanFollowing = false) {
+  try {
+    await runForProgress(progress, () => store.undoReviewResolution(progress, cleanFollowing))
+    taskActionProgress.value = undefined
+  } catch (cause) {
+    store.error = cause instanceof Error ? cause.message : 'Could not undo this resolution.'
+    taskActionProgress.value = progress
+    taskSheet.value = true
+  }
+}
+
 function runTaskMainAction(action: TaskMainActionItem) {
   const progress = taskActionProgress.value
   if (!progress || action.disabled) return
   taskSheet.value = false
+  if (action.id === 'undo-resolution' || action.id === 'undo-resolution-following') {
+    void performUndoResolution(progress, action.id === 'undo-resolution-following')
+    return
+  }
   if (action.id === 'toggle-complete') {
     if (progress.programStep && taskActionCompletionId.value) {
       const completionId = taskActionCompletionId.value
@@ -1449,44 +1494,6 @@ async function saveTaskLogEntry() {
       </div>
     </section>
 
-    <v-card class="score-card pa-5" color="surface">
-      <div class="score-pattern" />
-      <div class="position-relative d-flex align-center justify-space-between ga-4">
-        <div>
-          <div class="d-flex align-end ga-2 mt-2">
-            <span class="score-number">{{ completionRate }}</span><span class="score-percent">%</span>
-          </div>
-          <p class="text-caption text-medium-emphasis mt-1">
-            {{ doneCount }} of {{ scoredProgress.length }} scheduled tasks complete
-          </p>
-        </div>
-        <v-progress-circular
-          :model-value="completionRate"
-          color="secondary"
-          bg-color="#363A35"
-          :size="92"
-          :width="10"
-        >
-          <v-icon :icon="completionRate === 100 ? 'mdi-trophy' : 'mdi-arrow-top-right-thick'" color="secondary" size="30" />
-        </v-progress-circular>
-      </div>
-      <v-expand-transition>
-        <div v-if="reviewItems.length">
-          <div class="pt-5">
-            <v-btn
-              size="small"
-              variant="tonal"
-              color="secondary"
-              prepend-icon="mdi-clipboard-check-outline"
-              @click="reviewSheet = true"
-            >
-              Review {{ reviewItems.length }} open
-            </v-btn>
-          </div>
-        </div>
-      </v-expand-transition>
-    </v-card>
-
     <v-alert v-if="error" type="error" variant="tonal" class="mt-4">
       {{ error }}
       <template #append><v-btn size="small" variant="text" @click="store.load">Retry</v-btn></template>
@@ -1720,7 +1727,19 @@ async function saveTaskLogEntry() {
       @after-leave="scheduleNextIncompleteTask"
     >
       <StickyActionBanner
-        v-if="!mdAndUp && nextIncompleteProgress"
+        v-if="reviewItems.length"
+        key="open-work"
+        class="page-action-area--route-slide"
+        label="Needs review"
+        :title="`${reviewItems.length} open ${reviewItems.length === 1 ? 'item' : 'items'}`"
+        action-label="Review"
+        action-icon=""
+        aria-live="polite"
+        @action="reviewSheet = true"
+      />
+      <StickyActionBanner
+        v-else-if="!mdAndUp && nextIncompleteProgress"
+        key="next-incomplete"
         class="next-incomplete-task-banner page-action-area--route-slide"
         label="Next incomplete"
         :title="nextIncompleteProgress.programStep?.name || nextIncompleteProgress.task.name"
@@ -1898,6 +1917,7 @@ async function saveTaskLogEntry() {
           class="task-main-action"
           :prepend-icon="action.icon"
           :title="action.title"
+          :subtitle="action.subtitle"
           :disabled="action.disabled || progressIsBusy(taskActionProgress)"
           rounded="lg"
           @click="runTaskMainAction(action)"
@@ -2185,10 +2205,6 @@ async function saveTaskLogEntry() {
   flex: 0 0 8rem;
 }
 .quick-log-item--draggable :deep(.task-quick-log__action) { cursor: grab; }
-.score-card { position: relative; overflow: hidden; }
-.score-pattern { position: absolute; top: -4.375rem; right: -2.5rem; width: 13.75rem; height: 13.75rem; border: 2.1875rem solid rgba(199,244,100,.07); border-radius: 50%; }
-.score-number { font-family: Impact, "Arial Narrow", sans-serif; font-size: 3.2rem; line-height: .9; letter-spacing: -.03em; }
-.score-percent { color: #c7f464; font-size: 1.2rem; font-weight: 900; }
 .task-section-heading { flex-wrap: wrap; gap: .75rem; }
 .task-schedule-section { min-width: 0; }
 .task-schedule-label {
