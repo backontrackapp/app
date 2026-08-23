@@ -288,10 +288,21 @@ function setCompletionStyle(
   syncStepCompletionProjection(step)
 }
 
-function addCompletion(step: ProgramStepDraft) {
+async function addCompletion(step: ProgramStepDraft) {
   step.completions ||= []
-  step.completions.push(createProgramStepCompletion('check'))
+  const completion = createProgramStepCompletion('check')
+  step.completions.push(completion)
   syncStepCompletionProjection(step)
+  await nextTick()
+  const completionElement = Array.from(
+    document.querySelectorAll<HTMLElement>('[data-completion-id]'),
+  ).find(element => element.dataset.completionId === completion.id)
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+  completionElement?.scrollIntoView({
+    behavior: reduceMotion ? 'auto' : 'smooth',
+    block: 'center',
+    inline: 'nearest',
+  })
 }
 
 function removeCompletion(step: ProgramStepDraft, completionId: string) {
@@ -1075,14 +1086,13 @@ async function deleteTaskPermanently() {
                     v-long-press-drag="{
                       id: completion.id,
                       group: `program-step-completions-${stepDragId(step)}`,
-                      handle: '.completion-requirement__drag-handle',
                       disabled: (step.completions?.length || 0) < 2,
                       onDrop: completionDropHandler(step),
                     }"
                     class="completion-requirement"
+                    :data-completion-id="completion.id"
                   >
-                    <div class="completion-requirement__drag-handle">
-                      <v-icon icon="mdi-drag" size="20" color="medium-emphasis" />
+                    <div class="completion-requirement__header">
                       <strong>Requirement {{ completionIndex + 1 }}</strong>
                       <v-btn
                         icon="mdi-delete-outline"
@@ -1278,10 +1288,10 @@ async function deleteTaskPermanently() {
 .step-panels :deep(.program-step-panel--draggable .program-step__drag-handle) { cursor: grab; }
 .step-panels :deep(.program-step-panel--day-off) { background: rgb(var(--v-theme-background)); }
 .completion-requirement-list { display: grid; }
-.completion-requirement { display: grid; padding: 0 1rem .5rem; border: .0625rem solid rgb(var(--v-theme-on-surface) / .1); border-radius: 1rem; background: rgb(var(--v-theme-background) / .6); }
+.completion-requirement { display: grid; padding: 0 1rem .5rem; border: .0625rem solid rgb(var(--v-theme-on-surface) / .1); border-radius: 1rem; background: rgb(var(--v-theme-background) / .6); cursor: grab; }
 .completion-requirement .target-grid { grid-template-columns: 1fr; }
-.completion-requirement__drag-handle { display: flex; min-height: 2.75rem; align-items: center; gap: .65rem; cursor: grab; }
-.completion-requirement__drag-handle strong { min-width: 0; flex: 1 1 auto; font-size: .78rem; }
+.completion-requirement__header { display: flex; min-height: 2.75rem; align-items: center; gap: .65rem; }
+.completion-requirement__header strong { min-width: 0; flex: 1 1 auto; font-size: .78rem; }
 .completion-check-summary { display: flex; min-height: 2.75rem; align-items: center; gap: .65rem; color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; }
 .completion-style-icon { display: grid; width: 2.125rem; height: 2.125rem; flex: 0 0 auto; place-items: center; border-radius: .6875rem; color: #17200f; }
 .completion-style-selection { display: inline-flex; min-width: 0; align-items: center; gap: .5rem; }
