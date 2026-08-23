@@ -15,6 +15,7 @@ import TaskImageLogBottomSheet from '@/components/TaskImageLogBottomSheet.vue'
 import TaskQuickLogCard from '@/components/TaskQuickLogCard.vue'
 import TrackingLogBottomSheet from '@/components/TrackingLogBottomSheet.vue'
 import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
+import { dateSwipe as vDateSwipe } from '@/directives/dateSwipe'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { reviewSetCardCount } from '@/services/flashcards'
 import { isNativeHealthConnectSupported } from '@/services/healthConnect'
@@ -120,6 +121,12 @@ const notScheduledExpanded = ref(false)
 const archiveExpanded = ref(false)
 const reorderingTasks = ref(false)
 const reorderingQuickLogs = ref(false)
+const taskDateSwipe = {
+  onPrevious: () => { selectedDate.value = addDays(selectedDate.value, -1) },
+  onNext: () => { selectedDate.value = addDays(selectedDate.value, 1) },
+  ignore: '.week-date-navigator, .quick-log-section',
+  transitionTarget: '.date-swipe-content',
+}
 const exactAmount = computed(() => {
   if (!exactAmountInput.value || exactAmountInput.value === '.') return null
   const value = Number(exactAmountInput.value)
@@ -1495,7 +1502,7 @@ async function saveTaskLogEntry() {
 </script>
 
 <template>
-  <main ref="todayPage" class="app-page today-page">
+  <main ref="todayPage" v-date-swipe="taskDateSwipe" class="app-page today-page">
     <WeekDateNavigator
       v-model="selectedDate"
       v-model:week-start="visibleWeekStart"
@@ -1503,7 +1510,8 @@ async function saveTaskLogEntry() {
       class="mb-5"
     />
 
-    <section v-if="quickLogProgress.length" class="quick-log-section mb-5" aria-label="Quick log tasks">
+    <div class="date-swipe-content">
+      <section v-if="quickLogProgress.length" class="quick-log-section mb-5" aria-label="Quick log tasks">
       <div class="quick-log-strip">
         <TaskQuickLogCard
           v-for="item in quickLogProgress"
@@ -1691,11 +1699,11 @@ async function saveTaskLogEntry() {
       </v-expand-transition>
     </section>
 
-    <section
-      v-if="archivedProgress.length"
-      class="not-scheduled-section"
-      :class="notScheduledProgress.length ? 'mt-2' : 'mt-6'"
-    >
+      <section
+        v-if="archivedProgress.length"
+        class="not-scheduled-section"
+        :class="notScheduledProgress.length ? 'mt-2' : 'mt-6'"
+      >
       <v-btn
         block
         variant="text"
@@ -1747,7 +1755,8 @@ async function saveTaskLogEntry() {
           </v-list-item>
         </v-list>
       </v-expand-transition>
-    </section>
+      </section>
+    </div>
 
     <Transition
       name="next-task-banner"

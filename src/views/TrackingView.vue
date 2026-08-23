@@ -9,6 +9,7 @@ import TrackingRatingValue from '@/components/TrackingRatingValue.vue'
 import TrackingTrackerCard from '@/components/TrackingTrackerCard.vue'
 import TrackingWeeklyBarChart from '@/components/TrackingWeeklyBarChart.vue'
 import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
+import { dateSwipe as vDateSwipe } from '@/directives/dateSwipe'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { getScreenTimeStatus, isNativeHealthConnectSupported, readScreenTimeForDates } from '@/services/healthConnect'
 import { formatTrackingValue, TRACKING_PRESETS, trackerDraftFromPreset } from '@/services/tracking'
@@ -38,6 +39,10 @@ const weeklyChartLoading = ref(true)
 const screenTimeEnabled = ref(false)
 const screenTimeValues = ref<Record<string, number>>({})
 let weeklyLoadRequest = 0
+const trackingLogDateSwipe = {
+  onPrevious: () => { selectedDate.value = addDays(selectedDate.value, -1) },
+  onNext: () => { selectedDate.value = addDays(selectedDate.value, 1) },
+}
 
 const dateKey = computed(() => format(selectedDate.value, 'yyyy-MM-dd'))
 const dayEntries = computed(() => store.entries
@@ -382,7 +387,7 @@ async function loadVisibleWeekEntries() {
         <p v-else class="tracker-section-empty muted py-4 text-center">No feelings tracked yet.</p>
       </section>
 
-      <section class="tracking-log-section">
+      <section v-date-swipe="trackingLogDateSwipe" class="tracking-log-section">
         <div class="section-heading">
           <h2>Log · {{ format(selectedDate, 'EEE, MMM d') }}</h2>
           <span class="text-caption muted">{{ dayLogCountLabel }}</span>
