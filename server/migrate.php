@@ -24,49 +24,6 @@ function respondToMigrationRequest(int $status, array $body): never
     exit;
 }
 
-/** @return array{files: int, bytes: int} */
-function removeRetiredFlashcardMedia(string $databasePath): array
-{
-    $directory = dirname($databasePath) . DIRECTORY_SEPARATOR . 'flashcard-images';
-    if (is_link($directory) || is_file($directory)) {
-        $bytes = is_file($directory) ? (int) (filesize($directory) ?: 0) : 0;
-        if (!unlink($directory)) {
-            throw new ApiException(500, 'The retired flashcard media path could not be removed.');
-        }
-        return ['files' => 1, 'bytes' => $bytes];
-    }
-    if (!is_dir($directory)) {
-        return ['files' => 0, 'bytes' => 0];
-    }
-
-    $files = 0;
-    $bytes = 0;
-    $iterator = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::CHILD_FIRST,
-    );
-    foreach ($iterator as $item) {
-        $path = $item->getPathname();
-        if ($item->isLink() || $item->isFile()) {
-            if ($item->isFile()) {
-                $bytes += $item->getSize();
-            }
-            if (!unlink($path)) {
-                throw new ApiException(500, 'A retired flashcard media file could not be removed.');
-            }
-            $files++;
-            continue;
-        }
-        if ($item->isDir() && !rmdir($path)) {
-            throw new ApiException(500, 'A retired flashcard media directory could not be removed.');
-        }
-    }
-    if (!rmdir($directory)) {
-        throw new ApiException(500, 'The retired flashcard media directory could not be removed.');
-    }
-    return ['files' => $files, 'bytes' => $bytes];
-}
-
 if (!$isCli && strtoupper($_SERVER['REQUEST_METHOD'] ?? '') !== 'GET') {
     header('Allow: GET');
     respondToMigrationRequest(405, ['message' => 'Method not allowed.']);
@@ -99,7 +56,6 @@ try {
     $appliedMigrations = $runner->migrate();
     $database->assertCompatibleSchema();
     $database->pdo->exec('PRAGMA optimize');
-    $retiredMedia = removeRetiredFlashcardMedia($config->databasePath);
     $versions = $database->pdo
         ->query('SELECT version FROM backontrack_schema_migrations ORDER BY version')
         ->fetchAll(PDO::FETCH_COLUMN);
@@ -111,7 +67,6 @@ try {
             'appliedMigrations' => $appliedMigrations,
             'currentVersion' => $currentVersion,
             'migrationCount' => count($versions),
-            'retiredMediaRemoved' => $retiredMedia,
         ]);
     }
 
@@ -137,17 +92,6 @@ try {
             count($versions) === 1 ? '' : 's',
         ),
     );
-    if ($retiredMedia['files'] > 0) {
-        fwrite(
-            STDOUT,
-            sprintf(
-                "Removed %d retired media file%s (%d bytes).\n",
-                $retiredMedia['files'],
-                $retiredMedia['files'] === 1 ? '' : 's',
-                $retiredMedia['bytes'],
-            ),
-        );
-    }
 } catch (ApiException $exception) {
     if (!$isCli) {
         error_log('[backontrack-migration] ' . $exception->getMessage());

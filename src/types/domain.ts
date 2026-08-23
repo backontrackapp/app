@@ -433,6 +433,8 @@ export interface Flashcard {
   note: string
   frontAudio?: string
   backAudio?: string
+  image: string
+  imageSource: SquareImageSource
   tags: string[]
   tagDetails?: FlashcardTag[]
   createdAt: string
@@ -481,6 +483,42 @@ export interface FlashcardReviewSettings {
   backLanguage: string
   sortMode: FlashcardReviewSort
   sortDirection: FlashcardReviewSortDirection
+}
+
+export interface CuratedLanguageOption {
+  value: string
+  title: string
+}
+
+export interface CuratedReviewSetPreview {
+  front: string
+  image: string
+}
+
+export interface CuratedReviewSetSummary {
+  slug: string
+  name: string
+  description: string
+  category: string
+  keywords: string[]
+  cardCount: number
+  frontLanguages: CuratedLanguageOption[]
+  backLanguages: CuratedLanguageOption[]
+  defaultFrontLanguage: string
+  defaultBackLanguage: string
+  previews: CuratedReviewSetPreview[]
+}
+
+export interface CuratedReviewSetRow {
+  id: string
+  values: Record<string, string>
+  mappedFront: string
+  image: string
+}
+
+export interface CuratedReviewSetDetail extends Omit<CuratedReviewSetSummary, 'cardCount' | 'previews'> {
+  rows: CuratedReviewSetRow[]
+  settings: FlashcardReviewSettings
 }
 
 export interface FlashcardReviewSet extends FlashcardReviewSettings {
@@ -551,6 +589,7 @@ export interface FlashcardReviewQueueCard {
   note: string
   frontAudio?: string
   backAudio?: string
+  image: string
   tags: string[]
 }
 

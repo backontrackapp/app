@@ -1,6 +1,8 @@
 import type {
   AssistantConversationItem,
   AssistantFlashcardDraft,
+  CuratedReviewSetDetail,
+  CuratedReviewSetSummary,
   Flashcard,
   FlashcardBulkRecordAction,
   FlashcardBulkSwapColumn,
@@ -120,6 +122,12 @@ export function apiAssetUrl(value: string) {
   return value.startsWith('/') ? `${baseUrl}${value}` : value
 }
 
+function storedAssetUrl(value: string) {
+  return value.startsWith(`${baseUrl}/curated-review-sets/`)
+    ? value.slice(baseUrl.length)
+    : value
+}
+
 function flashcardReviewSettingsBody(
   settings: FlashcardReviewSettings & { excludedCards?: string[] },
   includeExclusions = false,
@@ -163,7 +171,7 @@ function localCreateDefaults(resource: string, body: Record<string, unknown>) {
   const now = new Date().toISOString()
   if (resource === 'flashcards') {
     return {
-      transliteration: '', note: '',
+      transliteration: '', note: '', image_url: '', image_file: '',
       front_audio_url: '', front_audio_file: '', back_audio_url: '', back_audio_file: '',
       tags: [], created_at: now, updated_at: now, last_reviewed_at: '',
       passive_views: 0, success_count: 0, error_count: 0,
@@ -511,6 +519,8 @@ class ApiClient {
     reviewSetId?: string
     name?: string
     maxCards?: number
+    settings?: FlashcardReviewSettings
+    source?: 'curated'
   }) {
     const accountId = this.authStore.record?.id || ''
     const cardDrafts = input.cards.map(card => ({
@@ -519,6 +529,7 @@ class ApiClient {
       back: card.back,
       transliteration: card.transliteration || '',
       note: card.note || '',
+      image_url: 'image' in card && typeof card.image === 'string' ? storedAssetUrl(card.image) : '',
     }))
     const requestedReviewSetId = input.mode === 'create'
       ? createLocalRecordId()
@@ -530,10 +541,12 @@ class ApiClient {
       review_set_id: requestedReviewSetId,
       name: input.name || '',
       max_cards: input.maxCards || 20,
+      source: input.source || 'assistant',
+      ...(input.settings ? { settings: flashcardReviewSettingsBody(input.settings) } : {}),
     }
     if (!accountId || !await hasLocalBootstrap(accountId)) {
       return request<{ cards: RecordModel[]; review_set: RecordModel }>(
-        '/assistant/flashcards/apply',
+        input.source === 'curated' ? '/curated-review-sets/clone' : '/assistant/flashcards/apply',
         { method: 'POST', body },
         this.authStore,
       )
@@ -566,21 +579,13 @@ class ApiClient {
         selection_mode: 'cards',
         included_cards: [...new Set([...body.existing_card_ids, ...cards.map(card => card.id)])],
         excluded_cards: [],
-        mode: 'manual',
-        card_sides: 'both',
-        indefinite: false,
-        time_limit_seconds: 0,
-        max_cards: Math.min(100, Math.max(1, Number(input.maxCards) || 20)),
-        eject_behavior: 'replace',
-        front_seconds: 5,
-        back_seconds: 5,
-        back_speech_repeat_count: 1,
-        note_before_back: false,
-        speech_enabled: false,
-        front_language: '',
-        back_language: '',
-        sort_mode: 'difficult',
-        sort_direction: 'asc',
+        ...flashcardReviewSettingsBody(input.settings || {
+          mode: 'manual', cardSides: 'both', indefinite: false, timeLimitSeconds: 0,
+          maxCards: Math.min(100, Math.max(1, Number(input.maxCards) || 20)),
+          ejectBehavior: 'replace', frontSeconds: 5, backSeconds: 5,
+          backSpeechRepeatCount: 1, noteBeforeBack: false, speechEnabled: false,
+          frontLanguage: '', backLanguage: '', sortMode: 'difficult', sortDirection: 'asc',
+        }),
         sort_order: localSets.length,
         created_at: now,
         updated_at: now,
@@ -618,7 +623,7 @@ class ApiClient {
     }
     await putLocalCommandWithResourceChanges(
       accountId,
-      'flashcards.assistant_apply',
+      input.source === 'curated' ? 'flashcards.curated_apply' : 'flashcards.assistant_apply',
       { ...body, review_set_id: reviewSet.id },
       [
         ...cards.map(card => ({
@@ -639,6 +644,34 @@ class ApiClient {
       ],
     )
     return { cards, review_set: projection }
+  }
+
+  applyCuratedFlashcards(input: {
+    mode: 'create' | 'add'
+    cards: Array<AssistantFlashcardDraft & { image?: string }>
+    existingCardIds: string[]
+    reviewSetId?: string
+    name?: string
+    settings: FlashcardReviewSettings
+  }) {
+    return this.applyAssistantFlashcards({ ...input, source: 'curated' })
+  }
+
+  async getCuratedReviewSets() {
+    const response = await request<{ items: CuratedReviewSetSummary[] }>(
+      '/curated-review-sets',
+      { method: 'GET' },
+      this.authStore,
+    )
+    return response.items
+  }
+
+  getCuratedReviewSet(slug: string) {
+    return request<CuratedReviewSetDetail>(
+      `/curated-review-sets/${encodeURIComponent(slug)}`,
+      { method: 'GET' },
+      this.authStore,
+    )
   }
 
   async bulkResolveTaskReview(input: TaskReviewBulkInput) {
@@ -1249,6 +1282,8 @@ class ApiClient {
           back: sourceCard.back,
           transliteration: sourceCard.transliteration || '',
           note: sourceCard.note || '',
+          image_url: sourceCard.image_url || '',
+          image_file: sourceCard.image_file || '',
           tags: [scopeTag.id],
         }))
         await putLocalProjectionCreate(accountId, 'review_set_cards', {
@@ -1317,6 +1352,8 @@ class ApiClient {
         tags: Array.isArray(reviewSet?.tags) ? reviewSet.tags : [],
         transliteration: typeof body.transliteration === 'string' ? body.transliteration : '',
         note: typeof body.note === 'string' ? body.note : '',
+        image_url: typeof body.image_url === 'string' ? body.image_url : '',
+        image_file: '',
         created_at: now,
         updated_at: now,
         last_reviewed_at: '',
@@ -1410,6 +1447,37 @@ class ApiClient {
     )
   }
 
+  async updateFlashcardReviewSetCardImage(reviewSetId: string, cardId: string, image: Blob) {
+    if (image.type !== 'image/jpeg') throw new ApiError(422, 'The card image must be compressed as a JPEG.')
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const reviewSet = await getLocalRecord(accountId, 'accessible_flashcard_review_sets', reviewSetId)
+      if (reviewSet?.owner === accountId) return this.updateFlashcardImage(cardId, image)
+      return putLocalSharedCardPatch(accountId, reviewSetId, cardId, {
+        image_url: await blobDataUrl(image), image_file: '', updated_at: new Date().toISOString(),
+      })
+    }
+    return request<RecordModel>(
+      `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards/${encodeURIComponent(cardId)}/image`,
+      { method: 'POST', body: { image: await blobDataUrl(image) } }, this.authStore,
+    )
+  }
+
+  async removeFlashcardReviewSetCardImage(reviewSetId: string, cardId: string) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const reviewSet = await getLocalRecord(accountId, 'accessible_flashcard_review_sets', reviewSetId)
+      if (reviewSet?.owner === accountId) return this.removeFlashcardImage(cardId)
+      return putLocalSharedCardPatch(accountId, reviewSetId, cardId, {
+        image_url: '', image_file: '', updated_at: new Date().toISOString(),
+      })
+    }
+    return request<RecordModel>(
+      `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards/${encodeURIComponent(cardId)}/image`,
+      { method: 'DELETE' }, this.authStore,
+    )
+  }
+
   async updateFlashcardReviewSetCardAudio(
     reviewSetId: string,
     cardId: string,
@@ -1486,6 +1554,33 @@ class ApiClient {
       `/flashcards/${encodeURIComponent(cardId)}/audio/${side}`,
       { method: 'DELETE' },
       this.authStore,
+    )
+  }
+
+  async updateFlashcardImage(cardId: string, image: Blob) {
+    if (image.type !== 'image/jpeg') throw new ApiError(422, 'The card image must be compressed as a JPEG.')
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      return putLocalPatch(accountId, 'flashcards', cardId, {
+        image_url: await blobDataUrl(image), image_file: '', updated_at: new Date().toISOString(),
+      })
+    }
+    return request<RecordModel>(
+      `/flashcards/${encodeURIComponent(cardId)}/image`,
+      { method: 'POST', body: { image: await blobDataUrl(image) } }, this.authStore,
+    )
+  }
+
+  async removeFlashcardImage(cardId: string) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      return putLocalPatch(accountId, 'flashcards', cardId, {
+        image_url: '', image_file: '', updated_at: new Date().toISOString(),
+      })
+    }
+    return request<RecordModel>(
+      `/flashcards/${encodeURIComponent(cardId)}/image`,
+      { method: 'DELETE' }, this.authStore,
     )
   }
 

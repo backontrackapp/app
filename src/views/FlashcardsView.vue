@@ -252,7 +252,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
           </div>
           <div class="card-library-summary__actions">
             <v-btn
-              color="secondary"
+              variant="tonal"
               prepend-icon="mdi-card-plus-outline"
               :to="{ name: 'flashcard-new' }"
             >
@@ -299,14 +299,25 @@ async function reorderReviewSets(result: LongPressDragResult) {
     <section>
       <div class="section-heading mt-0">
         <h2>Your Review sets</h2>
-        <v-btn
-          size="small"
-          variant="text"
-          prepend-icon="mdi-plus"
-          :to="{ name: 'flashcard-review-set-new' }"
-        >
-          New
-        </v-btn>
+        <div class="d-flex align-center ga-1">
+          <v-btn
+            size="small"
+            variant="text"
+            color="secondary"
+            prepend-icon="mdi-plus"
+            :to="{ name: 'flashcard-curated' }"
+          >
+            Curated
+          </v-btn>
+          <v-btn
+            size="small"
+            variant="text"
+            prepend-icon="mdi-plus"
+            :to="{ name: 'flashcard-review-set-new' }"
+          >
+            New
+          </v-btn>
+        </div>
       </div>
 
       <div v-if="ownedReviewSets.length" class="review-set-list">

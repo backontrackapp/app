@@ -3,12 +3,14 @@ import { computed, nextTick, reactive, ref, watch } from 'vue'
 import AppDialog from '@/components/AppDialog.vue'
 import AppForm from '@/components/AppForm.vue'
 import FlashcardAudioSection from '@/components/FlashcardAudioSection.vue'
+import FlashcardImageField from '@/components/FlashcardImageField.vue'
 import FlashcardTagCombobox from '@/components/FlashcardTagCombobox.vue'
 import { useFlashcardStore } from '@/stores/flashcards'
 import type {
   Flashcard,
   FlashcardAudioValue,
   FlashcardDraft,
+  SquareImageSourceValue,
 } from '@/types/domain'
 
 const props = defineProps<{
@@ -32,6 +34,7 @@ const original = ref('')
 const draft = reactive<FlashcardDraft>({ front: '', back: '', transliteration: '', note: '', tags: [] })
 const frontAudio = ref<FlashcardAudioValue>(emptyAudio())
 const backAudio = ref<FlashcardAudioValue>(emptyAudio())
+const image = ref<SquareImageSourceValue>(emptyImage())
 const frontAudioRecording = ref(false)
 const backAudioRecording = ref(false)
 const isEditing = computed(() => Boolean(props.card))
@@ -44,6 +47,9 @@ const signature = computed(() => JSON.stringify({
   tags: draft.tags,
   frontAudio: frontAudio.value.url,
   backAudio: backAudio.value.url,
+  imageSource: image.value.source,
+  imageUrl: image.value.url,
+  imageUpload: image.value.upload ? `${image.value.upload.size}:${image.value.upload.type}` : '',
 }))
 const canSave = computed(() => (
   !saving.value
@@ -79,6 +85,12 @@ watch(() => props.modelValue, async (open) => {
       })
   frontAudio.value = card ? existingAudio(card.frontAudio || '') : emptyAudio()
   backAudio.value = card ? existingAudio(card.backAudio || '') : emptyAudio()
+  image.value = card ? {
+    source: card.imageSource,
+    url: card.imageSource === 'url' ? card.image : '',
+    existingUrl: card.image,
+    existingSource: card.imageSource,
+  } : emptyImage()
   await nextTick()
   original.value = signature.value
   form.value?.resetValidation()
@@ -87,6 +99,10 @@ watch(() => props.modelValue, async (open) => {
 
 function emptyAudio(): FlashcardAudioValue {
   return { url: '', existingUrl: '' }
+}
+
+function emptyImage(): SquareImageSourceValue {
+  return { source: 'none', url: '', existingUrl: '', existingSource: 'none' }
 }
 
 function existingAudio(url: string): FlashcardAudioValue {
@@ -116,10 +132,12 @@ async function save() {
       ? await store.saveReviewSetCard(
           props.reviewSetId!,
           cardDraft,
+          image.value,
           { front: frontAudio.value, back: backAudio.value },
         )
       : await store.saveCard(
           cardDraft,
+          image.value,
           { front: frontAudio.value, back: backAudio.value },
         )
     emit('saved', card)
@@ -196,6 +214,7 @@ async function save() {
             <v-alert v-else type="info" variant="tonal" density="compact">
               Card tags are controlled by the Review set owner.
             </v-alert>
+            <FlashcardImageField v-model="image" :loading="saving" @error="error = $event" />
             <FlashcardAudioSection
               v-model:front="frontAudio"
               v-model:back="backAudio"

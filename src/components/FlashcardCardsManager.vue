@@ -41,6 +41,11 @@ const props = withDefaults(defineProps<{
     cardIds: string[],
     tagIds: string[],
   ) => Promise<unknown>
+  reviewSetFromCardsHandler?: (
+    cards: Flashcard[],
+    destination: { type: 'new'; name: string } | { type: 'existing'; reviewSetId: string },
+  ) => Promise<{ id: string }>
+  defaultReviewSetName?: string
   selectionActions?: readonly FlashcardSelectionActionItem[]
   selectionActionHandler?: (
     action: FlashcardSelectionAction,
@@ -74,6 +79,7 @@ const props = withDefaults(defineProps<{
   showSearchFilter: true,
   tableSurface: true,
   showLastColumn: true,
+  defaultReviewSetName: '',
 })
 
 const emit = defineEmits<{
@@ -238,7 +244,7 @@ function chooseBulkAction(action: FlashcardBulkAction | FlashcardSelectionAction
   }
   if (action === 'create_review_set') {
     reviewSetDestination.value = 'new'
-    reviewSetName.value = ''
+    reviewSetName.value = props.defaultReviewSetName
     destinationReviewSetId.value = ''
     bulkError.value = ''
     reviewSetDialog.value = true
@@ -341,12 +347,17 @@ async function saveSelectedCardsToReviewSet() {
   bulkError.value = ''
   bulkSaving.value = true
   try {
-    const reviewSet = await store.createReviewSetFromCards(
+    const target = destination === 'new'
+      ? { type: 'new' as const, name: reviewSetName.value }
+      : { type: 'existing' as const, reviewSetId: destinationReviewSetId.value }
+    const reviewSet = props.reviewSetFromCardsHandler
+      ? await props.reviewSetFromCardsHandler([...selectedCards.value], target)
+      : await store.createReviewSetFromCards(
       [...selectedCardIds.value],
       destination === 'new'
         ? { type: 'new', name: reviewSetName.value }
         : { type: 'existing', reviewSetId: destinationReviewSetId.value },
-    )
+      )
     selectedCardIds.value = []
     reviewSetDialog.value = false
     if (destination === 'new') {

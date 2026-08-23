@@ -33,6 +33,7 @@ import type {
   FlashcardReviewSetShare,
   FlashcardReviewSettings,
   FlashcardTag,
+  SquareImageSourceValue,
 } from '@/types/domain'
 
 function mapEjectBehavior(value: unknown): FlashcardReviewEjectBehavior {
@@ -46,6 +47,8 @@ function mapTag(record: Record<string, any>): FlashcardTag {
 }
 
 function mapCard(record: Record<string, any>): Flashcard {
+  const imageFile = typeof record.image_file === 'string' ? record.image_file : ''
+  const imageUrl = typeof record.image_url === 'string' ? record.image_url : ''
   const frontAudioFile = typeof record.front_audio_file === 'string' ? record.front_audio_file : ''
   const backAudioFile = typeof record.back_audio_file === 'string' ? record.back_audio_file : ''
   const frontAudioUrl = typeof record.front_audio_url === 'string' ? record.front_audio_url : ''
@@ -62,6 +65,8 @@ function mapCard(record: Record<string, any>): Flashcard {
     backAudio: backAudioFile
       ? apiAssetUrl(`/flashcard-audio/${backAudioFile}`)
       : backAudioUrl,
+    image: imageFile ? apiAssetUrl(`/flashcard-images/${imageFile}`) : apiAssetUrl(imageUrl),
+    imageSource: imageFile ? 'upload' : imageUrl ? 'url' : 'none',
     tags: Array.isArray(record.tags) ? record.tags : [],
     tagDetails: Array.isArray(record.tag_details) ? record.tag_details.map(mapTag) : undefined,
     createdAt: record.created_at,
@@ -163,6 +168,7 @@ function mapSession(record: Record<string, any>): FlashcardReviewSession {
           ...(typeof card.backAudio === 'string' && card.backAudio
             ? { backAudio: apiAssetUrl(card.backAudio) }
             : {}),
+          image: apiAssetUrl(typeof card.image === 'string' ? card.image : ''),
         }))
       : [],
     startedAt: record.started_at,
@@ -343,6 +349,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           note: card.note,
           frontAudio: card.frontAudio,
           backAudio: card.backAudio,
+          image: card.image,
           tags: [...card.tags],
         }
         if (queueIndex >= 0) {
@@ -364,8 +371,13 @@ export const useFlashcardStore = defineStore('flashcards', () => {
 
   async function saveCard(
     draft: FlashcardDraft,
+    image?: SquareImageSourceValue,
     audio?: { front: FlashcardAudioValue; back: FlashcardAudioValue },
   ) {
+    const imageChanged = Boolean(image && (
+      image.upload || image.source !== image.existingSource
+      || (image.source === 'url' && image.url.trim() !== image.existingUrl)
+    ))
     const payload: Record<string, unknown> = {
       owner: api.authStore.record!.id,
       front: draft.front,
@@ -374,6 +386,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       note: draft.note,
       tags: draft.tags,
     }
+    if (imageChanged && image?.source === 'url') payload.image_url = image.url.trim()
     const existing = draft.id ? cards.value.find(card => card.id === draft.id) : undefined
     const sessionSnapshots = sessions.value.map(session => ({
       session,
@@ -393,6 +406,10 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       backAudio: audio?.back.recording
         ? existing?.backAudio
         : audio?.back.url ?? existing?.backAudio,
+      image: imageChanged
+        ? image?.source === 'url' ? image.url.trim() : image?.source === 'none' ? '' : existing?.image || ''
+        : existing?.image || '',
+      imageSource: imageChanged ? image?.source || 'none' : existing?.imageSource || 'none',
       tags: [...draft.tags],
       createdAt: existing?.createdAt || now,
       updatedAt: now,
@@ -407,6 +424,10 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       let record = draft.id
         ? await api.collection('flashcards').update(draft.id, payload)
         : await api.collection('flashcards').create(payload)
+      if (imageChanged && image) {
+        if (image.source === 'upload' && image.upload) record = await api.updateFlashcardImage(record.id, image.upload)
+        else if (image.source === 'none' && draft.id) record = await api.removeFlashcardImage(record.id)
+      }
       for (const side of ['front', 'back'] as const) {
         const value = audio?.[side]
         if (!value || (!value.recording && value.url === value.existingUrl)) continue
@@ -702,6 +723,38 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     }
   }
 
+  async function cloneCuratedCards(
+    sourceCards: Flashcard[],
+    destination: { type: 'new'; name: string } | { type: 'existing'; reviewSetId: string },
+    settings: FlashcardReviewSettings,
+  ) {
+    if (!sourceCards.length) throw new Error('Select at least one curated card.')
+    const response = await api.applyCuratedFlashcards({
+      mode: destination.type === 'new' ? 'create' : 'add',
+      cards: sourceCards.map(card => ({
+        front: card.front,
+        back: card.back,
+        transliteration: card.transliteration || '',
+        note: card.note,
+        image: card.image,
+      })),
+      existingCardIds: [],
+      ...(destination.type === 'new'
+        ? { name: destination.name }
+        : { reviewSetId: destination.reviewSetId }),
+      settings,
+    })
+    const created = response.cards.map(mapCard)
+    const savedSet = mapReviewSet(response.review_set)
+    const createdIds = new Set(created.map(card => card.id))
+    cards.value = [...created, ...cards.value.filter(card => !createdIds.has(card.id))]
+    const setIndex = reviewSets.value.findIndex(set => set.id === savedSet.id)
+    if (setIndex >= 0) reviewSets.value.splice(setIndex, 1, savedSet)
+    else reviewSets.value.push(savedSet)
+    useSnackbarStore().showSaved('Review set', savedSet.name)
+    return savedSet
+  }
+
   async function saveReviewSetPreferences(
     id: string,
     settings: FlashcardReviewSettings & { excludedCards?: string[] },
@@ -848,14 +901,20 @@ export const useFlashcardStore = defineStore('flashcards', () => {
   async function saveReviewSetCard(
     reviewSetId: string,
     draft: FlashcardDraft,
+    image?: SquareImageSourceValue,
     audio?: { front: FlashcardAudioValue; back: FlashcardAudioValue },
   ) {
+    const imageChanged = Boolean(image && (
+      image.upload || image.source !== image.existingSource
+      || (image.source === 'url' && image.url.trim() !== image.existingUrl)
+    ))
     const payload: Record<string, unknown> = {
       front: draft.front,
       back: draft.back,
       transliteration: draft.transliteration || '',
       note: draft.note,
     }
+    if (imageChanged && image?.source === 'url') payload.image_url = image.url.trim()
     const previousReviewSetCards = reviewSetCards.value[reviewSetId] || []
     const previousCards = cards.value
     const sessionSnapshots = sessions.value.map(session => ({
@@ -880,6 +939,10 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         backAudio: audio?.back.recording
           ? existing.backAudio
           : audio?.back.url ?? existing.backAudio,
+        image: imageChanged
+          ? image?.source === 'url' ? image.url.trim() : image?.source === 'none' ? '' : existing.image
+          : existing.image,
+        imageSource: imageChanged ? image?.source || 'none' : existing.imageSource,
         updatedAt: new Date().toISOString(),
       }
       reviewSetCards.value = {
@@ -900,6 +963,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
             note: optimisticCard.note,
             frontAudio: optimisticCard.frontAudio,
             backAudio: optimisticCard.backAudio,
+            image: optimisticCard.image,
             tags: [...optimisticCard.tags],
           })
         }
@@ -909,6 +973,13 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       let record = draft.id
         ? await api.updateFlashcardReviewSetCard(reviewSetId, draft.id, payload)
         : await api.createFlashcardReviewSetCard(reviewSetId, payload)
+      if (imageChanged && image) {
+        if (image.source === 'upload' && image.upload) {
+          record = await api.updateFlashcardReviewSetCardImage(reviewSetId, record.id, image.upload)
+        } else if (image.source === 'none' && draft.id) {
+          record = await api.removeFlashcardReviewSetCardImage(reviewSetId, record.id)
+        }
+      }
       for (const side of ['front', 'back'] as const) {
         const value = audio?.[side]
         if (!value || (!value.recording && value.url === value.existingUrl)) continue
@@ -1282,6 +1353,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           note: card.note,
           frontAudio: card.frontAudio,
           backAudio: card.backAudio,
+          image: card.image,
           tags: [...card.tags],
         }))
         if (!queue.length) throw new Error('No eligible cards remain for these session settings.')
@@ -1429,6 +1501,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           note: card.note,
           frontAudio: card.frontAudio,
           backAudio: card.backAudio,
+          image: card.image,
           tags: [...card.tags],
         })
         ejectedCount -= 1
@@ -1594,6 +1667,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     bulkUpdateCards,
     saveReviewSet,
     createReviewSetFromCards,
+    cloneCuratedCards,
     saveReviewSetPreferences,
     reorderReviewSets,
     deleteReviewSet,

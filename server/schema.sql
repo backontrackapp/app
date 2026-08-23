@@ -45,6 +45,8 @@ CREATE TABLE flashcards (
     back TEXT NOT NULL DEFAULT '',
     transliteration TEXT NOT NULL DEFAULT '',
     note VARCHAR(2000) NOT NULL DEFAULT '',
+    image_url VARCHAR(2048) NOT NULL DEFAULT '',
+    image_file VARCHAR(52) NOT NULL DEFAULT '',
     front_audio_url VARCHAR(2048) NOT NULL DEFAULT '',
     front_audio_file VARCHAR(64) NOT NULL DEFAULT '',
     back_audio_url VARCHAR(2048) NOT NULL DEFAULT '',

@@ -386,6 +386,10 @@ async function warmMediaCache(resources: SyncBootstrapResponse['resources']) {
         add(data.image_url)
       }
     }
+    if (resource.resource === 'flashcards' || resource.resource === 'review_set_cards') {
+      if (typeof data.image_file === 'string' && data.image_file) add(`/flashcard-images/${data.image_file}`)
+      else add(data.image_url)
+    }
     if (resource.resource === 'task_log_images') {
       if (typeof data.image_file === 'string' && data.image_file) {
         add(`/task-log-images/${data.image_file}`)
@@ -404,6 +408,7 @@ async function warmMediaCache(resources: SyncBootstrapResponse['resources']) {
         ? data.cards
         : []
     cards.forEach(card => {
+      add(card?.image)
       add(card?.frontAudio)
       add(card?.backAudio)
     })

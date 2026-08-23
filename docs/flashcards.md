@@ -1,5 +1,17 @@
 # Flashcards
 
+## Curated Review sets
+
+The lime **+ Curated** button opens a searchable catalog of Review sets prepared by the BackOnTrack team. The catalog uses a three-column desktop grid (two columns on tablets and one on phones); available card images cycle in each tile with the front text overlaid. Opening a set shows its cards in the shared flashcard table.
+
+Before cloning, users choose the front and back languages. `front`, `back`, `transliteration`, and `notes` may each have BCP 47 language suffixes such as `front_en-US` or `notes_fr-FR`. Transliteration and notes follow the selected back language and fall back to their unsuffixed columns. Images are retained as references when cards are cloned. A full clone creates an owned selected-card Review set with the curated defaults and opens its editor; selected cards can instead be sent through the table's bulk menu to a new or existing owned custom set.
+
+Curated source files are not database records. The API reads them from the private data directory at request time, while cloned cards and Review sets use the normal offline-first synchronization path.
+
+## Card images
+
+Cards accept an optional HTTPS image URL or a cropped 256 × 256 JPEG upload. Uploaded files are stored under the private data directory and served through immutable card-image URLs. Review screens render the image as a dimmed full-card background; Interval reviews use it behind the progress rings. Shared Review set editors can update images through the same set-scoped permissions as other card fields.
+
 ## AI assistant
 
 The sparkle button between synchronization and the account menu is enabled on Flashcards and its nested card and Review set screens. It opens the flashcard assistant as a right-side panel on larger screens and a full-screen drawer on phones. The conversation lasts only for the open panel session. Its empty state offers three bullet-style example requests, and the composer keeps its microphone and send actions together inside the input.

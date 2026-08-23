@@ -269,7 +269,14 @@ function cardTagNames(card: Flashcard) {
               </td>
               <td class="card-library-table__action-cell text-no-wrap">
                 <slot name="action-column" :card="card">
-                  <v-icon icon="mdi-card-text-outline" size="18" color="secondary" aria-hidden="true" />
+                  <div class="flashcard-table__image-frame">
+                    <v-img v-if="card.image" :src="card.image" alt="" cover class="flashcard-table__image">
+                      <template #error>
+                        <v-icon icon="mdi-image-off-outline" size="18" aria-label="Image unavailable" />
+                      </template>
+                    </v-img>
+                    <v-icon v-else icon="mdi-card-text-outline" size="18" color="secondary" aria-hidden="true" />
+                  </div>
                 </slot>
               </td>
               <td class="card-library-table__faces-cell text-no-wrap">
@@ -381,6 +388,8 @@ function cardTagNames(card: Flashcard) {
 .card-library-pagination :deep(.v-btn) { min-width: 2.75rem; min-height: 2.75rem; }
 .flashcard-table__text { display: -webkit-box; overflow-wrap: anywhere; font-size: .78rem; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .flashcard-table__faces { display: grid; min-width: 0; gap: .2rem; }
+.flashcard-table__image-frame { display: grid; width: 2rem; height: 2rem; overflow: hidden; border: .0625rem solid rgba(var(--v-theme-on-surface), .08); border-radius: .35rem; place-items: center; background: rgba(var(--v-theme-on-surface), .04); }
+.flashcard-table__image { width: 100%; height: 100%; }
 .flashcard-table__front { color: rgb(var(--v-theme-on-surface)); font-weight: 900; }
 .flashcard-table__back { color: rgba(var(--v-theme-on-surface), .72); }
 .flashcard-table__transliteration,

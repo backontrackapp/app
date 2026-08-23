@@ -133,6 +133,8 @@ The reconstructed PHP-era history is:
 | `202608200005` | Removed server-side desktop notification storage |
 | `202608200006` | Added optional flashcard transliteration storage and sync support |
 | `202608200007` | Added non-destructive task archiving |
+| `202608230001` | Added custom selected-card Review sets |
+| `202608230002` | Restored flashcard image URLs and private uploads |
 | `202608220001` | Added opt-in, independently reorderable quick-log shortcuts for tasks |
 
 Existing PHP databases are advanced without recreating application data. The schema is validated after migration, including required columns.
@@ -170,6 +172,28 @@ The release workflow calls the authenticated endpoint after its upload job succe
 Each flashcard face can store one optional WebM or MP4 recording of up to 60 seconds and 1.5 MB. Recordings are kept in `flashcard-audio` beside the configured database and are included in Review set and interval snapshots. When read-aloud is enabled, a face recording plays in place of synthesized speech, including native Android background playback; text-to-speech remains the fallback when a recording cannot be played.
 
 Owners use `/flashcards/{id}/audio/{front|back}` to add or remove recordings. Review set editors use the equivalent set-scoped card route. Stored audio is served from `/flashcard-audio/{filename}` with immutable caching.
+
+## Curated Review set files
+
+Curated sets are read from `curated-review-sets/` beside the configured database (for the default configuration, `private/curated-review-sets/`). This directory is deliberately ignored by Git and is not created, uploaded, or replaced by deployment. Upload and maintain its contents manually.
+
+The directory must contain `catalog.csv`. Each catalog row describes one set with these required columns:
+
+```csv
+slug,name,description,category,keywords,file,default_front_language,default_back_language
+travel-basics,Travel basics,Everyday travel phrases,Languages,travel|phrases,travel-basics.csv,en-US,fr-FR
+```
+
+`slug` uses lowercase letters, numbers, and hyphens. `file` is a relative CSV path below the curated directory. `keywords` is pipe-separated. Optional catalog columns configure the cloned Review set: `mode`, `card_sides`, `indefinite`, `time_limit_seconds`, `max_cards`, `eject_behavior`, `front_seconds`, `back_seconds`, `back_speech_repeat_count`, `note_before_back`, `speech_enabled`, `sort_mode`, and `sort_direction`.
+
+Set CSVs use a comma delimiter and a UTF-8 header. They may contain any number of supported text columns: `front`, `back`, `transliteration`, and `notes`, optionally suffixed with a BCP 47 language tag such as `front_en-US` or `notes_fr-FR`. Every row must have content in each advertised front and back language. The optional `image` column accepts either an HTTPS URL or a relative JPEG, PNG, or WebP path below the curated directory.
+
+```csv
+front_en-US,front_fr-FR,back_en-US,back_fr-FR,transliteration_fr-FR,notes_en-US,image
+Hello,Bonjour,Hello,Bonjour,bon-zhoor,Greeting,images/hello.webp
+```
+
+Files are capped at 2.5 MB and 500 card rows. Unknown columns, duplicate headers, unsafe paths, missing image files, and incomplete front/back columns cause that set to be skipped from the catalog. Relative images are streamed through the API without exposing the private filesystem path. Curated list and detail reads require authentication; image endpoints contain no account data.
 
 ## Review set sharing
 
