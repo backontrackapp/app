@@ -180,7 +180,11 @@ class HealthConnectPlugin : Plugin() {
             try {
                 val manager = context.getSystemService(UsageStatsManager::class.java)
                 val startMs = startTime.toEpochMilli()
-                val endMs = endTime.toEpochMilli()
+                val endMs = minOf(endTime.toEpochMilli(), System.currentTimeMillis())
+                if (endMs <= startMs) {
+                    call.resolve(JSObject().put("minutes", 0))
+                    return@launch
+                }
                 val events = manager.queryEvents(startMs - 86_400_000L, endMs)
                 val event = UsageEvents.Event()
                 var interactive = false
