@@ -5,6 +5,7 @@ import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { formatIntervalDuration, intervalDuration, intervalStepCount } from '@/services/intervals'
+import { INTERVAL_TEMPLATE_ACTIONS, type IntervalTemplateAction } from '@/services/intervalTemplateActions'
 import { useIntervalStore } from '@/stores/intervals'
 import type { IntervalTemplate } from '@/types/domain'
 
@@ -12,7 +13,7 @@ const store = useIntervalStore()
 const router = useRouter()
 const pendingDelete = ref<IntervalTemplate>()
 const selectedTemplate = ref<IntervalTemplate>()
-const overflowActionsDrawer = ref(false)
+const templateActionsOpen = ref(false)
 const deleting = ref(false)
 const reordering = ref(false)
 
@@ -56,22 +57,22 @@ async function reorderByDrag(result: LongPressDragResult) {
 }
 
 function startTemplate(template: IntervalTemplate) {
-  overflowActionsDrawer.value = false
+  templateActionsOpen.value = false
   return router.push(`/intervals/run/template/${template.id}`)
 }
 
 function editTemplate(template: IntervalTemplate) {
-  overflowActionsDrawer.value = false
+  templateActionsOpen.value = false
   return router.push(`/intervals/${template.id}/edit`)
 }
 
-function openOverflowActions(template: IntervalTemplate) {
+function openTemplateActions(template: IntervalTemplate) {
   selectedTemplate.value = template
-  overflowActionsDrawer.value = true
+  templateActionsOpen.value = true
 }
 
 function duplicateTemplate(template: IntervalTemplate) {
-  overflowActionsDrawer.value = false
+  templateActionsOpen.value = false
   return router.push({
     name: 'interval-new',
     query: { duplicate: template.id },
@@ -79,8 +80,15 @@ function duplicateTemplate(template: IntervalTemplate) {
 }
 
 function requestDelete(template: IntervalTemplate) {
-  overflowActionsDrawer.value = false
+  templateActionsOpen.value = false
   pendingDelete.value = template
+}
+
+function runTemplateAction(action: IntervalTemplateAction, template: IntervalTemplate) {
+  if (action === 'play') return startTemplate(template)
+  if (action === 'edit') return editTemplate(template)
+  if (action === 'duplicate') return duplicateTemplate(template)
+  requestDelete(template)
 }
 </script>
 
@@ -98,10 +106,10 @@ function requestDelete(template: IntervalTemplate) {
       class="surface-card pa-4 interval-plan-card"
       role="button"
       tabindex="0"
-      :aria-label="`Play ${template.name}`"
-      @click="startTemplate(template)"
-      @keydown.enter="startTemplate(template)"
-      @keydown.space.prevent="startTemplate(template)"
+      :aria-label="`Actions for ${template.name}`"
+      @click="openTemplateActions(template)"
+      @keydown.enter="openTemplateActions(template)"
+      @keydown.space.prevent="openTemplateActions(template)"
     >
       <div class="interval-plan-card__row d-flex align-start ga-3">
         <div class="interval-template-icon" :style="{ background: template.color }">
@@ -115,21 +123,6 @@ function requestDelete(template: IntervalTemplate) {
           </p>
           <p v-if="template.description" class="text-caption muted mt-3 text-truncate">{{ template.description }}</p>
         </div>
-        <div
-          class="interval-plan-actions"
-          @pointerdown.stop
-          @pointerup.stop
-          @touchstart.stop
-          @click.stop
-        >
-          <v-btn
-            icon="mdi-dots-horizontal"
-            variant="text"
-            size="small"
-            :aria-label="`${template.name} more actions`"
-            @click="openOverflowActions(template)"
-          />
-        </div>
       </div>
     </v-card>
   </div>
@@ -142,15 +135,22 @@ function requestDelete(template: IntervalTemplate) {
   </v-card>
 
   <ActionBottomSheet
-    v-model="overflowActionsDrawer"
+    v-model="templateActionsOpen"
     :title="selectedTemplate?.name || 'Interval actions'"
     hide-title
-    :aria-label="selectedTemplate ? `${selectedTemplate.name} more actions` : 'Interval actions'"
+    :aria-label="selectedTemplate ? `${selectedTemplate.name} actions` : 'Interval actions'"
   >
     <template v-if="selectedTemplate">
-      <v-list-item prepend-icon="mdi-pencil-outline" title="Edit" rounded="lg" @click="editTemplate(selectedTemplate)" />
-      <v-list-item prepend-icon="mdi-content-copy" title="Duplicate" rounded="lg" @click="duplicateTemplate(selectedTemplate)" />
-      <v-list-item prepend-icon="mdi-delete-outline" title="Delete" rounded="lg" base-color="error" @click="requestDelete(selectedTemplate)" />
+      <v-list-item
+        v-for="item in INTERVAL_TEMPLATE_ACTIONS"
+        :key="item.action"
+        :prepend-icon="item.icon"
+        :title="item.title"
+        :base-color="item.color"
+        :class="{ 'font-weight-bold': item.action === 'play' }"
+        rounded="lg"
+        @click="runTemplateAction(item.action, selectedTemplate)"
+      />
     </template>
   </ActionBottomSheet>
 
@@ -169,10 +169,9 @@ function requestDelete(template: IntervalTemplate) {
 <style scoped>
 .interval-plan-list { display: grid; gap: .75rem; }
 .interval-plan-card { overflow: hidden; cursor: pointer; }
-.interval-plan-card:focus-visible { outline: 3px solid rgb(var(--v-theme-primary) / .55); outline-offset: 3px; }
+.interval-plan-card:focus-visible { outline: .1875rem solid rgb(var(--v-theme-primary) / .55); outline-offset: .1875rem; }
 .interval-plan-card__row { width: 100%; min-width: 0; }
 .interval-plan-details { overflow: hidden; min-width: 0; flex: 1 1 0; }
-.interval-plan-actions { flex: 0 0 auto; }
-.interval-template-icon { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border-radius: 14px; color: #17200f; }
-@media (min-width: 700px) { .interval-plan-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.interval-template-icon { display: grid; width: 2.625rem; height: 2.625rem; flex: 0 0 auto; place-items: center; border-radius: .875rem; color: rgb(var(--v-theme-on-secondary)); }
+@media (min-width: 43.75rem) { .interval-plan-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

@@ -1,5 +1,9 @@
 # Flashcards
 
+## Review set card actions
+
+Selecting an owned or shared Review set card opens its action menu. **Review** is the first action, followed by the management actions available for that set's access level.
+
 ## Recent session history
 
 Recent reviews are grouped by day, with every group collapsed by default.

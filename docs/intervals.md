@@ -1,5 +1,9 @@
 # Intervals
 
+## Interval card actions
+
+Selecting an interval card opens its action menu. **Play** is the first action, followed by Edit, Duplicate, and Delete.
+
 ## Recent run history
 
 Recent runs are grouped by day, with every group collapsed by default.
