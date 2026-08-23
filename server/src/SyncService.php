@@ -628,7 +628,7 @@ final class SyncService
             return ['status' => 'applied'];
         }
 
-        if ($command === 'flashcards.assistant_apply') {
+        if ($command === 'flashcards.assistant_apply' || $command === 'flashcards.curated_apply') {
             return $this->applyAssistantFlashcardCommand(
                 $payload,
                 $fieldClocks,
@@ -873,6 +873,7 @@ final class SyncService
         string $clientId,
     ): array {
         $mode = (string) ($payload['mode'] ?? '');
+        $curated = ($payload['source'] ?? '') === 'curated';
         if (!in_array($mode, ['create', 'add'], true)) {
             throw new ApiException(422, 'The assistant flashcard action is invalid.');
         }
@@ -886,9 +887,10 @@ final class SyncService
             fn (mixed $id): string => $this->recordId($id),
             $existingIds,
         )));
+        $maximumCards = $curated ? 500 : 100;
         if (count($cardRows) + count($existingIds) < 1
-            || count($cardRows) + count($existingIds) > 100) {
-            throw new ApiException(422, 'Choose between 1 and 100 cards.');
+            || count($cardRows) + count($existingIds) > $maximumCards) {
+            throw new ApiException(422, "Choose between 1 and {$maximumCards} cards.");
         }
 
         $cardConfig = Schema::collection('flashcards');
@@ -907,6 +909,7 @@ final class SyncService
                 throw new ApiException(422, 'An assistant flashcard is invalid.');
             }
             $cardId = $this->recordId($row['id'] ?? null);
+            $imageUrl = $curated ? $this->curatedFlashcardImageUrl($row['image_url'] ?? '') : '';
             $response = $this->createOwnedRecord(
                 'flashcards',
                 $cardConfig,
@@ -916,6 +919,7 @@ final class SyncService
                     'back' => $row['back'] ?? null,
                     'transliteration' => $row['transliteration'] ?? '',
                     'note' => $row['note'] ?? '',
+                    'image_url' => $imageUrl,
                     'tags' => [],
                 ],
                 $fieldClocks,
@@ -957,6 +961,17 @@ final class SyncService
                 'sort_direction' => 'asc',
                 'sort_order' => (int) $sort->fetchColumn(),
             ];
+            if ($curated && is_array($payload['settings'] ?? null)) {
+                $reviewSetPayload = [
+                    ...$reviewSetPayload,
+                    ...array_intersect_key($payload['settings'], array_flip([
+                        'mode', 'card_sides', 'indefinite', 'time_limit_seconds', 'max_cards',
+                        'eject_behavior', 'front_seconds', 'back_seconds',
+                        'back_speech_repeat_count', 'note_before_back', 'speech_enabled',
+                        'front_language', 'back_language', 'sort_mode', 'sort_direction',
+                    ])),
+                ];
+            }
             $setResponse = $this->createOwnedRecord(
                 'flashcard_review_sets',
                 $reviewSetConfig,
@@ -1192,6 +1207,7 @@ final class SyncService
         string $clientId,
     ): array {
         if ($resource === 'flashcards') {
+            $payload = $this->prepareFlashcardImagePayload($payload);
             $payload = $this->prepareFlashcardAudioPayload($payload);
         }
         if ($resource === 'journal_entries') {
@@ -1272,6 +1288,7 @@ final class SyncService
         $current = $this->ownedRecord($resource, $recordId, $account);
         $normalizedCurrent = $this->normalizeRecord($config, $current);
         if ($resource === 'flashcards') {
+            $payload = $this->prepareFlashcardImagePayload($payload);
             $payload = $this->prepareFlashcardAudioPayload($payload);
         }
         if ($resource === 'journal_entries') {
@@ -1363,7 +1380,18 @@ final class SyncService
                 $this->removeTaskLogImageFile($oldFilename);
             }
         }
+        if ($resource === 'flashcards' && array_key_exists('image_file', $accepted)) {
+            $oldFilename = $this->validSquareImageFilename($current['image_file'] ?? null);
+            $newFilename = $this->validSquareImageFilename($accepted['image_file'] ?? null);
+            if ($oldFilename !== null && $oldFilename !== $newFilename) {
+                $this->removeFlashcardImageFileIfUnused($oldFilename);
+            }
+        }
         if ($resource === 'flashcards') {
+            $filename = $this->validSquareImageFilename($current['image_file'] ?? null);
+            if ($filename !== null) {
+                $this->removeFlashcardImageFileIfUnused($filename);
+            }
             foreach (['front', 'back'] as $side) {
                 $field = $side . '_audio_file';
                 if (!array_key_exists($field, $accepted)) {
@@ -1521,7 +1549,7 @@ final class SyncService
             throw new ApiException(500, 'Flashcard schema is unavailable.');
         }
         $payload = array_intersect_key($payload, array_flip([
-            'front', 'back', 'transliteration', 'note', 'front_audio_url', 'back_audio_url',
+            'front', 'back', 'transliteration', 'note', 'image_url', 'front_audio_url', 'back_audio_url',
         ]));
         if ($kind === 'create') {
             $tags = $this->stringArray($reviewSet['tags'] ?? []);
@@ -1606,7 +1634,7 @@ final class SyncService
         }
         if ($resource === 'flashcards') {
             $values += [
-                'transliteration' => '', 'note' => '',
+                'transliteration' => '', 'note' => '', 'image_url' => '', 'image_file' => '',
                 'front_audio_url' => '', 'front_audio_file' => '',
                 'back_audio_url' => '', 'back_audio_file' => '',
                 'tags' => [], 'created_at' => $now, 'updated_at' => $now,
@@ -2026,6 +2054,49 @@ final class SyncService
         return $filename;
     }
 
+    private function curatedFlashcardImageUrl(mixed $value): string
+    {
+        if (!is_string($value)) {
+            throw new ApiException(422, 'A curated card image is invalid.');
+        }
+        $url = trim($value);
+        if ($url === '' || preg_match(
+            '#^/curated-review-sets/[a-z0-9]+(?:-[a-z0-9]+)*/images/[0-9]{1,4}$#',
+            $url,
+        ) === 1) {
+            return $url;
+        }
+        $parts = parse_url($url);
+        if (filter_var($url, FILTER_VALIDATE_URL) === false
+            || !is_array($parts)
+            || strtolower((string) ($parts['scheme'] ?? '')) !== 'https'
+            || ($parts['host'] ?? '') === ''
+            || isset($parts['user'])
+            || isset($parts['pass'])) {
+            throw new ApiException(422, 'Curated card images must use HTTPS.');
+        }
+        return $url;
+    }
+
+    private function prepareFlashcardImagePayload(array $payload): array
+    {
+        $encoded = $payload['image_url'] ?? null;
+        if (!is_string($encoded) || !str_starts_with($encoded, 'data:image/jpeg;base64,')) {
+            return $payload;
+        }
+        $filename = $this->storeSyncSquareJpeg(
+            $encoded,
+            dirname($this->config->databasePath) . DIRECTORY_SEPARATOR . 'flashcard-images',
+            'card image',
+        );
+
+        return [
+            ...$payload,
+            'image_url' => '',
+            'image_file' => $filename,
+        ];
+    }
+
     private function prepareJournalImagePayload(array $payload): array
     {
         $encoded = $payload['image_url'] ?? null;
@@ -2171,6 +2242,25 @@ final class SyncService
         }
         $path = dirname($this->config->databasePath) . DIRECTORY_SEPARATOR
             . 'flashcard-audio' . DIRECTORY_SEPARATOR . $filename;
+        if (is_file($path)) {
+            @unlink($path);
+        }
+    }
+
+    private function removeFlashcardImageFileIfUnused(string $filename): void
+    {
+        $statement = $this->database->pdo->prepare(
+            'SELECT
+                (SELECT COUNT(*) FROM flashcards WHERE image_file = :filename)
+                + (SELECT COUNT(*) FROM flashcard_review_sessions WHERE queue_state LIKE :needle)
+                + (SELECT COUNT(*) FROM interval_sessions WHERE flashcard_snapshot LIKE :needle)',
+        );
+        $statement->execute(['filename' => $filename, 'needle' => '%' . $filename . '%']);
+        if ((int) $statement->fetchColumn() > 0) {
+            return;
+        }
+        $path = dirname($this->config->databasePath) . DIRECTORY_SEPARATOR
+            . 'flashcard-images' . DIRECTORY_SEPARATOR . $filename;
         if (is_file($path)) {
             @unlink($path);
         }

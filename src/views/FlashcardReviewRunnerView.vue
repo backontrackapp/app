@@ -1198,6 +1198,7 @@ function handleCardSaved(card: Flashcard) {
     note: card.note,
     frontAudio: card.frontAudio,
     backAudio: card.backAudio,
+    image: card.image,
     tags: [...card.tags],
   }
   const index = value.queue.findIndex(item => item.id === card.id)
@@ -1432,6 +1433,7 @@ async function leaveRunner() {
                 : session.cardSides === 'both' && !revealed ? 'Show answer' : `${currentSpeechSide} shown`"
               :disabled="busy || (session.status !== 'running' && !canReplayCurrentSide)"
             >
+              <img v-if="currentCard.image" :src="currentCard.image" alt="" class="review-card__image" />
               <small>{{ manualShowingBack ? 'Back' : 'Front' }}</small>
               <span class="review-card__content-window">
                 <transition
@@ -1480,6 +1482,7 @@ async function leaveRunner() {
               @keydown.enter="replayCurrentSide"
               @keydown.space.prevent="replayCurrentSide"
             >
+              <img v-if="currentCard.image" :src="currentCard.image" alt="" class="review-card__image" />
               <div class="passive-card__content">
                 <small>{{ passiveSide === 'front' ? 'Front' : 'Back' }}</small>
                 <span class="review-card__content-window">
@@ -1870,6 +1873,8 @@ async function leaveRunner() {
 .review-card-window * { pointer-events: none; }
 .review-card-window > * { width: 100%; min-height: inherit; grid-area: 1 / 1; }
 .review-card { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); padding: 2rem 2rem 5.5rem; border: .0625rem solid rgba(var(--v-theme-on-surface), .1); border-radius: 1.5rem; align-items: center; flex: 1 1 auto; flex-direction: column; gap: 1.5rem; overflow: hidden; background: rgb(var(--v-theme-surface)); color: inherit; cursor: pointer; font: inherit; text-align: center; touch-action: none; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); }
+.review-card > :not(.review-card__image), .passive-card > :not(.review-card__image) { position: relative; z-index: 1; }
+.review-card__image { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .58; pointer-events: none; filter: brightness(.42) saturate(.82); }
 .review-card--back { border-color: rgba(var(--v-theme-secondary), .34); }
 .review-card :deep(.v-ripple__container) { z-index: 2; }
 .review-card:focus-visible { outline: .1875rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .25rem; }

@@ -58,6 +58,7 @@ const voiceAvailable = computed(() => phoneSpeechRecognitionIsNative() && speech
 const suggestions = [
   'Create a Review set with 50 English words translated to Arabic.',
   'Create a Review set from my top 20 errors.',
+  'Add 10 beginner Spanish travel phrases to one of my Review sets.',
 ]
 
 async function scrollMessagesToEnd() {
@@ -266,17 +267,17 @@ onBeforeUnmount(() => {
             <p class="text-body-2 text-medium-emphasis mb-0">
               Speak or type a request. You will review every change before it is saved.
             </p>
-            <div class="d-flex flex-column align-stretch ga-1 mt-4">
+            <div class="d-flex flex-column align-stretch mt-4">
               <v-btn
                 v-for="suggestion in suggestions"
                 :key="suggestion"
                 variant="text"
                 color="secondary"
-                append-icon="mdi-arrow-right"
                 class="assistant-panel__suggestion"
                 @click="submit(suggestion)"
               >
-                {{ suggestion }}
+                <span aria-hidden="true">&bull;</span>
+                <span>{{ suggestion }}</span>
               </v-btn>
             </div>
           </div>
@@ -354,31 +355,28 @@ onBeforeUnmount(() => {
             @keydown.enter.exact.prevent="submit()"
           >
             <template #append-inner>
-              <v-btn
-                v-if="phoneSpeechRecognitionIsNative()"
-                :icon="recording ? 'mdi-stop-circle' : 'mdi-microphone-outline'"
-                :color="recording ? 'error' : voiceAvailable ? 'secondary' : undefined"
-                variant="text"
-                :aria-label="recording ? 'Stop listening' : 'Start voice request'"
-                :disabled="busy || Boolean(pendingPlan)"
-                @click="recording ? stopListening() : beginListening()"
-              />
+              <div class="d-flex align-center ga-1">
+                <v-btn
+                  v-if="phoneSpeechRecognitionIsNative()"
+                  :icon="recording ? 'mdi-stop-circle' : 'mdi-microphone-outline'"
+                  :color="recording ? 'error' : voiceAvailable ? 'secondary' : undefined"
+                  variant="text"
+                  :aria-label="recording ? 'Stop listening' : 'Start voice request'"
+                  :disabled="busy || Boolean(pendingPlan)"
+                  @click="recording ? stopListening() : beginListening()"
+                />
+                <v-btn
+                  icon="mdi-send"
+                  color="secondary"
+                  variant="text"
+                  aria-label="Send request"
+                  :disabled="!canSend"
+                  :loading="busy"
+                  @click="submit()"
+                />
+              </div>
             </template>
           </v-textarea>
-          <div class="d-flex align-center justify-space-between ga-3 mt-3">
-            <span class="text-caption text-medium-emphasis">
-              {{ phoneSpeechRecognitionIsNative() ? 'Phone speech recognition' : 'Voice input is available in the mobile app' }}
-            </span>
-            <v-btn
-              color="secondary"
-              prepend-icon="mdi-send"
-              :disabled="!canSend"
-              :loading="busy"
-              @click="submit()"
-            >
-              Send
-            </v-btn>
-          </div>
         </footer>
       </div>
     </v-navigation-drawer>
@@ -419,11 +417,11 @@ onBeforeUnmount(() => {
   text-align: left;
 }
 .assistant-panel__suggestion :deep(.v-btn__content) {
-  display: block;
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
   overflow-wrap: anywhere;
   text-align: left;
-  text-decoration: underline;
-  text-underline-offset: .2rem;
   white-space: normal;
 }
 .assistant-message { width: fit-content; max-width: 88%; padding: .75rem 1rem; border-radius: 1rem; font-size: .875rem; line-height: 1.45; white-space: pre-wrap; }

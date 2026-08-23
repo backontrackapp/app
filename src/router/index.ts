@@ -109,6 +109,8 @@ const router = createRouter({
         { path: 'today', redirect: '/tasks' },
         { path: 'intervals', name: 'intervals', component: MAIN_NAVIGATION_VIEW_LOADERS['/intervals'], meta: { title: 'Intervals', pageDepth: 0, pageOrder: 1 } },
         { path: 'flashcards', name: 'flashcards', component: MAIN_NAVIGATION_VIEW_LOADERS['/flashcards'], meta: { title: 'Flashcards', pageDepth: 0, pageOrder: 2 } },
+        { path: 'flashcards/curated', name: 'flashcard-curated', component: () => import('@/views/CuratedReviewSetsView.vue'), meta: { title: 'Curated Review sets', pageDepth: 1, pageOrder: 2, backTo: '/flashcards' } },
+        { path: 'flashcards/curated/:slug', name: 'flashcard-curated-detail', component: () => import('@/views/CuratedReviewSetView.vue'), meta: { title: 'Curated Review set', pageDepth: 2, pageOrder: 2, backTo: '/flashcards/curated' } },
         { path: 'flashcards/cards', name: 'flashcard-cards', component: () => import('@/views/FlashcardCardsView.vue'), meta: { title: 'Manage cards', pageDepth: 1, pageOrder: 2, backTo: '/flashcards' } },
         { path: 'flashcards/tags', name: 'flashcard-tags', component: () => import('@/views/FlashcardTagsView.vue'), meta: { title: 'Manage tags', pageDepth: 2, pageOrder: 2, backTo: '/flashcards/cards' } },
         { path: 'flashcards/cards/import', name: 'flashcard-import', component: () => import('@/views/FlashcardImportView.vue'), meta: { title: 'Import cards', pageDepth: 2, pageOrder: 2, backTo: '/flashcards/cards' } },

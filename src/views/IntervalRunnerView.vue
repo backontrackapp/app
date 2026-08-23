@@ -1518,6 +1518,7 @@ function snapshotCard(card: Flashcard) {
     note: card.note,
     frontAudio: card.frontAudio,
     backAudio: card.backAudio,
+    image: card.image,
     tags: [...card.tags],
   }
 }
@@ -2006,14 +2007,15 @@ async function runAgain(repetitions?: number) {
             </div>
             <div class="runner-progress-stack">
               <div class="runner-progress">
-                <div class="progress-rings">
+                <div class="progress-rings" :class="{ 'progress-rings--with-image': Boolean(flashcardPhase?.card.image) }">
                   <IntervalTypeIcon
                     v-if="current.step.kind"
                     class="runner-type-backdrop"
                     :kind="current.step.kind"
                     size="clamp(8rem, 44vw, 8rem)"
-                    :animated="session.status === 'running'"
+                    :animated="session.status === 'running' && !flashcardPhase?.card.image"
                   />
+                  <img v-if="flashcardPhase?.card.image" :src="flashcardPhase.card.image" alt="" class="runner-flashcard-image" />
                   <v-progress-circular
                     v-if="showTotalProgress"
                     class="progress-ring progress-ring--total"
@@ -2096,6 +2098,7 @@ async function runAgain(repetitions?: number) {
             @lostpointercapture="cancelIntervalFlashcardSwipe"
             @click="openFlashcardContext"
           >
+            <img v-if="flashcardPhase.card.image" :src="flashcardPhase.card.image" alt="" class="interval-review-card__image" />
             <button
               v-ripple
               type="button"
@@ -2686,12 +2689,13 @@ async function runAgain(repetitions?: number) {
 .runner-review-groups { display: none; }
 .runner-step { min-width: 0; max-width: 40rem; margin-top: .5rem; font-size: clamp(2rem, 10vw, 4.5rem); font-weight: 900; line-height: 1; }
 .interval-review-card { position: relative; width: min(100%, 34rem); overflow: hidden; border: .0625rem solid rgba(var(--v-theme-on-surface), .08); border-radius: .75rem; background: rgba(var(--v-theme-on-surface), .055); box-shadow: none; color: inherit; font: inherit; text-align: left; touch-action: none; }
+.interval-review-card__image { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .52; pointer-events: none; filter: brightness(.38) saturate(.8); }
 .interval-review-card__main { display: block; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; touch-action: none; cursor: pointer; }
 .interval-review-card__main:focus-visible { outline: .1875rem solid rgba(var(--v-theme-secondary), .72); outline-offset: -.1875rem; }
 .interval-review-card__main:disabled { cursor: default; opacity: .72; }
 .interval-review-card--playback-paused { border-style: dashed; background: rgba(var(--v-theme-on-surface), .025); opacity: .72; }
 .interval-review-card :deep(.v-ripple__container) { z-index: 2; }
-.interval-review-card__content { display: flex; box-sizing: border-box; min-height: 8.5rem; padding: 1rem; align-items: center; justify-content: flex-start; flex-direction: column; gap: .65rem; text-align: center; }
+.interval-review-card__content { position: relative; z-index: 1; display: flex; box-sizing: border-box; min-height: 8.5rem; padding: 1rem; align-items: center; justify-content: flex-start; flex-direction: column; gap: .65rem; text-align: center; }
 .interval-review-card__heading { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; }
 .interval-review-card__meta { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: .75rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
 .interval-review-card__meta small { display: inline-flex; align-items: center; gap: .25rem; }
@@ -2734,7 +2738,7 @@ async function runAgain(repetitions?: number) {
 }
 .interval-review-card__face--hidden { visibility: hidden; }
 .interval-review-card__content strong { overflow-wrap: anywhere; font-size: clamp(1.05rem, 4.5vw, 1.5rem); line-height: 1.3; white-space: pre-wrap; }
-.interval-review-card__tag-actions { display: grid; padding: 0 1rem .75rem; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: .3rem; }
+.interval-review-card__tag-actions { position: relative; z-index: 1; display: grid; padding: 0 1rem .75rem; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: .3rem; }
 .interval-review-card__quick-tags { display: flex; grid-column: 2; justify-self: center; gap: .3rem; }
 .interval-review-card__tag-control { height: 1.5rem !important; min-height: 1.5rem !important; font-size: .625rem; }
 .interval-review-card__eject-button { min-width: 1.5rem; padding: 0; grid-column: 1; justify-self: start; }
@@ -2742,7 +2746,7 @@ async function runAgain(repetitions?: number) {
 .interval-review-card__quick-tag.v-chip--variant-outlined { border-color: rgba(var(--v-theme-on-surface), .18); }
 .interval-review-card__tag-menu-button { min-width: 0; padding-inline: .65rem; grid-column: 3; justify-self: end; }
 .interval-review-card :deep(.v-progress-linear) { border-radius: 0; }
-.interval-review-card__progress { transition: none; }
+.interval-review-card__progress { position: relative; z-index: 1; transition: none; }
 .interval-review-card__progress :deep(.v-progress-linear__determinate) { opacity: .3; transition: none; }
 .runner-progress {
   display: flex;
@@ -2763,6 +2767,8 @@ async function runAgain(repetitions?: number) {
   isolation: isolate;
 }
 .progress-rings :deep(.v-progress-circular__overlay) { transition: none; }
+.runner-flashcard-image { position: absolute; z-index: 0; inset: 1.75rem; width: calc(100% - 3.5rem); height: calc(100% - 3.5rem); border-radius: 100%; object-fit: cover; opacity: .68; pointer-events: none; filter: brightness(.72) saturate(.9); }
+.progress-rings--with-image .timer-value { text-shadow: 0 .125rem .75rem rgba(0, 0, 0, .9); }
 .progress-ring {
   position: absolute;
   z-index: 1;

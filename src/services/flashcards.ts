@@ -522,6 +522,7 @@ export function flashcardReviewQueueState(
       note: card.note,
       frontAudio: card.frontAudio,
       backAudio: card.backAudio,
+      image: card.image,
       tags: [...card.tags],
     }))
   const queue = candidates.slice(0, reviewSet.maxCards)
