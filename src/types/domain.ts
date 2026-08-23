@@ -380,6 +380,7 @@ export interface RunnerSessionMenuItem {
 }
 
 export type FlashcardBulkAction =
+  | 'create_review_set'
   | 'swap_columns'
   | 'swap_front_back'
   | 'swap_note_back'
@@ -389,7 +390,10 @@ export type FlashcardBulkAction =
   | 'clear_tags'
   | 'export_clipboard'
   | 'delete'
-export type FlashcardBulkRecordAction = Exclude<FlashcardBulkAction, 'export_clipboard'>
+export type FlashcardBulkRecordAction = Exclude<
+  FlashcardBulkAction,
+  'create_review_set' | 'export_clipboard'
+>
 export type FlashcardBulkSwapColumn = 'front' | 'back' | 'transliteration' | 'note'
 export type FlashcardSelectionAction = 'exclude' | 'include'
 export interface FlashcardSelectionActionItem {
@@ -399,6 +403,7 @@ export interface FlashcardSelectionActionItem {
   color?: string
 }
 export type FlashcardReviewSetAccessRole = 'owner' | 'readonly' | 'editor'
+export type FlashcardReviewSetSelectionMode = 'tags' | 'cards'
 export type SquareImageSource = 'none' | 'url' | 'upload'
 
 export interface SquareImageSourceValue {
@@ -482,6 +487,8 @@ export interface FlashcardReviewSet extends FlashcardReviewSettings {
   id: string
   name: string
   tags: string[]
+  selectionMode?: FlashcardReviewSetSelectionMode
+  includedCards?: string[]
   tagDetails: FlashcardTag[]
   owner: string
   ownerName: string

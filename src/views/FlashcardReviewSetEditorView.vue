@@ -11,6 +11,7 @@ import {
   DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
   DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
   DEFAULT_FLASHCARD_SESSION_CARDS,
+  cardMatchesReviewSet,
   cardMatchesTags,
   FLASHCARD_BULK_MENU_ITEMS,
   FLASHCARD_REVIEW_SELECTION_MENU_ITEMS,
@@ -29,6 +30,7 @@ import type {
   Flashcard,
   FlashcardBulkAction,
   FlashcardBulkRecordAction,
+  FlashcardReviewSet,
   FlashcardReviewSetDraft,
   FlashcardSelectionAction,
   FlashcardSpeechSupport,
@@ -55,6 +57,8 @@ const canEditCards = computed(() => (
 const draft = reactive<FlashcardReviewSetDraft>({
   name: '',
   tags: [],
+  selectionMode: 'tags',
+  includedCards: [],
   excludedCards: [],
   mode: 'manual',
   cardSides: DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
@@ -85,6 +89,8 @@ function serializedDraft() {
   return JSON.stringify(isOwner.value ? {
       name: draft.name,
       tags: draft.tags,
+      selectionMode: draft.selectionMode,
+      includedCards: draft.includedCards,
       settings: flashcardReviewSettingsSignature(draft),
       excludedCards,
       sortOrder: draft.sortOrder,
@@ -94,10 +100,41 @@ function serializedDraft() {
     })
 }
 
+function applyReviewSet(reviewSet: FlashcardReviewSet) {
+  Object.assign(draft, {
+    id: reviewSet.id,
+    name: reviewSet.name,
+    tags: [...reviewSet.tags],
+    selectionMode: reviewSet.selectionMode || 'tags',
+    includedCards: [...(reviewSet.includedCards || [])],
+    excludedCards: [...(reviewSet.excludedCards || [])],
+    mode: reviewSet.mode,
+    cardSides: reviewSet.cardSides,
+    indefinite: reviewSet.indefinite,
+    timeLimitSeconds: reviewSet.timeLimitSeconds || 0,
+    maxCards: reviewSet.maxCards,
+    ejectBehavior: reviewSet.ejectBehavior,
+    frontSeconds: reviewSet.frontSeconds,
+    backSeconds: reviewSet.backSeconds,
+    backSpeechRepeatCount: reviewSet.backSpeechRepeatCount,
+    noteBeforeBack: reviewSet.noteBeforeBack,
+    speechEnabled: reviewSet.speechEnabled,
+    frontLanguage: reviewSet.frontLanguage,
+    backLanguage: reviewSet.backLanguage,
+    sortMode: reviewSet.sortMode,
+    sortDirection: reviewSet.sortDirection,
+    sortOrder: reviewSet.sortOrder,
+  })
+  original.value = serializedDraft()
+  ready.value = true
+}
+
 if (!isEditing.value) {
   draft.sortOrder = store.reviewSets.length
   original.value = serializedDraft()
   ready.value = true
+} else if (currentReviewSet.value) {
+  applyReviewSet(currentReviewSet.value)
 }
 
 const changed = computed(() => ready.value && serializedDraft() !== original.value)
@@ -107,7 +144,11 @@ const canSave = computed(() => (
   && flashcardReviewSettingsAreValid(draft)
 ))
 const matchingCardCount = computed(() => isOwner.value
-  ? store.matchingCards(draft.tags).length
+  ? store.cards.filter(card => cardMatchesReviewSet(card, {
+      tags: draft.tags,
+      selectionMode: draft.selectionMode,
+      includedCards: draft.includedCards,
+    })).length
   : currentReviewSet.value?.matchingCardCount || 0)
 const sourceCards = computed(() => {
   if (!currentReviewSet.value || currentReviewSet.value.accessRole === 'owner') return store.cards
@@ -120,7 +161,9 @@ const cardTableTags = computed(() => {
   return [...tags.values()]
 })
 const orderedMatchingCards = computed(() => sortFlashcardsForReview(
-  sourceCards.value.filter(card => cardMatchesTags(card, draft.tags)),
+  sourceCards.value.filter(card => draft.selectionMode === 'cards'
+    ? (draft.includedCards || []).includes(card.id)
+    : cardMatchesTags(card, draft.tags)),
   draft.sortMode,
   draft.sortDirection,
 ))
@@ -151,31 +194,8 @@ onMounted(async () => {
         error.value = 'That Review set could not be found.'
         return
       }
-      Object.assign(draft, {
-        id: reviewSet.id,
-        name: reviewSet.name,
-        tags: [...reviewSet.tags],
-        excludedCards: [...(reviewSet.excludedCards || [])],
-        mode: reviewSet.mode,
-        cardSides: reviewSet.cardSides,
-        indefinite: reviewSet.indefinite,
-        timeLimitSeconds: reviewSet.timeLimitSeconds || 0,
-        maxCards: reviewSet.maxCards,
-        ejectBehavior: reviewSet.ejectBehavior,
-        frontSeconds: reviewSet.frontSeconds,
-        backSeconds: reviewSet.backSeconds,
-        backSpeechRepeatCount: reviewSet.backSpeechRepeatCount,
-        noteBeforeBack: reviewSet.noteBeforeBack,
-        speechEnabled: reviewSet.speechEnabled,
-        frontLanguage: reviewSet.frontLanguage,
-        backLanguage: reviewSet.backLanguage,
-        sortMode: reviewSet.sortMode,
-        sortDirection: reviewSet.sortDirection,
-        sortOrder: reviewSet.sortOrder,
-      })
+      if (draft.id !== reviewSet.id) applyReviewSet(reviewSet)
       if (reviewSet.accessRole !== 'owner') await store.loadReviewSetCards(reviewSet.id)
-      original.value = serializedDraft()
-      ready.value = true
     } else {
       const wasPristine = !changed.value
       draft.sortOrder = store.reviewSets.length
@@ -274,20 +294,36 @@ async function remove() {
 
     <AppForm v-if="ready" ref="form" @submit.prevent="save">
       <v-card class="surface-card pa-5 mb-4">
-        <div v-if="isOwner" class="field-stack">
-          <v-text-field
-            v-model="draft.name"
-            maxlength="160"
-            autocomplete="off"
-            :rules="[value => Boolean(value?.trim()) || 'Name is required']"
-          >
-            <template #label>Review set name <span class="required-mark">*</span></template>
-          </v-text-field>
-          <FlashcardTagCombobox
-            v-model="draft.tags"
-            hint="Leave empty to include every flashcard"
-          />
-        </div>
+        <v-row v-if="isOwner">
+          <v-col cols="12">
+            <v-text-field
+              v-model="draft.name"
+              maxlength="160"
+              autocomplete="off"
+              :rules="[value => Boolean(value?.trim()) || 'Name is required']"
+            >
+              <template #label>Review set name <span class="required-mark">*</span></template>
+            </v-text-field>
+          </v-col>
+
+          <v-col v-if="draft.selectionMode !== 'cards'" cols="12">
+            <FlashcardTagCombobox
+              v-model="draft.tags"
+              hint="Leave empty to include every flashcard"
+            />
+          </v-col>
+
+          <v-col v-else cols="12">
+            <v-alert
+              type="info"
+              variant="tonal"
+              density="compact"
+              icon="mdi-card-multiple-outline"
+            >
+              This Review set uses custom selected cards. Add cards from a card list’s bulk menu.
+            </v-alert>
+          </v-col>
+        </v-row>
 
         <div v-else class="shared-set-heading">
           <div class="min-width-0">
@@ -306,7 +342,9 @@ async function remove() {
           <div>
             <strong>{{ matchingCardCount }} matching {{ matchingCardCount === 1 ? 'card' : 'cards' }}</strong>
             <p>
-              {{ draft.tags.length
+              {{ draft.selectionMode === 'cards'
+                ? 'Custom selected cards'
+                : draft.tags.length
                 ? 'Cards matching any selected tag'
                 : isOwner ? 'Every card in your library' : 'Every card in the owner’s library' }}
             </p>
@@ -344,8 +382,12 @@ async function remove() {
           :import-return-to="editorReturnTo"
           :row-class="cardRowClass"
           :table-surface="false"
-          empty-title="No cards match this Review set"
-          empty-description="Change the selected tags to include cards in this Review set."
+          :empty-title="draft.selectionMode === 'cards'
+            ? 'No custom cards selected'
+            : 'No cards match this Review set'"
+          :empty-description="draft.selectionMode === 'cards'
+            ? 'Add cards from a card list’s bulk menu.'
+            : 'Change the selected tags to include cards in this Review set.'"
           add-aria-label="Add a card to this Review set"
           @add-card="openNewCard"
           @open-card="openCard"
@@ -404,7 +446,6 @@ async function remove() {
 </template>
 
 <style scoped>
-.field-stack { display: grid; gap: 1rem; }
 .shared-set-heading { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 1rem; }
 .required-mark { color: rgb(var(--v-theme-error)); }
 .review-set-summary { display: flex; align-items: center; gap: .75rem; padding: .85rem; border-radius: 1rem; background: rgba(var(--v-theme-secondary), .08); }

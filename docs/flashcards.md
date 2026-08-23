@@ -20,6 +20,14 @@ The card importer shows an example with the `front,back,transliteration,note,tag
 
 The card manager and owned Review set card table expose one **Swap column content** bulk action. Its modal can swap any two of Front, Back, Transliteration, and Note across the selected cards. Apply stays disabled when the result would leave a required face empty or move content beyond the destination column's length limit. Repeating the same swap restores the original content.
 
+## Custom selected-card Review sets
+
+The card manager and owned Review set card tables expose **Create Review set** in their bulk menu. The dialog can create a named Review set from the selected cards or add the selection to an existing owned custom set. When no custom set is available, the dialog keeps the new-set option selected.
+
+Selected-card Review sets persist explicit card membership instead of deriving membership from tags. They are created from a card list's bulk menu. After creation, their editor replaces the Review set tag field with an information area explaining the custom selection; more cards can be added from the same bulk workflow.
+
+Creating a custom Review set from the bulk dialog redirects directly to its editor. Review sets already present in the local store initialize that editor immediately, without a page-level loading state.
+
 ## Runner settings
 
 Active Interval settings include the same Review cards section as the Interval form, so a Review set can be attached, replaced, or removed during a run. The Apply to menu in active Interval and Review set settings offers Current session, the saved Interval or Review set, and Both. Choosing Both updates the saved source and the active session snapshot so the current run reflects the new settings immediately.

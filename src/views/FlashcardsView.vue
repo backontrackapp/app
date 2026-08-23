@@ -332,7 +332,11 @@ async function reorderReviewSets(result: LongPressDragResult) {
             <div class="min-width-0">
               <h3 class="text-body-1 font-weight-black text-truncate">{{ reviewSet.name }}</h3>
               <div class="review-set__meta mt-2">
-                <span v-if="!reviewSet.tags.length" class="review-set__meta-item">
+                <span v-if="reviewSet.selectionMode === 'cards'" class="review-set__meta-item">
+                  <v-icon icon="mdi-card-multiple-outline" size="small" />
+                  <span>Custom selected cards</span>
+                </span>
+                <span v-else-if="!reviewSet.tags.length" class="review-set__meta-item">
                   <v-icon icon="mdi-cards-outline" size="small" />
                   <span>All cards</span>
                 </span>
@@ -415,7 +419,11 @@ async function reorderReviewSets(result: LongPressDragResult) {
                 Shared by {{ reviewSet.ownerName || 'another account' }}
               </p>
               <div class="review-set__meta mt-2">
-                <span v-if="!reviewSet.tags.length" class="review-set__meta-item">
+                <span v-if="reviewSet.selectionMode === 'cards'" class="review-set__meta-item">
+                  <v-icon icon="mdi-card-multiple-outline" size="small" />
+                  <span>Custom selected cards</span>
+                </span>
+                <span v-else-if="!reviewSet.tags.length" class="review-set__meta-item">
                   <v-icon icon="mdi-cards-outline" size="small" />
                   <span>All owner cards</span>
                 </span>

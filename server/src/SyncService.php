@@ -1500,6 +1500,34 @@ final class SyncService
                 ->execute(['id' => $recordId]);
             $pdo->prepare('DELETE FROM flashcard_review_card_stats WHERE card = :id')
                 ->execute(['id' => $recordId]);
+            $reviewSets = $pdo->prepare(
+                "SELECT id, included_cards FROM flashcard_review_sets
+                 WHERE owner = :owner AND selection_mode = 'cards'",
+            );
+            $reviewSets->execute(['owner' => $account]);
+            $updateReviewSet = $pdo->prepare(
+                'UPDATE flashcard_review_sets
+                 SET included_cards = :included_cards, updated_at = :updated_at
+                 WHERE id = :id AND owner = :owner',
+            );
+            foreach ($reviewSets->fetchAll() as $reviewSet) {
+                $includedCards = $this->stringArray($reviewSet['included_cards'] ?? []);
+                if (!in_array($recordId, $includedCards, true)) {
+                    continue;
+                }
+                $updateReviewSet->execute([
+                    'included_cards' => json_encode(
+                        array_values(array_filter(
+                            $includedCards,
+                            static fn (string $cardId): bool => $cardId !== $recordId,
+                        )),
+                        JSON_THROW_ON_ERROR,
+                    ),
+                    'updated_at' => $this->now(),
+                    'id' => $reviewSet['id'],
+                    'owner' => $account,
+                ]);
+            }
         } elseif ($resource === 'flashcard_review_sessions') {
             $pdo->prepare(
                 'DELETE FROM flashcard_review_events WHERE session = :id AND owner = :owner',
@@ -1541,6 +1569,31 @@ final class SyncService
             throw new ApiException(422, 'Task log entries cannot have a value of zero.', [
                 'value' => 'nonzero',
             ]);
+        }
+        if ($resource === 'flashcard_review_sets') {
+            $selectionMode = (string) ($values['selection_mode'] ?? 'tags');
+            $includedCards = $values['included_cards'] ?? [];
+            $tags = $values['tags'] ?? [];
+            if ($selectionMode === 'cards') {
+                if ($tags !== []) {
+                    throw new ApiException(422, 'Custom selected-card Review sets cannot use tags.');
+                }
+                $includedCards = is_array($includedCards) ? $includedCards : [];
+                $statement = $this->database->pdo->prepare(
+                    'SELECT 1 FROM flashcards WHERE id = :id AND owner = :owner',
+                );
+                foreach ($includedCards as $cardId) {
+                    if (!is_string($cardId)) {
+                        throw new ApiException(422, 'A selected flashcard is invalid.');
+                    }
+                    $statement->execute(['id' => $cardId, 'owner' => $account]);
+                    if ($statement->fetchColumn() === false) {
+                        throw new ApiException(422, 'A selected flashcard is invalid.');
+                    }
+                }
+            } elseif ($includedCards !== []) {
+                throw new ApiException(422, 'Tag-based Review sets cannot store custom selected cards.');
+            }
         }
         if ($resource === 'tasks') {
             $scheduleMode = (string) ($values['schedule_mode'] ?? 'all_day');
@@ -2421,6 +2474,10 @@ final class SyncService
     private function matchingCards(array $reviewSet): array
     {
         $tags = $this->stringArray($reviewSet['tags'] ?? []);
+        $selectionMode = (string) ($reviewSet['selection_mode'] ?? 'tags');
+        $includedCards = $selectionMode === 'cards'
+            ? $this->stringArray($reviewSet['included_cards'] ?? [])
+            : [];
         $owner = (string) $reviewSet['owner'];
         if (!isset($this->cardsByOwner[$owner])) {
             $statement = $this->database->pdo->prepare(
@@ -2429,7 +2486,14 @@ final class SyncService
             $statement->execute(['owner' => $owner]);
             $this->cardsByOwner[$owner] = $statement->fetchAll();
         }
-        return array_values(array_filter($this->cardsByOwner[$owner], function (array $card) use ($tags): bool {
+        return array_values(array_filter($this->cardsByOwner[$owner], function (array $card) use (
+            $tags,
+            $selectionMode,
+            $includedCards,
+        ): bool {
+            if ($selectionMode === 'cards') {
+                return in_array((string) $card['id'], $includedCards, true);
+            }
             if ($tags === []) {
                 return true;
             }

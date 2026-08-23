@@ -207,6 +207,11 @@ export function flashcardReviewSettingsAreValid(
 }
 
 export const FLASHCARD_BULK_MENU_ITEMS = [
+  {
+    action: 'create_review_set',
+    title: 'Create Review set',
+    icon: 'mdi-card-multiple-outline',
+  },
   { action: 'swap_columns', title: 'Swap column content', icon: 'mdi-swap-horizontal' },
   { action: 'add_tags', title: 'Add tags', icon: 'mdi-tag-plus-outline', divider: true },
   { action: 'set_tags', title: 'Set tags', icon: 'mdi-tag-check-outline' },
@@ -396,6 +401,15 @@ export function cardMatchesTags(card: Pick<Flashcard, 'tags'>, selectedTags: str
   return !selectedTags.length || card.tags.some(tag => selectedTags.includes(tag))
 }
 
+export function cardMatchesReviewSet(
+  card: Pick<Flashcard, 'id' | 'tags'>,
+  reviewSet: Pick<FlashcardReviewSet, 'selectionMode' | 'includedCards' | 'tags'>,
+) {
+  return reviewSet.selectionMode === 'cards'
+    ? (reviewSet.includedCards || []).includes(card.id)
+    : cardMatchesTags(card, reviewSet.tags)
+}
+
 export function cardMatchesSearch(
   card: Pick<Flashcard, 'front' | 'back' | 'transliteration' | 'note'>,
   tagNames: readonly string[],
@@ -494,7 +508,7 @@ export function flashcardReviewQueueState(
 ) {
   const candidates = sortFlashcardsForReview(
     cards.filter(card => (
-      cardMatchesTags(card, reviewSet.tags)
+      cardMatchesReviewSet(card, reviewSet)
       && !(reviewSet.excludedCards || []).includes(card.id)
     )),
     reviewSet.sortMode,

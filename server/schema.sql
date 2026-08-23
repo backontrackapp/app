@@ -69,6 +69,8 @@ CREATE TABLE flashcard_review_sets (
     owner TEXT NOT NULL,
     name VARCHAR(160) NOT NULL DEFAULT '',
     tags JSON NOT NULL DEFAULT '[]',
+    selection_mode TEXT NOT NULL DEFAULT 'tags',
+    included_cards JSON NOT NULL DEFAULT '[]',
     mode TEXT NOT NULL DEFAULT 'manual',
     card_sides TEXT NOT NULL DEFAULT 'both',
     indefinite BOOLEAN NOT NULL DEFAULT FALSE,
