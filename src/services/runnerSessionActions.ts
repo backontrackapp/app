@@ -1,4 +1,5 @@
-import type { RunnerSessionMenuItem } from '@/types/domain'
+import { FLASHCARD_REVIEW_SESSION_MENU_ITEMS } from '@/services/flashcards'
+import type { FlashcardContextAction, RunnerSessionMenuItem } from '@/types/domain'
 
 interface RunnerSessionMenuState {
   speechAvailable: boolean
@@ -10,6 +11,22 @@ interface RunnerSessionMenuState {
 interface ReviewRunnerSessionMenuState extends RunnerSessionMenuState {
   finished: boolean
   canRestart: boolean
+  canManageCard: boolean
+  canAddCard: boolean
+  canEjectCard: boolean
+  canUndoEject: boolean
+}
+
+function reviewCardActionDisabled(
+  action: FlashcardContextAction,
+  state: ReviewRunnerSessionMenuState,
+) {
+  if (state.preview || state.finished || state.busy) return true
+  if (action === 'add') return !state.canAddCard
+  if (action === 'edit' || action === 'remove') return !state.canManageCard
+  if (action === 'eject') return !state.canEjectCard
+  if (action === 'undo_eject') return !state.canUndoEject
+  return false
 }
 
 function amplificationItem(amplified: boolean, disabled: boolean): RunnerSessionMenuItem {
@@ -55,16 +72,24 @@ export function reviewRunnerSessionMenuItems(
   state: ReviewRunnerSessionMenuState,
 ): RunnerSessionMenuItem[] {
   const sessionUnavailable = state.preview || state.finished || state.busy
+  const cardItems = FLASHCARD_REVIEW_SESSION_MENU_ITEMS.map(item => ({
+    ...item,
+    disabled: reviewCardActionDisabled(item.action, state),
+  }))
   return [
+    ...cardItems,
     ...(state.speechAvailable
-      ? [amplificationItem(state.amplified, state.finished || state.busy)]
+      ? [{
+          ...amplificationItem(state.amplified, state.finished || state.busy),
+          divider: true,
+        }]
       : []),
     {
       action: 'restart',
       title: 'Restart review',
       icon: 'mdi-restart',
       disabled: sessionUnavailable || !state.canRestart,
-      divider: state.speechAvailable,
+      divider: !state.speechAvailable,
     },
     {
       action: 'end',

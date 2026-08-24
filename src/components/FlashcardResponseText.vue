@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import FitResponsePart from '@/components/FitResponsePart.vue'
+import SpokenText from '@/components/SpokenText.vue'
 import { flashcardTextFontSize } from '@/services/flashcards'
-import type { FlashcardBackDisplay } from '@/types/domain'
+import type { FlashcardBackDisplay, FlashcardSpeechWord } from '@/types/domain'
 
 const props = withDefaults(defineProps<{
   back: string
@@ -12,6 +13,9 @@ const props = withDefaults(defineProps<{
   showTransliteration?: boolean
   density?: 'full' | 'compact'
   fitLargestWord?: boolean
+  speechLanguage?: string
+  spokenWord?: FlashcardSpeechWord
+  colorizePinyin?: boolean
 }>(), {
   transliteration: '',
   note: '',
@@ -19,6 +23,9 @@ const props = withDefaults(defineProps<{
   showTransliteration: false,
   density: 'full',
   fitLargestWord: false,
+  speechLanguage: '',
+  spokenWord: undefined,
+  colorizePinyin: false,
 })
 
 type ResponsePart = {
@@ -29,10 +36,17 @@ type ResponsePart = {
 
 const parts = computed<ResponsePart[]>(() => {
   const back = { kind: 'back' as const, value: props.back }
-  const transliteration = { kind: 'transliteration' as const, value: props.transliteration }
+  const usesLegacyNoteAsTransliteration = props.showTransliteration
+    && props.backDisplay === 'transliteration'
+    && !props.transliteration
+    && Boolean(props.note)
+  const transliteration = {
+    kind: 'transliteration' as const,
+    value: props.transliteration || (usesLegacyNoteAsTransliteration ? props.note : ''),
+  }
   const primary = props.showTransliteration
     && props.backDisplay === 'transliteration'
-    && props.transliteration
+    && transliteration.value
     ? transliteration
     : back
   const response: ResponsePart[] = [{ ...primary, presentation: 'primary' }]
@@ -41,13 +55,41 @@ const parts = computed<ResponsePart[]>(() => {
     const alternate = primary.kind === 'back' ? transliteration : back
     if (alternate.value) response.push({ ...alternate, presentation: 'supporting' })
   }
-  if (props.note) response.push({ kind: 'note', value: props.note, presentation: 'supporting' })
+  if (props.note && !usesLegacyNoteAsTransliteration) {
+    response.push({ kind: 'note', value: props.note, presentation: 'supporting' })
+  }
   return response
 })
 
 function fittedPartDefaultSize(part: ResponsePart) {
   if (part.presentation === 'primary') return 3.6
   return Number.parseFloat(flashcardTextFontSize(part.value, 'note', props.density))
+}
+
+function activeStart(part: ResponsePart) {
+  return part.kind === 'back' ? props.spokenWord?.start : undefined
+}
+
+function activeEnd(part: ResponsePart) {
+  return part.kind === 'back' ? props.spokenWord?.end : undefined
+}
+
+function activeWordStart(part: ResponsePart) {
+  return part.kind === 'transliteration' ? props.spokenWord?.wordStart : undefined
+}
+
+function activeWordEnd(part: ResponsePart) {
+  return part.kind === 'transliteration' ? props.spokenWord?.wordEnd : undefined
+}
+
+function partUsesToneColors(part: ResponsePart) {
+  return props.colorizePinyin && (part.kind === 'back' || part.kind === 'transliteration')
+}
+
+function toneSource(part: ResponsePart) {
+  if (part.kind !== 'back') return ''
+  if (props.transliteration) return props.transliteration
+  return props.showTransliteration && props.backDisplay === 'transliteration' ? props.note : ''
 }
 
 const responseElement = ref<HTMLElement>()
@@ -140,21 +182,46 @@ onBeforeUnmount(() => {
   >
     <template v-if="fitLargestWord">
       <FitResponsePart
-        v-for="part in parts"
-        :key="part.kind"
-        :tag="part.presentation === 'primary' ? 'strong' : 'span'"
+        v-if="parts[0]"
+        :key="`primary-${parts[0].kind}`"
+        tag="strong"
+        :text="parts[0].value"
+        :default-font-size="`${fittedPartDefaultSize(parts[0])}rem`"
+        :max-size-rem="fittedPartDefaultSize(parts[0])"
+        :max-lines="density === 'compact' ? 1 : 2"
+        fit-width
+        :language="speechLanguage"
+        :active-start="activeStart(parts[0])"
+        :active-end="activeEnd(parts[0])"
+        :active-word-start="activeWordStart(parts[0])"
+        :active-word-end="activeWordEnd(parts[0])"
+        :colorize-pinyin="partUsesToneColors(parts[0])"
+        :tone-source="toneSource(parts[0])"
+        :pinyin="parts[0].kind === 'transliteration'"
+        class="flashcard-response-text__part flashcard-response-text__primary text-secondary"
+        :data-response-part="parts[0].kind"
+        data-response-presentation="primary"
+      />
+      <FitResponsePart
+        v-for="part in parts.slice(1)"
+        :key="`supporting-${part.kind}`"
+        tag="span"
         :text="part.value"
         :default-font-size="`${fittedPartDefaultSize(part)}rem`"
         :max-size-rem="fittedPartDefaultSize(part)"
-        :max-lines="part.presentation === 'primary' && density === 'compact' ? 1 : 2"
-        :fit-width="part.presentation === 'primary'"
-        :class="[
-          'flashcard-response-text__part',
-          `flashcard-response-text__${part.presentation}`,
-          { 'text-secondary': part.presentation === 'primary' },
-        ]"
+        :max-lines="2"
+        :fit-width="false"
+        :language="speechLanguage"
+        :active-start="activeStart(part)"
+        :active-end="activeEnd(part)"
+        :active-word-start="activeWordStart(part)"
+        :active-word-end="activeWordEnd(part)"
+        :colorize-pinyin="partUsesToneColors(part)"
+        :tone-source="toneSource(part)"
+        :pinyin="part.kind === 'transliteration'"
+        class="flashcard-response-text__part flashcard-response-text__supporting"
         :data-response-part="part.kind"
-        :data-response-presentation="part.presentation"
+        data-response-presentation="supporting"
       />
     </template>
     <template v-else>
@@ -166,6 +233,14 @@ onBeforeUnmount(() => {
         :default-font-size="flashcardTextFontSize(parts[0].value, 'face', density)"
         :max-size-rem="Number.parseFloat(flashcardTextFontSize(parts[0].value, 'face', density))"
         :max-lines="density === 'compact' ? 1 : 2"
+        :language="speechLanguage"
+        :active-start="activeStart(parts[0])"
+        :active-end="activeEnd(parts[0])"
+        :active-word-start="activeWordStart(parts[0])"
+        :active-word-end="activeWordEnd(parts[0])"
+        :colorize-pinyin="partUsesToneColors(parts[0])"
+        :tone-source="toneSource(parts[0])"
+        :pinyin="parts[0].kind === 'transliteration'"
         class="flashcard-response-text__part flashcard-response-text__primary text-secondary"
         :data-response-part="parts[0].kind"
         data-response-presentation="primary"
@@ -184,7 +259,17 @@ onBeforeUnmount(() => {
           fontSize: flashcardTextFontSize(part.value, 'note', density),
         }"
       >
-        {{ part.value }}
+        <SpokenText
+          :text="part.value"
+          :language="speechLanguage"
+          :active-start="activeStart(part)"
+          :active-end="activeEnd(part)"
+          :active-word-start="activeWordStart(part)"
+          :active-word-end="activeWordEnd(part)"
+          :colorize-pinyin="partUsesToneColors(part)"
+          :tone-source="toneSource(part)"
+          :pinyin="part.kind === 'transliteration'"
+        />
       </component>
     </template>
   </span>

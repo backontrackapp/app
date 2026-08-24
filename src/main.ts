@@ -4,6 +4,7 @@ import { App as NativeApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
 import App from './App.vue'
 import { longPressDrag, longPressDrop } from './directives/longPressDrag'
+import { swipeHint } from './directives/swipeHint'
 import { api } from './lib/api'
 import router from './router'
 import { vuetify } from './plugins/vuetify'
@@ -51,6 +52,7 @@ const app = createApp(App)
   .use(vuetify)
   .directive('long-press-drag', longPressDrag)
   .directive('long-press-drop', longPressDrop)
+  .directive('swipe-hint', swipeHint)
 
 app.config.errorHandler = (cause, _instance, info) => {
   recordJavaScriptError(cause, `vue:${info}`)

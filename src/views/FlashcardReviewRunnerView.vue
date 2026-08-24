@@ -6,13 +6,10 @@ import AppForm from '@/components/AppForm.vue'
 import AppDialog from '@/components/AppDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FlashcardCardDialog from '@/components/FlashcardCardDialog.vue'
-import FlashcardContextActions from '@/components/FlashcardContextActions.vue'
-import FlashcardResponseText from '@/components/FlashcardResponseText.vue'
-import FitReviewContent from '@/components/FitReviewContent.vue'
 import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsFields.vue'
+import ReviewSetCard from '@/components/ReviewSetCard.vue'
 import RunnerStartScreen from '@/components/RunnerStartScreen.vue'
 import RunnerSessionActions from '@/components/RunnerSessionActions.vue'
-import { REFIT_TEXT_CONTENT_EVENT } from '@/composables/useFitLargestWord'
 import {
   backgroundFlashcardReviewState,
   flashcardSpeechOverAmplificationIsEnabled,
@@ -31,6 +28,8 @@ import {
 } from '@/services/intervalCues'
 import { reviewRunnerSessionMenuItems } from '@/services/runnerSessionActions'
 import { requestScreenWakeLock, type ScreenWakeLock } from '@/services/screenWakeLock'
+import { confirmSwipeHint, REVIEW_SET_CARD_SWIPE_HINT } from '@/services/swipeHints'
+import { prepareFlashcardSpeechWordTracking } from '@/services/spokenText'
 import {
   createFlashcardReviewPreviewSession,
   FLASHCARD_SETTINGS_APPLY_MENU_ITEMS,
@@ -40,6 +39,7 @@ import {
   flashcardReviewSettingsAreValid,
   flashcardReviewSettingsSignature,
   flashcardReviewActionFromSwipe,
+  flashcardTagToggleUpdate,
   formatReviewDuration,
   INTERVAL_FLASHCARD_QUICK_TAGS,
   normalizeFlashcardBackSpeechRepeatCount,
@@ -57,6 +57,7 @@ import type {
   FlashcardReviewSide,
   FlashcardSettingsApplyTarget,
   FlashcardSpeechSupport,
+  FlashcardSpeechWord,
   FlashcardTag,
   RunnerSessionAction,
 } from '@/types/domain'
@@ -70,11 +71,9 @@ const busy = ref(false)
 const error = ref('')
 const revealed = ref(false)
 const reviewCardTransitionDirection = ref<ReviewCardTransitionDirection>()
-const reviewCardPane = ref<HTMLElement>()
+const reviewCardPane = ref<InstanceType<typeof ReviewSetCard>>()
 const sessionActionsSheet = ref(false)
 const endDialog = ref(false)
-const cardMenuOpen = ref(false)
-const cardTagSheet = ref(false)
 const cardTagSaving = ref('')
 const cardEditorDialog = ref(false)
 const cardEditorCard = ref<Flashcard>()
@@ -119,6 +118,7 @@ const nativeBackgroundReady = ref(false)
 const speechPlaybackWarning = ref('')
 const backgroundSpeechWarning = ref('')
 const speechFailureSnackbar = ref(false)
+const spokenWord = ref<FlashcardSpeechWord>()
 const reconcilingBackground = ref(false)
 let animationFrame: number | undefined
 let lastTickAt = 0
@@ -145,7 +145,6 @@ let suppressManualCardTap = false
 let manualCardTapResetTimer: number | undefined
 let resumeAfterSessionSettings = false
 let resumeAfterCardEditor = false
-let resumeAfterCardTagSheet = false
 const speechFailureWarnedSessionIds = new Set<string>()
 
 const currentSessionId = ref('')
@@ -162,6 +161,12 @@ const currentSourceCards = computed(() => {
     : store.reviewSetCards[currentReviewSet.value.id] || []
 })
 const currentSourceCard = computed(() => currentSourceCards.value.find(card => card.id === currentCard.value?.id))
+const displayedCard = computed(() => {
+  const queuedCard = currentCard.value
+  const sourceTransliteration = currentSourceCard.value?.transliteration
+  if (!queuedCard || queuedCard.transliteration || !sourceTransliteration) return queuedCard
+  return { ...queuedCard, transliteration: sourceTransliteration }
+})
 const canManageCurrentCard = computed(() => !currentReviewSet.value
   || currentReviewSet.value.accessRole !== 'readonly')
 const canTagCurrentCard = computed(() => Boolean(
@@ -169,9 +174,6 @@ const canTagCurrentCard = computed(() => Boolean(
   && currentReviewSet.value?.accessRole === 'owner'
   && currentSourceCard.value,
 ))
-const quickTagNames = new Set(
-  INTERVAL_FLASHCARD_QUICK_TAGS.map(tag => tag.name.toLocaleLowerCase()),
-)
 const quickTags = computed(() => INTERVAL_FLASHCARD_QUICK_TAGS.map((quickTag) => {
   const tag = (store.tags || []).find(
     item => item.name.toLocaleLowerCase() === quickTag.name.toLocaleLowerCase(),
@@ -181,9 +183,6 @@ const quickTags = computed(() => INTERVAL_FLASHCARD_QUICK_TAGS.map((quickTag) =>
     selected: Boolean(tag && currentCard.value?.tags.includes(tag.id)),
   }
 }))
-const selectableTags = computed(() => (store.tags || []).filter(
-  tag => !quickTagNames.has(tag.name.toLocaleLowerCase()),
-))
 const isFinished = computed(() => session.value?.status === 'completed' || session.value?.status === 'ended')
 const isRunning = computed(() => session.value?.status === 'running')
 const canReplayCurrentSide = computed(() => Boolean(
@@ -275,6 +274,16 @@ const previewSummary = computed(() => {
 const currentSpeechSide = computed<FlashcardReviewSide>(() => session.value?.mode === 'manual'
   ? (manualShowingBack.value ? 'back' : 'front')
   : passiveSide.value)
+const currentSpeechLanguage = computed(() => currentSpeechSide.value === 'front'
+  ? session.value?.frontLanguage || ''
+  : session.value?.backLanguage || '')
+const currentBackDisplay = computed(() => {
+  const reviewSet = store.reviewSets.find(item => item.id === session.value?.reviewSet)
+  return reviewSet?.backDisplay === 'transliteration'
+    || session.value?.backDisplay === 'transliteration'
+    ? 'transliteration'
+    : 'back'
+})
 const canUseNativeBackground = computed(() => Boolean(
   nativeFlashcardBackgroundIsAvailable()
   && session.value?.mode === 'passive'
@@ -307,6 +316,10 @@ const sessionActionItems = computed(() => reviewRunnerSessionMenuItems({
   preview: isReviewSetPreview.value,
   finished: isFinished.value,
   canRestart: Boolean(session.value?.reviewSet),
+  canManageCard: canManageCurrentCard.value && Boolean(currentCard.value),
+  canAddCard: canManageCurrentCard.value,
+  canEjectCard: Boolean(currentCard.value),
+  canUndoEject: Boolean(session.value?.ejectedCount),
 }))
 const sessionActionsDisabled = computed(() => sessionActionItems.value.every(item => item.disabled))
 
@@ -340,9 +353,7 @@ watch([
 function scheduleReviewContentFit() {
   void nextTick(() => {
     if (!mounted) return
-    reviewCardPane.value
-      ?.querySelectorAll<HTMLElement>('.fit-review-content, .fit-response-part')
-      .forEach(element => element.dispatchEvent(new Event(REFIT_TEXT_CONTENT_EVENT)))
+    reviewCardPane.value?.refitContent()
   })
 }
 
@@ -690,7 +701,6 @@ async function startPreviewReview() {
   const preview = previewSession.value
   if (!preview?.reviewSet || busy.value) return
   sessionActionsSheet.value = false
-  cardMenuOpen.value = false
   busy.value = true
   error.value = ''
   try {
@@ -820,10 +830,14 @@ async function speakCurrentSide(allowPaused = false) {
     const text = side === 'front' ? card.front : card.back
     const language = side === 'front' ? value.frontLanguage : value.backLanguage
     const audio = (side === 'front' ? card.frontAudio : card.backAudio) || ''
+    prepareFlashcardSpeechWordTracking(word => {
+      if (request === speechRequest && speechKey(true) === key) spokenWord.value = word
+    })
     if (audio) await speakFlashcardText(text, language, '', audio)
     else await speakFlashcardText(text, language)
     if (request === speechRequest) speechPlaybackWarning.value = ''
   } catch {
+    if (request === speechRequest) spokenWord.value = undefined
     if (request === speechRequest && !speechFailureWarnedSessionIds.has(value.id)) {
       speechFailureWarnedSessionIds.add(value.id)
       speechFailureSnackbar.value = true
@@ -949,6 +963,7 @@ function finishReviewCardSwipe(event: PointerEvent) {
   )
   suppressNextManualCardTap()
   if (responseConsumedGesture) return
+  confirmSwipeHint(REVIEW_SET_CARD_SWIPE_HINT.id)
   if (gesture.action === 'previous') void navigateLeft(gesture.transition)
   else if (gesture.action === 'next') void navigateRight(gesture.transition)
   else showReviewCardSide(gesture.action, gesture.transition)
@@ -1114,7 +1129,6 @@ function copySessionSettings(value: FlashcardReviewSession) {
 }
 
 async function openSessionSettings() {
-  cardMenuOpen.value = false
   const value = session.value
   if (!value || busy.value) return
   resumeAfterSessionSettings = value.status === 'running'
@@ -1186,7 +1200,6 @@ function applySessionSettingsTo(target: FlashcardSettingsApplyTarget) {
 }
 
 async function openCardEditor(action: 'add' | 'edit') {
-  cardMenuOpen.value = false
   if (!session.value || busy.value || !canManageCurrentCard.value) return
   resumeAfterCardEditor = session.value.status === 'running'
   if (resumeAfterCardEditor) await pauseReview(false)
@@ -1209,20 +1222,6 @@ async function closeCardEditor(open: boolean) {
   if (!open) resumeAfterCardEditor = false
 }
 
-async function openCardTagSheet() {
-  if (!canTagCurrentCard.value || cardTagSaving.value || !selectableTags.value.length || !session.value) return
-  resumeAfterCardTagSheet = session.value.status === 'running'
-  if (resumeAfterCardTagSheet) await pauseReview(false)
-  if (session.value && !isFinished.value) cardTagSheet.value = true
-  else await closeCardTagSheet(false)
-}
-
-async function closeCardTagSheet(open: boolean) {
-  cardTagSheet.value = open
-  if (!open && resumeAfterCardTagSheet && session.value?.status === 'paused') await resumeReview()
-  if (!open) resumeAfterCardTagSheet = false
-}
-
 function currentCardHasTag(tagId: string) {
   return Boolean(currentCard.value?.tags.includes(tagId))
 }
@@ -1233,8 +1232,8 @@ async function toggleCurrentCardTag(tag: FlashcardTag | { name: string }) {
   cardTagSaving.value = 'id' in tag ? tag.id : tag.name
   try {
     const resolvedTag = 'id' in tag ? tag : await store.createTag(tag.name)
-    const action = currentCardHasTag(resolvedTag.id) ? 'remove_tags' : 'add_tags'
-    const updatedCards = await store.bulkUpdateCards(action, [cardId], [resolvedTag.id])
+    const update = flashcardTagToggleUpdate(currentCard.value?.tags || [], resolvedTag, store.tags)
+    const updatedCards = await store.bulkUpdateCards(update.action, [cardId], update.values)
     const updatedCard = updatedCards.find(card => card.id === cardId)
     if (!updatedCard) throw new Error('The flashcard could not be updated.')
     handleCardSaved(updatedCard)
@@ -1268,7 +1267,6 @@ function handleCardSaved(card: Flashcard) {
 }
 
 function requestCurrentCardDeletion() {
-  cardMenuOpen.value = false
   if (!canManageCurrentCard.value) return
   deleteCardId.value = currentCard.value?.id || ''
   deleteCardDialog.value = Boolean(deleteCardId.value)
@@ -1313,15 +1311,20 @@ function handleSessionMenuAction(action: FlashcardContextAction) {
 }
 
 function handleRunnerSessionAction(action: RunnerSessionAction) {
-  if (action === 'options') cardMenuOpen.value = true
+  if (
+    action === 'add'
+    || action === 'edit'
+    || action === 'settings'
+    || action === 'remove'
+    || action === 'eject'
+    || action === 'undo_eject'
+  ) handleSessionMenuAction(action)
   else if (action === 'amplification') void toggleSpeechOverAmplification()
-  else if (action === 'eject') void ejectCurrentCard()
   else if (action === 'restart') void restartReview()
   else if (action === 'end') endDialog.value = true
 }
 
 async function ejectCurrentCard() {
-  cardMenuOpen.value = false
   if (!session.value || busy.value) return
   const restorePaused = session.value.status === 'paused'
   if (restorePaused) await resumeReview()
@@ -1330,7 +1333,6 @@ async function ejectCurrentCard() {
 }
 
 async function undoLastEject() {
-  cardMenuOpen.value = false
   if (!session.value || session.value.ejectedCount <= 0 || busy.value) return
   const restorePaused = session.value.status === 'paused'
   if (restorePaused) await resumeReview()
@@ -1471,217 +1473,39 @@ async function leaveRunner() {
           </span>
         </div>
 
-        <div ref="reviewCardPane" class="review-card-pane">
-          <div
-            class="review-card-stack"
-            @pointerdown="beginReviewCardSwipe"
-            @pointermove="moveReviewCardSwipe"
-            @pointerup="finishReviewCardSwipe"
-            @pointercancel="cancelReviewCardSwipe"
-            @lostpointercapture="cancelReviewCardSwipe"
-            @click="handleReviewCardTap"
-          >
-            <div class="review-card-window">
-            <button
-              v-if="session.mode === 'manual'"
-              v-ripple
-              type="button"
-              class="review-card"
-              :class="{ 'review-card--back': manualShowingBack }"
-              :aria-label="session.speechEnabled
-                ? `Replay ${currentSpeechSide} speech`
-                : session.cardSides === 'both' && !revealed ? 'Show answer' : `${currentSpeechSide} shown`"
-              :disabled="busy"
-            >
-              <transition
-                :name="reviewCardTransitionDirection
-                  ? `review-card-image-${reviewCardTransitionDirection}`
-                  : 'review-card-image'"
-              >
-                <img
-                  v-if="currentCard.image"
-                  :key="currentCard.id"
-                  :src="currentCard.image"
-                  alt=""
-                  class="review-card__image"
-                />
-              </transition>
-              <small>{{ manualShowingBack ? 'Back' : 'Front' }}</small>
-              <span class="review-card__content-window">
-                <transition
-                  :name="reviewCardTransitionDirection
-                    ? `standalone-review-content-${reviewCardTransitionDirection}`
-                    : undefined"
-                  @after-enter="finishReviewCardTransition"
-                >
-                  <FitReviewContent
-                    :key="`manual-front-${currentCard.id}`"
-                    v-show="!manualShowingBack"
-                    :text="currentCard.front"
-                    :aria-hidden="manualShowingBack"
-                  />
-                </transition>
-                <transition
-                  :name="reviewCardTransitionDirection
-                    ? `standalone-review-content-${reviewCardTransitionDirection}`
-                    : undefined"
-                  @after-enter="finishReviewCardTransition"
-                >
-                  <span
-                    :key="`manual-back-${currentCard.id}`"
-                    v-show="manualShowingBack"
-                    class="review-card__content"
-                    :aria-hidden="!manualShowingBack"
-                  >
-                    <span class="review-card__answer">
-                      <span v-if="session.cardSides === 'both'" class="review-card__front-reference">
-                        {{ currentCard.front }}
-                      </span>
-                      <FlashcardResponseText
-                        :back="currentCard.back"
-                        :transliteration="currentCard.transliteration"
-                        :note="currentCard.note"
-                        :back-display="session.backDisplay"
-                        show-transliteration
-                        fit-largest-word
-                      />
-                    </span>
-                  </span>
-                </transition>
-              </span>
-              <span v-if="session.speechEnabled" class="review-card__hint">
-                <v-icon icon="mdi-volume-high" size="18" /> Tap to replay
-              </span>
-              <span v-else-if="session.cardSides === 'both' && !revealed" class="review-card__hint">
-                <v-icon icon="mdi-gesture-tap" size="18" /> Tap to reveal
-              </span>
-            </button>
-
-            <div
-              v-else
-              v-ripple="canReplayCurrentSide"
-              class="passive-card"
-              :class="{ 'passive-card--interactive': canReplayCurrentSide }"
-              :role="session.speechEnabled ? 'button' : undefined"
-              :tabindex="canReplayCurrentSide ? 0 : undefined"
-              :aria-label="session.speechEnabled ? `Replay ${passiveSide} speech` : undefined"
-              :aria-disabled="session.speechEnabled ? !canReplayCurrentSide : undefined"
-              @keydown.enter="replayCurrentSide"
-              @keydown.space.prevent="replayCurrentSide"
-            >
-              <transition
-                :name="reviewCardTransitionDirection
-                  ? `review-card-image-${reviewCardTransitionDirection}`
-                  : 'review-card-image'"
-              >
-                <img
-                  v-if="currentCard.image"
-                  :key="currentCard.id"
-                  :src="currentCard.image"
-                  alt=""
-                  class="review-card__image"
-                />
-              </transition>
-              <div class="passive-card__content">
-                <small>{{ passiveSide === 'front' ? 'Front' : 'Back' }}</small>
-                <span class="review-card__content-window">
-                  <transition
-                    :name="reviewCardTransitionDirection
-                      ? `standalone-review-content-${reviewCardTransitionDirection}`
-                      : undefined"
-                    @after-enter="finishReviewCardTransition"
-                  >
-                    <FitReviewContent
-                      :key="`passive-front-${currentCard.id}`"
-                      v-show="passiveSide === 'front'"
-                      :text="currentCard.front"
-                      :aria-hidden="passiveSide !== 'front'"
-                    />
-                  </transition>
-                  <transition
-                    :name="reviewCardTransitionDirection
-                      ? `standalone-review-content-${reviewCardTransitionDirection}`
-                      : undefined"
-                    @after-enter="finishReviewCardTransition"
-                  >
-                    <span
-                      :key="`passive-back-${currentCard.id}`"
-                      v-show="passiveSide === 'back'"
-                      class="review-card__content"
-                      :aria-hidden="passiveSide !== 'back'"
-                    >
-                      <span class="review-card__answer">
-                        <FlashcardResponseText
-                          :back="currentCard.back"
-                          :transliteration="currentCard.transliteration"
-                          :note="currentCard.note"
-                          :back-display="session.backDisplay"
-                          show-transliteration
-                          fit-largest-word
-                        />
-                        <span
-                          v-if="session.cardSides === 'both'"
-                          class="review-card__front-reference"
-                        >
-                          {{ currentCard.front }}
-                        </span>
-                      </span>
-                    </span>
-                  </transition>
-                </span>
-                <span v-if="session.speechEnabled" class="review-card__hint">
-                  <v-icon icon="mdi-volume-high" size="18" /> Tap to replay
-                </span>
-              </div>
-              <v-progress-linear
-                class="review-progress"
-                :model-value="passiveProgress"
-                color="secondary"
-                bg-color="white"
-                :bg-opacity="0.14"
-                height="6"
-                rounded
-              />
-            </div>
-            </div>
-          </div>
-
-          <footer
-            v-if="store.tags"
-            class="review-card__tag-actions"
-            aria-label="Flashcard tags"
-            @click.capture="suppressTagClickAfterSwipe"
-            @click.stop
-          >
-            <div class="review-card__quick-tags">
-              <v-chip
-                v-for="tag in quickTags"
-                :key="tag.name"
-                class="review-card__tag-control review-card__quick-tag"
-                :data-tag-name="tag.name"
-                label
-                :color="tag.selected ? tag.color : undefined"
-                :variant="tag.selected ? 'flat' : 'outlined'"
-                :prepend-icon="tag.selected ? 'mdi-check' : 'mdi-tag-outline'"
-                :disabled="!canTagCurrentCard"
-                :aria-pressed="tag.selected"
-                :aria-label="`${tag.selected ? 'Remove' : 'Add'} ${tag.name} tag`"
-                @click.stop="toggleCurrentCardTag({ name: tag.name })"
-              >
-                {{ tag.name }}
-              </v-chip>
-            </div>
-            <v-btn
-              class="review-card__tag-control review-card__tag-menu-button"
-              variant="text"
-              prepend-icon="mdi-tag-multiple-outline"
-              :disabled="!canTagCurrentCard || !selectableTags.length"
-              @click.stop="openCardTagSheet"
-            >
-              Tags
-            </v-btn>
-          </footer>
-        </div>
+        <ReviewSetCard
+          ref="reviewCardPane"
+          :card="displayedCard || currentCard"
+          :side="currentSpeechSide"
+          :mode="session.mode"
+          :card-sides="session.cardSides"
+          :back-display="currentBackDisplay"
+          :disabled="busy"
+          :revealed="revealed"
+          :speech-enabled="session.speechEnabled"
+          :speech-language="currentSpeechLanguage"
+          :spoken-word="spokenWord"
+          :can-replay="canReplayCurrentSide"
+          :transition-direction="reviewCardTransitionDirection"
+          :progress="passiveProgress"
+          :show-tag-actions="Boolean(store.tags)"
+          :quick-tags="quickTags"
+          :can-tag="canTagCurrentCard"
+          ejectable
+          :ejecting="busy"
+          :eject-disabled="isReviewSetPreview || busy || !currentCard"
+          @pointer-down="beginReviewCardSwipe"
+          @pointer-move="moveReviewCardSwipe"
+          @pointer-up="finishReviewCardSwipe"
+          @pointer-cancel="cancelReviewCardSwipe"
+          @lost-pointer-capture="cancelReviewCardSwipe"
+          @activate="handleReviewCardTap"
+          @replay="replayCurrentSide"
+          @after-enter="finishReviewCardTransition"
+          @tag-click-capture="suppressTagClickAfterSwipe"
+          @toggle-tag="toggleCurrentCardTag({ name: $event })"
+          @eject="ejectCurrentCard"
+        />
 
         <div v-if="session.mode === 'manual'" class="grading-actions">
           <v-btn
@@ -1757,31 +1581,6 @@ async function leaveRunner() {
           </div>
         </footer>
 
-        <div class="review-card-actions d-flex justify-center ga-2">
-          <v-btn
-            size="large"
-            variant="text"
-            color="warning"
-            prepend-icon="mdi-eject-outline"
-            aria-label="Eject current card"
-            :disabled="isReviewSetPreview || busy || !currentCard"
-            @click="ejectCurrentCard"
-          >
-            Eject card
-          </v-btn>
-          <v-btn
-            size="large"
-            variant="text"
-            :disabled="isReviewSetPreview || busy"
-            @click="cardMenuOpen = true"
-          >
-            <template #prepend>
-              <v-icon icon="mdi-dots-horizontal" size="1.125rem" />
-            </template>
-            Options
-          </v-btn>
-        </div>
-
       </section>
     </div>
 
@@ -1793,46 +1592,6 @@ async function leaveRunner() {
       :items="sessionActionItems"
       @action="handleRunnerSessionAction"
     />
-
-    <FlashcardContextActions
-      v-if="session && !isReviewSetPreview && !loading"
-      v-model="cardMenuOpen"
-      :busy="busy"
-      :can-manage-card="canManageCurrentCard && Boolean(currentCard)"
-      :can-add-card="canManageCurrentCard"
-      :can-eject-card="Boolean(currentCard)"
-      show-undo-eject
-      :can-undo-eject="Boolean(session?.ejectedCount)"
-      @action="handleSessionMenuAction"
-    />
-
-    <ActionBottomSheet
-      v-if="store.tags"
-      :model-value="cardTagSheet"
-      title="Tag flashcard"
-      description="Choose any additional tags for this card. Easy and hard stay pinned on the card."
-      aria-label="Choose flashcard tags"
-      @update:model-value="closeCardTagSheet"
-    >
-      <v-list-item
-        v-for="tag in selectableTags"
-        :key="tag.id"
-        :data-tag-id="tag.id"
-        :title="tag.name"
-        :prepend-icon="currentCardHasTag(tag.id) ? 'mdi-check-circle' : 'mdi-tag-outline'"
-        :active="currentCardHasTag(tag.id)"
-        :disabled="Boolean(cardTagSaving)"
-        rounded="lg"
-        @click="toggleCurrentCardTag(tag)"
-      />
-      <v-list-item
-        v-if="!selectableTags.length"
-        prepend-icon="mdi-tag-off-outline"
-        title="No other tags available"
-        disabled
-        rounded="lg"
-      />
-    </ActionBottomSheet>
 
     <FlashcardCardDialog
       :model-value="cardEditorDialog"
@@ -1962,6 +1721,7 @@ async function leaveRunner() {
 <style scoped>
 .review-runner { position: fixed; z-index: 1003; inset: 0; display: flex; width: 100%; max-width: 100vw; height: 100dvh; min-height: 0; flex-direction: column; overflow: hidden; background: radial-gradient(circle at 50% 26%, rgba(var(--v-theme-secondary), .08), transparent 34rem), rgb(var(--v-theme-background)); color: rgb(var(--v-theme-on-background)); }
 .review-screen { display: flex; width: 100%; min-height: 0; flex: 1 1 auto; flex-direction: column; }
+.review-screen > .review-progress { position: relative; z-index: 1; flex: 0 0 auto; }
 .review-progress,
 .review-progress :deep(.v-progress-linear__determinate) { transition: none; }
 .runner-header { display: grid; width: 100%; max-width: 54.25rem; min-height: calc(4rem + max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem))); margin-inline: auto; padding: max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem)) 1rem 0; grid-template-columns: 2.75rem minmax(0, 1fr) auto; align-items: center; gap: .75rem; }
@@ -1982,76 +1742,6 @@ async function leaveRunner() {
 .runner-meta > div { display: flex; align-items: center; gap: .4rem; }
 .runner-meta__card-count { justify-self: center; }
 .runner-meta__elapsed { justify-self: end; }
-.review-card-pane { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); flex: 1 1 auto; flex-direction: column; }
-.review-card-stack { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); flex: 1 1 auto; flex-direction: column; touch-action: none; }
-.review-card-window { display: grid; width: 100%; min-height: min(38dvh, 22rem); flex: 1 1 auto; overflow: hidden; border-radius: 1.5rem; }
-.review-card-window,
-.review-card-window * { pointer-events: none; }
-.review-card-window :deep(.flashcard-response-text) { pointer-events: auto; }
-.review-card-window > * { width: 100%; min-height: inherit; grid-area: 1 / 1; }
-.review-card { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); padding: 2rem 2rem 5.5rem; border: .0625rem solid rgba(var(--v-theme-on-surface), .1); border-radius: 1.5rem; align-items: center; flex: 1 1 auto; flex-direction: column; gap: 1.5rem; overflow: hidden; background: rgb(var(--v-theme-surface)); color: inherit; cursor: pointer; font: inherit; text-align: center; touch-action: none; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); }
-.review-card > :not(.review-card__image), .passive-card > :not(.review-card__image) { position: relative; z-index: 1; }
-.review-card__image { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .58; pointer-events: none; filter: brightness(.42) saturate(.82); }
-.review-card-image-enter-active,
-.review-card-image-leave-active,
-.review-card-image-next-enter-active,
-.review-card-image-next-leave-active,
-.review-card-image-previous-enter-active,
-.review-card-image-previous-leave-active,
-.review-card-image-front-enter-active,
-.review-card-image-front-leave-active,
-.review-card-image-back-enter-active,
-.review-card-image-back-leave-active {
-  transition: opacity 200ms ease, transform 220ms cubic-bezier(.22, 1, .36, 1);
-}
-.review-card-image-enter-from,
-.review-card-image-leave-to { opacity: 0; }
-.review-card-image-next-enter-from,
-.review-card-image-previous-leave-to { opacity: 0; transform: translateX(1.5rem); }
-.review-card-image-next-leave-to,
-.review-card-image-previous-enter-from { opacity: 0; transform: translateX(-1.5rem); }
-.review-card-image-back-enter-from,
-.review-card-image-front-leave-to { opacity: 0; transform: translateY(1.5rem); }
-.review-card-image-back-leave-to,
-.review-card-image-front-enter-from { opacity: 0; transform: translateY(-1.5rem); }
-.review-card--back { border-color: rgba(var(--v-theme-secondary), .34); }
-.review-card :deep(.v-ripple__container) { z-index: 2; }
-.review-card:focus-visible { outline: .1875rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .25rem; }
-.review-card small,
-.passive-card small { color: rgba(var(--v-theme-on-surface), .48); font-size: .68rem; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
-.review-card strong,
-.passive-card strong { max-width: 34rem; overflow-wrap: anywhere; font-size: clamp(1.3rem, 5vw, 2.1rem); font-weight: 850; line-height: 1.35; white-space: pre-wrap; }
-.review-card__content-window { position: relative; width: 100%; height: 0; min-height: 0; flex: 1 1 0; overflow: hidden; }
-.review-card__content { position: absolute; display: flex; inset: 0; width: 100%; height: 100%; min-height: 0; max-height: 100%; align-items: center; align-self: stretch; justify-content: center; flex-direction: column; overflow: hidden; font-size: var(--fit-review-content-size, 3.6rem); }
-.review-card__answer { position: absolute; display: flex; inset: 0; width: 100%; height: 100%; min-width: 0; min-height: 0; max-height: 100%; align-items: center; justify-content: center; flex-direction: column; gap: .45rem; overflow: hidden; }
-.review-card__front-reference { max-width: 30rem; overflow-wrap: anywhere; color: rgba(var(--v-theme-on-surface), .48); font-size: clamp(.72rem, 2.2vw, .88rem); line-height: 1.4; white-space: pre-wrap; }
-.review-card__hint { display: flex; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .48); font-size: .72rem; font-weight: 800; }
-.passive-card { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); padding: 2rem 2rem 5.5rem; border: .0625rem solid rgba(var(--v-theme-secondary), .28); border-radius: 1.5rem; align-items: center; flex: 1 1 auto; flex-direction: column; gap: 1.5rem; overflow: hidden; background: rgb(var(--v-theme-surface)); color: inherit; font: inherit; text-align: center; touch-action: none; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); }
-.passive-card--interactive { cursor: pointer; }
-.passive-card__content { display: flex; width: 100%; min-width: 0; min-height: 0; flex: 1 1 auto; align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem; overflow: hidden; }
-.passive-card .v-progress-linear { width: min(20rem, 100%); flex: 0 0 auto; }
-.review-card__tag-actions { position: absolute; z-index: 3; right: 1.5rem; bottom: 1.25rem; left: 1.5rem; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: .5rem; }
-.review-card__quick-tags { display: flex; grid-column: 1; justify-self: start; gap: .5rem; }
-.review-card__quick-tag.v-chip--variant-outlined { border-color: rgba(var(--v-theme-on-surface), .18); }
-.review-card__tag-menu-button { min-width: 0; grid-column: 3; justify-self: end; }
-.standalone-review-content-next-enter-active,
-.standalone-review-content-next-leave-active,
-.standalone-review-content-previous-enter-active,
-.standalone-review-content-previous-leave-active,
-.standalone-review-content-front-enter-active,
-.standalone-review-content-front-leave-active,
-.standalone-review-content-back-enter-active,
-.standalone-review-content-back-leave-active {
-  transition: opacity 160ms ease, transform 180ms cubic-bezier(.22, 1, .36, 1);
-}
-.standalone-review-content-next-enter-from,
-.standalone-review-content-previous-leave-to { opacity: 0; transform: translateX(1.5rem); }
-.standalone-review-content-next-leave-to,
-.standalone-review-content-previous-enter-from { opacity: 0; transform: translateX(-1.5rem); }
-.standalone-review-content-back-enter-from,
-.standalone-review-content-front-leave-to { opacity: 0; transform: translateY(1.5rem); }
-.standalone-review-content-back-leave-to,
-.standalone-review-content-front-enter-from { opacity: 0; transform: translateY(-1.5rem); }
 .review-navigation { display: grid; width: 100%; max-width: 54.25rem; margin: auto auto 0; padding-top: .25rem; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; justify-items: center; gap: 1rem; }
 .review-navigation__control { display: flex; min-width: 0; align-items: center; }
 .grading-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
@@ -2144,76 +1834,8 @@ async function leaveRunner() {
     justify-self: auto;
   }
 
-  .review-card-pane {
-    display: contents;
-  }
-
-  .review-card-stack {
-    height: 100%;
-    min-height: 0;
-    grid-column: 1;
-    grid-row: 1 / 5;
-  }
-
-  .review-card-window {
-    height: 100%;
-    min-height: 0;
-  }
-
-  .review-card,
-  .passive-card {
-    height: 100%;
-    min-height: 0;
-  }
-
-  .review-card,
-  .passive-card {
-    padding: clamp(1rem, 3dvh, 1.5rem) 1.5rem;
-    gap: clamp(.75rem, 2dvh, 1.25rem);
-  }
-
-  .passive-card__content {
-    gap: 0;
-  }
-
-  .review-card__tag-actions {
-    position: static;
-    display: flex;
-    width: 100%;
-    max-width: none;
-    padding-left: 1rem;
-    grid-column: 2;
-    grid-row: 3;
-    align-self: end;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    margin-bottom: 4.375rem;
-    border-left: .0625rem solid rgb(var(--v-theme-on-surface) / .12);
-  }
-
-  .review-card__quick-tags {
-    flex-wrap: wrap;
-  }
-
-  .review-card__tag-menu-button {
-    height: 2rem;
-    min-width: 0;
-    padding-inline: .5rem;
-    grid-column: auto;
-    justify-self: auto;
-    font-size: .75rem;
-  }
-
-  .review-card__quick-tag {
-    height: 1.75rem;
-    padding-inline: .5rem;
-    font-size: .75rem;
-  }
-
   .grading-actions,
-  .review-navigation,
-  .review-card-actions {
+  .review-navigation {
     padding-left: 1rem;
     border-left: .0625rem solid rgb(var(--v-theme-on-surface) / .12);
   }
@@ -2249,62 +1871,5 @@ async function leaveRunner() {
     height: clamp(3rem, 13dvh, 4rem);
   }
 
-  .review-card-actions {
-    display: grid !important;
-    padding-top: .25rem;
-    grid-column: 2;
-    grid-row: 4;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: .25rem !important;
-  }
-
-  .review-card-actions .v-btn {
-    min-width: 0;
-    min-height: 2.75rem;
-    padding-inline: .5rem;
-  }
-
-  .review-card-actions :deep(.v-btn__content) {
-    overflow: hidden;
-    font-size: .75rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .review-card-image-enter-active,
-  .review-card-image-leave-active,
-  .review-card-image-next-enter-active,
-  .review-card-image-next-leave-active,
-  .review-card-image-previous-enter-active,
-  .review-card-image-previous-leave-active,
-  .review-card-image-front-enter-active,
-  .review-card-image-front-leave-active,
-  .review-card-image-back-enter-active,
-  .review-card-image-back-leave-active,
-  .standalone-review-content-next-enter-active,
-  .standalone-review-content-next-leave-active,
-  .standalone-review-content-previous-enter-active,
-  .standalone-review-content-previous-leave-active,
-  .standalone-review-content-front-enter-active,
-  .standalone-review-content-front-leave-active,
-  .standalone-review-content-back-enter-active,
-  .standalone-review-content-back-leave-active { transition: none; }
-  .review-card-image-next-enter-from,
-  .review-card-image-next-leave-to,
-  .review-card-image-previous-enter-from,
-  .review-card-image-previous-leave-to,
-  .review-card-image-front-enter-from,
-  .review-card-image-front-leave-to,
-  .review-card-image-back-enter-from,
-  .review-card-image-back-leave-to,
-  .standalone-review-content-next-enter-from,
-  .standalone-review-content-next-leave-to,
-  .standalone-review-content-previous-enter-from,
-  .standalone-review-content-previous-leave-to,
-  .standalone-review-content-front-enter-from,
-  .standalone-review-content-front-leave-to,
-  .standalone-review-content-back-enter-from,
-  .standalone-review-content-back-leave-to { opacity: 1; transform: none; }
 }
 </style>

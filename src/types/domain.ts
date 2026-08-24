@@ -362,10 +362,8 @@ export type FlashcardContextAction =
 export type FlashcardSettingsApplyTarget = 'session' | 'review-set' | 'both'
 export type IntervalSettingsApplyTarget = 'session' | 'interval' | 'both'
 export type RunnerSessionAction =
-  | 'options'
-  | 'settings'
+  | Exclude<FlashcardContextAction, 'toggle_tts'>
   | 'amplification'
-  | 'eject'
   | 'restart'
   | 'end'
 
@@ -596,6 +594,12 @@ export interface FlashcardReviewQueueCard {
   tags: string[]
 }
 
+export interface FlashcardReviewCardQuickTag {
+  name: string
+  color: string
+  selected: boolean
+}
+
 export interface FlashcardReviewSession extends FlashcardReviewSettings {
   id: string
   reviewSet?: string
@@ -644,6 +648,13 @@ export interface FlashcardSpeechLanguage {
 export interface FlashcardSpeechSupport {
   available: boolean
   languages: FlashcardSpeechLanguage[]
+}
+
+export interface FlashcardSpeechWord {
+  start: number
+  end: number
+  wordStart: number
+  wordEnd: number
 }
 
 export interface BackgroundFlashcardReviewState {

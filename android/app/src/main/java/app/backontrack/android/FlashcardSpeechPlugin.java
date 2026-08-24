@@ -46,6 +46,23 @@ public class FlashcardSpeechPlugin extends Plugin {
     @Override
     public void load() {
         volumeBoost = new TtsVolumeBoost(getContext());
+        volumeBoost.setPlaybackListener(new TtsVolumeBoost.PlaybackListener() {
+            @Override
+            public void onStart(String utteranceId) {
+                JSObject event = new JSObject();
+                event.put("state", "start");
+                event.put("utteranceId", utteranceId);
+                notifyListeners("speechPlayback", event);
+            }
+
+            @Override
+            public void onDone(String utteranceId) {
+                JSObject event = new JSObject();
+                event.put("state", "end");
+                event.put("utteranceId", utteranceId);
+                notifyListeners("speechPlayback", event);
+            }
+        });
         recordingPlayer = new FlashcardRecordingPlayer(getContext());
         speech = new TextToSpeech(getContext(), status -> {
             speechReady = status == TextToSpeech.SUCCESS;
@@ -176,7 +193,9 @@ public class FlashcardSpeechPlugin extends Plugin {
             return;
         }
         backgroundIntervalSpeechKey = call.getString("backgroundIntervalSpeechKey", "").trim();
-        call.resolve();
+        JSObject resultData = new JSObject();
+        resultData.put("utteranceId", utteranceId);
+        call.resolve(resultData);
     }
 
     @PluginMethod

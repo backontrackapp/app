@@ -11,6 +11,7 @@ import type {
   FlashcardReviewSort,
   FlashcardSelectionAction,
   FlashcardSettingsApplyTarget,
+  FlashcardTag,
   IntervalFlashcardReviewSnapshot,
 } from '@/types/domain'
 
@@ -29,6 +30,34 @@ export const INTERVAL_FLASHCARD_QUICK_TAGS = [
   { name: 'easy', color: 'success' },
   { name: 'hard', color: 'error' },
 ] as const
+
+export function flashcardTagToggleUpdate(
+  currentTagIds: readonly string[],
+  selectedTag: FlashcardTag,
+  availableTags: readonly FlashcardTag[],
+): { action: 'add_tags' | 'remove_tags' | 'set_tags'; values: string[] } {
+  if (currentTagIds.includes(selectedTag.id)) {
+    return { action: 'remove_tags', values: [selectedTag.id] }
+  }
+
+  const quickTagNames = new Set(
+    INTERVAL_FLASHCARD_QUICK_TAGS.map(tag => tag.name.toLocaleLowerCase()),
+  )
+  if (!quickTagNames.has(selectedTag.name.toLocaleLowerCase())) {
+    return { action: 'add_tags', values: [selectedTag.id] }
+  }
+
+  const quickTagIds = new Set(availableTags
+    .filter(tag => quickTagNames.has(tag.name.toLocaleLowerCase()))
+    .map(tag => tag.id))
+  return {
+    action: 'set_tags',
+    values: [
+      ...currentTagIds.filter(tagId => !quickTagIds.has(tagId)),
+      selectedTag.id,
+    ],
+  }
+}
 
 export const FLASHCARD_REVIEW_CARD_SIDE_OPTIONS: Array<{
   title: string
@@ -356,8 +385,8 @@ export function flashcardReviewActionFromSwipe(
   const direction = flashcardSwipeDirection(start, end)
   if (direction === 'left') return { action: 'back', transition: 'next' }
   if (direction === 'right') return { action: 'front', transition: 'previous' }
-  if (direction === 'up') return { action: 'next', transition: 'back' }
-  if (direction === 'down') return { action: 'previous', transition: 'front' }
+  if (direction === 'up') return { action: 'previous', transition: 'back' }
+  if (direction === 'down') return { action: 'next', transition: 'front' }
   return undefined
 }
 

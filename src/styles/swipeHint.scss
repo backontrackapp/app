@@ -1,0 +1,108 @@
+.swipe-hint-host--positioned {
+  position: relative;
+}
+
+.swipe-hint {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  padding: 1rem;
+  background: rgba(var(--v-theme-background), .75);
+  opacity: 1;
+  pointer-events: none;
+  place-items: center;
+  transition: opacity 200ms ease;
+}
+
+.swipe-hint--between-sequences,
+.swipe-hint--leaving {
+  opacity: 0;
+}
+
+.swipe-hint__cue {
+  display: grid;
+  min-width: 8rem;
+  padding: 1rem 1.5rem;
+  border: 1px solid rgb(var(--v-theme-secondary) / .28);
+  border-radius: 1rem;
+  background: rgb(var(--v-theme-background) / .82);
+  box-shadow: none;
+  color: rgb(var(--v-theme-on-surface));
+  justify-items: center;
+  overflow: hidden;
+}
+
+.swipe-hint__hand {
+  display: block;
+  color: rgb(var(--v-theme-secondary));
+  font-size: 3rem;
+  line-height: 1;
+  will-change: opacity, transform;
+}
+
+.swipe-hint__hand--left {
+  animation: swipe-hint-left 1100ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.swipe-hint__hand--right {
+  animation: swipe-hint-right 1100ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.swipe-hint__hand--up {
+  animation: swipe-hint-up 1100ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.swipe-hint__hand--down {
+  animation: swipe-hint-down 1100ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.swipe-hint__label {
+  margin-top: .75rem;
+  font-size: .875rem;
+  font-weight: 900;
+  line-height: 1.25;
+  text-align: center;
+}
+
+@keyframes swipe-hint-left {
+  0% { opacity: 0; transform: translate3d(1.5rem, 0, 0); }
+  20% { opacity: 1; }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(-1.5rem, 0, 0); }
+}
+
+@keyframes swipe-hint-right {
+  0% { opacity: 0; transform: translate3d(-1.5rem, 0, 0); }
+  20% { opacity: 1; }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(1.5rem, 0, 0); }
+}
+
+@keyframes swipe-hint-up {
+  0% { opacity: 0; transform: translate3d(0, 1.5rem, 0); }
+  20% { opacity: 1; }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(0, -1.5rem, 0); }
+}
+
+@keyframes swipe-hint-down {
+  0% { opacity: 0; transform: translate3d(0, -1.5rem, 0); }
+  20% { opacity: 1; }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(0, 1.5rem, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .swipe-hint {
+    transition-duration: .01ms;
+  }
+
+  .swipe-hint__hand {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
