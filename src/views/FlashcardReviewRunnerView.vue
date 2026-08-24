@@ -143,6 +143,7 @@ let manualSwipeStart: {
 } | undefined
 let suppressManualCardTap = false
 let manualCardTapResetTimer: number | undefined
+let resumeAfterSessionActions = false
 let resumeAfterSessionSettings = false
 let resumeAfterCardEditor = false
 const speechFailureWarnedSessionIds = new Set<string>()
@@ -334,6 +335,11 @@ watch([
   void speakCurrentSide()
 }, { flush: 'post' })
 
+watch(() => currentCard.value?.id, (cardId, previousCardId) => {
+  if (!cardId || !previousCardId || cardId === previousCardId) return
+  resetCurrentCardPhase()
+}, { flush: 'sync' })
+
 watch([
   () => currentCard.value?.id,
   currentSpeechSide,
@@ -361,6 +367,10 @@ watch([
   () => currentCard.value?.id,
   currentSpeechSide,
 ], scheduleReviewContentFit, { flush: 'post' })
+
+watch(sessionActionsSheet, (open, wasOpen) => {
+  if (wasOpen && !open) void finishSessionActions()
+})
 
 watch(shouldKeepScreenAwake, (keepAwake) => {
   if (keepAwake && document.visibilityState === 'visible') void acquireWakeLock()
@@ -751,6 +761,21 @@ async function resumeReview() {
   visibilityPaused.value = false
 }
 
+async function openSessionActions() {
+  const value = session.value
+  if (!value || busy.value || isFinished.value) return
+  resumeAfterSessionActions = value.status === 'running'
+  if (resumeAfterSessionActions) await pauseReview(false)
+  if (session.value?.id === value.id && !isFinished.value) sessionActionsSheet.value = true
+  else resumeAfterSessionActions = false
+}
+
+async function finishSessionActions() {
+  const shouldResume = resumeAfterSessionActions
+  resumeAfterSessionActions = false
+  if (shouldResume && session.value?.status === 'paused') await resumeReview()
+}
+
 async function restartReview() {
   const value = session.value
   if (!value?.reviewSet || isReviewSetPreview.value || isFinished.value || busy.value) return
@@ -1131,7 +1156,7 @@ function copySessionSettings(value: FlashcardReviewSession) {
 async function openSessionSettings() {
   const value = session.value
   if (!value || busy.value) return
-  resumeAfterSessionSettings = value.status === 'running'
+  resumeAfterSessionSettings = resumeAfterSessionSettings || value.status === 'running'
   if (resumeAfterSessionSettings) await pauseReview(false)
   if (!session.value || isFinished.value) return
   copySessionSettings(session.value)
@@ -1201,7 +1226,7 @@ function applySessionSettingsTo(target: FlashcardSettingsApplyTarget) {
 
 async function openCardEditor(action: 'add' | 'edit') {
   if (!session.value || busy.value || !canManageCurrentCard.value) return
-  resumeAfterCardEditor = session.value.status === 'running'
+  resumeAfterCardEditor = resumeAfterCardEditor || session.value.status === 'running'
   if (resumeAfterCardEditor) await pauseReview(false)
   try {
     if (currentReviewSet.value && currentReviewSet.value.accessRole !== 'owner') {
@@ -1296,21 +1321,28 @@ async function deleteCurrentCard() {
   }
 }
 
-function handleSessionMenuAction(action: FlashcardContextAction) {
+async function handleSessionMenuAction(action: FlashcardContextAction) {
   if (action === 'add' || action === 'edit') {
-    void openCardEditor(action)
+    resumeAfterCardEditor = resumeAfterCardEditor || resumeAfterSessionActions
+    resumeAfterSessionActions = false
+    await openCardEditor(action)
   } else if (action === 'settings') {
-    void openSessionSettings()
+    resumeAfterSessionSettings = resumeAfterSessionSettings || resumeAfterSessionActions
+    resumeAfterSessionActions = false
+    await openSessionSettings()
   } else if (action === 'remove') {
+    await finishSessionActions()
     requestCurrentCardDeletion()
   } else if (action === 'eject') {
-    void ejectCurrentCard()
+    await finishSessionActions()
+    await ejectCurrentCard()
   } else if (action === 'undo_eject') {
-    void undoLastEject()
+    await finishSessionActions()
+    await undoLastEject()
   }
 }
 
-function handleRunnerSessionAction(action: RunnerSessionAction) {
+async function handleRunnerSessionAction(action: RunnerSessionAction) {
   if (
     action === 'add'
     || action === 'edit'
@@ -1318,10 +1350,13 @@ function handleRunnerSessionAction(action: RunnerSessionAction) {
     || action === 'remove'
     || action === 'eject'
     || action === 'undo_eject'
-  ) handleSessionMenuAction(action)
-  else if (action === 'amplification') void toggleSpeechOverAmplification()
-  else if (action === 'restart') void restartReview()
-  else if (action === 'end') endDialog.value = true
+  ) await handleSessionMenuAction(action)
+  else {
+    await finishSessionActions()
+    if (action === 'amplification') await toggleSpeechOverAmplification()
+    else if (action === 'restart') await restartReview()
+    else if (action === 'end') endDialog.value = true
+  }
 }
 
 async function ejectCurrentCard() {
@@ -1387,7 +1422,7 @@ async function leaveRunner() {
             aria-label="Review actions"
             :disabled="sessionActionsDisabled"
             @touchstart.stop
-            @click.stop="sessionActionsSheet = true"
+            @click.stop="openSessionActions"
           />
         </div>
       </header>

@@ -96,6 +96,9 @@ const responseElement = ref<HTMLElement>()
 const responseIsFitting = ref(props.fitLargestWord)
 let responseFitFrame: number | undefined
 let responseResizeObserver: ResizeObserver | undefined
+let responseFitIsForced = false
+let lastResponseFitWidth: number | undefined
+let lastResponseFitHeight: number | undefined
 
 function fittedPartElements() {
   if (!responseElement.value) return []
@@ -119,48 +122,67 @@ function setPartScale(elements: HTMLElement[], scale: number) {
   })
 }
 
-function fitCombinedResponse() {
+function fitCombinedResponse(force = false) {
   const response = responseElement.value
   const elements = fittedPartElements()
   if (!props.fitLargestWord || !response || !elements.length || !response.clientHeight) return
 
+  if (
+    !force
+    && lastResponseFitWidth !== undefined
+    && lastResponseFitHeight !== undefined
+    && Math.abs(response.clientWidth - lastResponseFitWidth) < 1
+    && Math.abs(response.clientHeight - lastResponseFitHeight) < 1
+  ) return
+
   setPartScale(elements, 1)
-  if (response.scrollHeight <= response.clientHeight) return
+  if (response.scrollHeight > response.clientHeight) {
+    let fittingScale = .01
+    let overflowingScale = 1
+    setPartScale(elements, fittingScale)
 
-  let fittingScale = .01
-  let overflowingScale = 1
-  setPartScale(elements, fittingScale)
-  if (response.scrollHeight > response.clientHeight) return
-
-  for (let iteration = 0; iteration < 12; iteration += 1) {
-    const candidate = (fittingScale + overflowingScale) / 2
-    setPartScale(elements, candidate)
-    if (response.scrollHeight <= response.clientHeight) fittingScale = candidate
-    else overflowingScale = candidate
+    if (response.scrollHeight <= response.clientHeight) {
+      for (let iteration = 0; iteration < 12; iteration += 1) {
+        const candidate = (fittingScale + overflowingScale) / 2
+        setPartScale(elements, candidate)
+        if (response.scrollHeight <= response.clientHeight) fittingScale = candidate
+        else overflowingScale = candidate
+      }
+      setPartScale(elements, fittingScale)
+    }
   }
-  setPartScale(elements, fittingScale)
+
+  lastResponseFitWidth = response.clientWidth
+  lastResponseFitHeight = response.clientHeight
 }
 
-function scheduleCombinedResponseFit() {
+function scheduleCombinedResponseFit(force = false) {
   responseIsFitting.value = props.fitLargestWord
+  responseFitIsForced ||= force
   if (responseFitFrame !== undefined) window.cancelAnimationFrame(responseFitFrame)
   responseFitFrame = window.requestAnimationFrame(() => {
     responseFitFrame = undefined
+    const shouldForce = responseFitIsForced
+    responseFitIsForced = false
     void nextTick(() => {
-      fitCombinedResponse()
+      fitCombinedResponse(shouldForce)
       responseIsFitting.value = false
     })
   })
 }
 
-watch([() => props.fitLargestWord, parts], scheduleCombinedResponseFit, { flush: 'post' })
+function forceCombinedResponseFit() {
+  scheduleCombinedResponseFit(true)
+}
+
+watch([() => props.fitLargestWord, parts], forceCombinedResponseFit, { flush: 'post' })
 
 onMounted(() => {
   if ('ResizeObserver' in window && responseElement.value) {
     responseResizeObserver = new ResizeObserver(scheduleCombinedResponseFit)
     responseResizeObserver.observe(responseElement.value)
   }
-  scheduleCombinedResponseFit()
+  forceCombinedResponseFit()
 })
 
 onBeforeUnmount(() => {
@@ -178,7 +200,7 @@ onBeforeUnmount(() => {
       `flashcard-response-text--${density}`,
       { 'flashcard-response-text--fitting': responseIsFitting },
     ]"
-    @fit-largest-word-complete="scheduleCombinedResponseFit"
+    @fit-largest-word-complete="forceCombinedResponseFit"
   >
     <template v-if="fitLargestWord">
       <FitResponsePart
