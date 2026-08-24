@@ -2,15 +2,15 @@
 
 ## Curated Review sets
 
-The lime **+ Curated** button opens a searchable catalog of Review sets prepared by the BackOnTrack team. The catalog uses a three-column desktop grid (two columns on tablets and one on phones); available card images cycle in each tile with the front text overlaid. Opening a set shows its cards in the shared flashcard table.
+The lime **+ Curated** button opens a searchable catalog of Review sets prepared by the BackOnTrack team. The catalog uses a three-column desktop grid (two columns on tablets and one on phones). A catalog thumbnail replaces the tile slideshow when provided; otherwise, available card images cycle with the front text overlaid. Opening a set shows its cards in the shared flashcard table.
 
-Before cloning, users choose the front and back languages. `front`, `back`, `transliteration`, and `notes` may each have BCP 47 language suffixes such as `front_en-US` or `notes_fr-FR`. Transliteration and notes follow the selected back language and fall back to their unsuffixed columns. Images are retained as references when cards are cloned. A full clone creates an owned selected-card Review set with the curated defaults and opens its editor; selected cards can instead be sent through the table's bulk menu to a new or existing owned custom set.
+Before cloning, users choose the front and back languages. The initial selections prefer the catalog defaults when a compatible device TTS voice exists, then try the other available CSV languages before falling back to the catalog selection. Exact TTS locales are preferred, followed by the closest installed voice with the same base language, so `fr` or `fr-CA` can use an available `fr-FR` voice. The cloned Review set stores that installed voice locale separately from the CSV column selection. `front`, `back`, `transliteration`, and `notes` may each have BCP 47 language suffixes such as `front_en-US` or `notes_fr-FR`. Transliteration and notes follow the selected back language and fall back to their unsuffixed columns. Images are retained as references when cards are cloned. A full clone creates an owned selected-card Review set with the curated defaults and opens its editor; selected cards can instead be sent through the table's bulk menu to a new or existing owned custom set.
 
 Curated source files are not database records. The API reads them from the private data directory at request time, while cloned cards and Review sets use the normal offline-first synchronization path.
 
 ## Card images
 
-Cards accept an optional HTTPS image URL or a cropped 256 × 256 JPEG upload. Uploaded files are stored under the private data directory and served through immutable card-image URLs. Review screens render the image as a dimmed full-card background; Interval reviews use it behind the progress rings. Shared Review set editors can update images through the same set-scoped permissions as other card fields.
+Cards accept an optional HTTPS image URL or a cropped 256 × 256 JPEG upload. Uploaded files are stored under the private data directory and served through immutable card-image URLs. Review screens render the image as a dimmed full-card background. Interval reviews keep the image on the Review set card and leave the circular timer unobstructed. Shared Review set editors can update images through the same set-scoped permissions as other card fields.
 
 ## AI assistant
 
@@ -28,7 +28,9 @@ The PHP server owns the OpenAI credential and calls the Responses API with respo
 
 ## Review set card actions
 
-Selecting an owned or shared Review set card opens its action menu. **Review** is the first action, followed by the management actions available for that set's access level.
+The shared card table used by Manage cards, Review set forms, and curated-set previews includes a dedicated Image column, keeping thumbnails visible even when the action column contains an Edit control. Its bulk menu exposes one **Inject into Review set** action for creating a Review set or injecting the selected cards into an existing owned custom Review set. Review set cards show their total matching card count at the top-right. Selecting an owned or shared Review set card opens its action menu. **Review** is the first action, followed by the management actions available for that set's access level.
+
+Deleting an owned Review set asks whether its currently matching cards should also be deleted. Card deletion is off by default; when selected, those cards are removed from the Card library and every other Review set after the Review set itself is successfully deleted.
 
 ## Recent session history
 
@@ -48,7 +50,7 @@ The card manager and owned Review set card table expose one **Swap column conten
 
 ## Custom selected-card Review sets
 
-The card manager and owned Review set card tables expose **Create Review set** in their bulk menu. The dialog can create a named Review set from the selected cards or add the selection to an existing owned custom set. When no custom set is available, the dialog keeps the new-set option selected.
+The card manager and owned Review set card tables expose **Inject into Review set** in their bulk menu. The sheet can create a named Review set from the selected cards or inject the selection into another existing owned custom set; the source Review set is never offered as its own destination. When exactly one destination exists, it is selected automatically. When no other custom set is available, the sheet keeps the new-set option selected.
 
 Selected-card Review sets persist explicit card membership instead of deriving membership from tags. They are created from a card list's bulk menu. After creation, their editor replaces the Review set tag field with an information area explaining the custom selection; more cards can be added from the same bulk workflow.
 
@@ -57,6 +59,8 @@ Creating a custom Review set from the bulk dialog redirects directly to its edit
 ## Runner settings
 
 Active Interval settings include the same Review cards section as the Interval form, so a Review set can be attached, replaced, or removed during a run. The Apply to menu in active Interval and Review set settings offers Current session, the saved Interval or Review set, and Both. Choosing Both updates the saved source and the active session snapshot so the current run reflects the new settings immediately.
+
+Standalone Review sets choose either **Back** or **Transliteration** as the primary response value. When Transliteration is selected and present, the Back value appears underneath it; otherwise Back remains primary. The alternate value is followed by the note, so transliteration always appears above the note. Mini Review sets inside Interval sessions stay compact and show only Back followed by Note.
 
 ## Standalone review time limits
 

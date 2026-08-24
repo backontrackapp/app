@@ -44,22 +44,43 @@ async function load() {
 
 <template>
   <main class="app-page curated-page">
-    <section class="curated-hero">
-      <div>
-        <h1>Curated Review sets</h1>
-        <p>Choose a ready-made collection, select the languages and fields you want, then add it to your library for free.</p>
-      </div>
-      <v-icon icon="mdi-storefront-outline" size="56" color="secondary" aria-hidden="true" />
-    </section>
-
     <v-alert v-if="error" type="error" variant="tonal" class="mb-4">
       {{ error }}
       <template #append><v-btn variant="text" size="small" @click="load">Retry</v-btn></template>
     </v-alert>
 
     <div class="curated-filters mb-5">
-      <v-text-field v-model="search" label="Search curated sets" prepend-inner-icon="mdi-magnify" clearable hide-details />
-      <v-select v-model="category" :items="categories" label="Category" clearable hide-details />
+      <v-text-field
+        v-model="search"
+        label="Search curated sets"
+        prepend-inner-icon="mdi-magnify"
+        autocomplete="off"
+        clearable
+        hide-details
+      />
+      <div class="curated-categories">
+        <span class="curated-categories__label">Category</span>
+        <v-chip-group v-model="category" mandatory aria-label="Category">
+          <v-chip
+            value=""
+            color="secondary"
+            :variant="category === '' ? 'flat' : 'outlined'"
+            filter
+          >
+            All
+          </v-chip>
+          <v-chip
+            v-for="itemCategory in categories"
+            :key="itemCategory"
+            :value="itemCategory"
+            color="secondary"
+            :variant="category === itemCategory ? 'flat' : 'outlined'"
+            filter
+          >
+            {{ itemCategory }}
+          </v-chip>
+        </v-chip-group>
+      </div>
     </div>
 
     <div v-if="loading" class="d-flex justify-center align-center ga-3 py-12" role="status">
@@ -73,8 +94,15 @@ async function load() {
         class="surface-card curated-tile"
         :to="{ name: 'flashcard-curated-detail', params: { slug: item.slug } }"
       >
+        <v-img
+          v-if="item.thumbnail"
+          :src="apiAssetUrl(item.thumbnail)"
+          :alt="`${item.name} thumbnail`"
+          height="13rem"
+          cover
+        />
         <v-carousel
-          v-if="item.previews.length"
+          v-else-if="item.previews.length"
           :cycle="item.previews.length > 1 && !reducedMotion"
           :show-arrows="false"
           hide-delimiters
@@ -111,17 +139,17 @@ async function load() {
 </template>
 
 <style scoped>
-.curated-hero { display: flex; padding: 1.5rem; margin-bottom: 1.5rem; border: .0625rem solid rgba(var(--v-theme-secondary), .22); border-radius: 1.25rem; align-items: center; justify-content: space-between; gap: 2rem; background: linear-gradient(135deg, rgba(var(--v-theme-secondary), .14), rgba(var(--v-theme-surface), .96)); }
-.curated-hero h1 { font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 950; letter-spacing: -.03em; }
-.curated-hero p:last-child { max-width: 43rem; margin-top: .5rem; color: rgba(var(--v-theme-on-surface), .68); }
-.curated-filters { display: grid; grid-template-columns: minmax(0, 2fr) minmax(12rem, 1fr); gap: .75rem; }
+.curated-filters { display: flex; flex-direction: column; gap: .75rem; }
+.curated-categories { min-width: 0; }
+.curated-categories__label { display: block; margin-bottom: .25rem; color: rgba(var(--v-theme-on-surface), .68); font-size: .75rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.curated-categories :deep(.v-chip) { min-height: 2.75rem; }
 .curated-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
-.curated-tile { overflow: hidden; }
+.curated-tile { overflow: hidden; border: 0; }
 .curated-tile h2 { font-size: 1.05rem; font-weight: 900; line-height: 1.25; }
 .curated-slideshow__overlay { display: flex; position: absolute; inset: 0; padding: 1rem; align-items: flex-end; background: linear-gradient(transparent 35%, rgba(0, 0, 0, .82)); }
 .curated-slideshow__overlay strong { color: white; font-size: .92rem; line-height: 1.3; text-shadow: 0 .125rem .5rem black; }
 .curated-placeholder { display: grid; height: 13rem; color: rgba(var(--v-theme-on-surface), .62); place-items: center; align-content: center; gap: .75rem; background: radial-gradient(circle at top, rgba(var(--v-theme-secondary), .18), transparent 60%); }
 @media (max-width: 62rem) { .curated-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 40rem) { .curated-grid, .curated-filters { grid-template-columns: 1fr; } .curated-hero { align-items: flex-start; } .curated-hero > :deep(.v-icon) { display: none; } }
+@media (max-width: 40rem) { .curated-grid { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .curated-slideshow :deep(*) { transition: none !important; animation: none !important; } }
 </style>

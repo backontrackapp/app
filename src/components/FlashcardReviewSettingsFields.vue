@@ -43,6 +43,12 @@ const props = withDefaults(defineProps<{
 
 const CUSTOM_MAX_CARDS_THRESHOLD = 50
 const settings = computed(() => props.modelValue)
+const backDisplay = computed({
+  get: () => settings.value.backDisplay || 'back',
+  set: (value: 'back' | 'transliteration') => {
+    settings.value.backDisplay = value
+  },
+})
 const vuetifyDefaultsAvailable = Boolean(inject(Symbol.for('vuetify:defaults'), null))
 const ejectLoadsNext = computed({
   get: () => flashcardEjectLoadsNext(settings.value.ejectBehavior),
@@ -252,22 +258,25 @@ function updateSpeechEnabled(enabled: boolean | null) {
       </p>
 
       <v-expand-transition>
-        <div v-if="settings.cardSides !== 'front'">
+        <div v-if="settings.cardSides !== 'front' && !interval">
           <div class="response-order-setting mt-5">
             <v-divider class="mb-3" />
-            <div class="setting-row">
-              <div>
-                <strong>Show note before answer</strong>
-                <p>Place the card note above the back text when the response appears</p>
-              </div>
-              <v-switch
-                v-model="settings.noteBeforeBack"
-                color="secondary"
-                hide-details="auto"
-                inset
-                aria-label="Show flashcard note before answer"
-              />
-            </div>
+            <label class="field-label">Back value <span class="required-mark">*</span></label>
+            <v-btn-toggle
+              v-model="backDisplay"
+              mandatory
+              color="secondary"
+              variant="tonal"
+              class="back-display-toggle mt-2"
+              aria-label="Back value"
+            >
+              <v-btn value="back">Back</v-btn>
+              <v-btn value="transliteration">Transliteration</v-btn>
+            </v-btn-toggle>
+            <p class="mode-hint mt-3">
+              <v-icon icon="mdi-information-outline" size="18" />
+              The other column appears underneath, followed by the note.
+            </p>
           </div>
         </div>
       </v-expand-transition>
@@ -498,6 +507,8 @@ function updateSpeechEnabled(enabled: boolean | null) {
 .mode-toggle :deep(.v-btn) { width: 100%; min-height: 3rem; }
 .faces-toggle { display: grid; width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
 .faces-toggle :deep(.v-btn) { width: 100%; min-height: 3rem; }
+.back-display-toggle { display: grid; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+.back-display-toggle :deep(.v-btn) { width: 100%; min-height: 3rem; }
 .sort-direction-toggle { display: grid; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
 .sort-direction-toggle :deep(.v-btn) { width: 100%; }
 .eject-behavior-options :deep(.v-selection-control) { min-height: 3rem; }

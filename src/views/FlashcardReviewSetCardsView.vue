@@ -101,7 +101,10 @@ function bulkUpdateCards(action: Parameters<typeof store.bulkUpdateReviewSetCard
         :can-add="canEdit"
         :show-import="canEdit"
         :import-review-set-id="reviewSetId"
-        :bulk-actions="reviewSet.accessRole === 'owner' ? ['create_review_set', 'delete'] : canEdit ? ['delete'] : []"
+        :source-review-set-id="reviewSetId"
+        :bulk-actions="reviewSet.accessRole === 'owner'
+          ? ['inject_into_review_set', 'delete']
+          : canEdit ? ['delete'] : []"
         :bulk-action-handler="bulkUpdateCards"
         add-aria-label="Add a card to this Review set"
         empty-title="No matching cards"

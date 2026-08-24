@@ -36,6 +36,7 @@ const emit = defineEmits<{
         <h2 class="text-h6 font-weight-black">{{ title }}</h2>
       </div>
       <p class="text-body-2 muted mt-2">{{ message }}</p>
+      <slot />
       <div class="confirm-actions mt-6">
         <v-btn
           class="confirm-actions__primary mobile-large-action"

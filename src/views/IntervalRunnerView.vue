@@ -160,7 +160,6 @@ const flashcardSettingsDraft = reactive<FlashcardReviewSettings>({
   frontSeconds: 5,
   backSeconds: 5,
   backSpeechRepeatCount: 1,
-  noteBeforeBack: false,
   speechEnabled: false,
   frontLanguage: '',
   backLanguage: '',
@@ -1711,7 +1710,6 @@ async function openFlashcardSettings() {
     frontSeconds: review.frontSeconds,
     backSeconds: review.backSeconds,
     backSpeechRepeatCount: review.backSpeechRepeatCount,
-    noteBeforeBack: review.noteBeforeBack,
     speechEnabled: review.speechEnabled,
     frontLanguage: review.frontLanguage,
     backLanguage: review.backLanguage,
@@ -1760,7 +1758,6 @@ async function saveFlashcardSettings(target: FlashcardSettingsApplyTarget = 'ses
         frontSeconds: flashcardSettingsDraft.frontSeconds,
         backSeconds: flashcardSettingsDraft.backSeconds,
         backSpeechRepeatCount: flashcardSettingsDraft.backSpeechRepeatCount,
-        noteBeforeBack: flashcardSettingsDraft.noteBeforeBack,
         speechEnabled: flashcardSettingsDraft.speechEnabled,
         frontLanguage: flashcardSettingsDraft.frontLanguage,
         backLanguage: flashcardSettingsDraft.backLanguage,
@@ -2007,15 +2004,14 @@ async function runAgain(repetitions?: number) {
             </div>
             <div class="runner-progress-stack">
               <div class="runner-progress">
-                <div class="progress-rings" :class="{ 'progress-rings--with-image': Boolean(flashcardPhase?.card.image) }">
+                <div class="progress-rings">
                   <IntervalTypeIcon
                     v-if="current.step.kind"
                     class="runner-type-backdrop"
                     :kind="current.step.kind"
                     size="clamp(8rem, 44vw, 8rem)"
-                    :animated="session.status === 'running' && !flashcardPhase?.card.image"
+                    :animated="session.status === 'running'"
                   />
-                  <img v-if="flashcardPhase?.card.image" :src="flashcardPhase.card.image" alt="" class="runner-flashcard-image" />
                   <v-progress-circular
                     v-if="showTotalProgress"
                     class="progress-ring progress-ring--total"
@@ -2158,7 +2154,6 @@ async function runAgain(repetitions?: number) {
                         :aria-hidden="flashcardPhase.side !== 'back' ? 'true' : undefined"
                         :back="flashcardPhase.card.back"
                         :note="flashcardPhase.card.note"
-                        :note-before-back="session.flashcardReview.noteBeforeBack"
                         density="compact"
                       />
                     </div>
@@ -2767,8 +2762,6 @@ async function runAgain(repetitions?: number) {
   isolation: isolate;
 }
 .progress-rings :deep(.v-progress-circular__overlay) { transition: none; }
-.runner-flashcard-image { position: absolute; z-index: 0; inset: 1.75rem; width: calc(100% - 3.5rem); height: calc(100% - 3.5rem); border-radius: 100%; object-fit: cover; opacity: .68; pointer-events: none; filter: brightness(.72) saturate(.9); }
-.progress-rings--with-image .timer-value { text-shadow: 0 .125rem .75rem rgba(0, 0, 0, .9); }
 .progress-ring {
   position: absolute;
   z-index: 1;

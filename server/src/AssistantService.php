@@ -244,7 +244,7 @@ final class AssistantService
                 'front_seconds' => ['type' => ['integer', 'null'], 'minimum' => 1, 'maximum' => 60],
                 'back_seconds' => ['type' => ['integer', 'null'], 'minimum' => 1, 'maximum' => 60],
                 'back_speech_repeat_count' => ['type' => ['integer', 'null'], 'minimum' => 1, 'maximum' => 5],
-                'show_note_before_answer' => ['type' => ['boolean', 'null']],
+                'back_display' => ['type' => ['string', 'null'], 'enum' => ['back', 'transliteration', null]],
                 'speech_enabled' => ['type' => ['boolean', 'null']],
                 'front_language' => ['type' => ['string', 'null']],
                 'back_language' => ['type' => ['string', 'null']],
@@ -257,7 +257,7 @@ final class AssistantService
                 'review_set_id', 'name', 'mode', 'card_sides', 'run_indefinitely',
                 'time_limit_minutes', 'max_cards', 'load_next_on_eject', 'exclude_on_eject',
                 'front_seconds', 'back_seconds', 'back_speech_repeat_count',
-                'show_note_before_answer', 'speech_enabled', 'front_language', 'back_language',
+                'back_display', 'speech_enabled', 'front_language', 'back_language',
                 'sort_mode', 'sort_direction',
             ]),
             $this->tool('present_choices', 'Ask the user a question that can be answered with a short list of distinct choices rendered as buttons.', [

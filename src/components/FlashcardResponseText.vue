@@ -1,37 +1,45 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { flashcardTextFontSize } from '@/services/flashcards'
+import type { FlashcardBackDisplay } from '@/types/domain'
 
 const props = withDefaults(defineProps<{
   back: string
+  transliteration?: string
   note?: string
-  noteBeforeBack?: boolean
+  backDisplay?: FlashcardBackDisplay
+  showTransliteration?: boolean
   density?: 'full' | 'compact'
 }>(), {
+  transliteration: '',
   note: '',
-  noteBeforeBack: false,
+  backDisplay: 'back',
+  showTransliteration: false,
   density: 'full',
 })
 
 type ResponsePart = {
-  kind: 'back' | 'note'
+  kind: 'back' | 'transliteration' | 'note'
   presentation: 'primary' | 'supporting'
   value: string
 }
 
 const parts = computed<ResponsePart[]>(() => {
   const back = { kind: 'back' as const, value: props.back }
-  if (!props.note) return [{ ...back, presentation: 'primary' }]
-  const note = { kind: 'note' as const, value: props.note }
-  return props.noteBeforeBack
-    ? [
-        { ...note, presentation: 'primary' },
-        { ...back, presentation: 'supporting' },
-      ]
-    : [
-        { ...back, presentation: 'primary' },
-        { ...note, presentation: 'supporting' },
-      ]
+  const transliteration = { kind: 'transliteration' as const, value: props.transliteration }
+  const primary = props.showTransliteration
+    && props.backDisplay === 'transliteration'
+    && props.transliteration
+    ? transliteration
+    : back
+  const response: ResponsePart[] = [{ ...primary, presentation: 'primary' }]
+
+  if (props.showTransliteration) {
+    const alternate = primary.kind === 'back' ? transliteration : back
+    if (alternate.value) response.push({ ...alternate, presentation: 'supporting' })
+  }
+  if (props.note) response.push({ kind: 'note', value: props.note, presentation: 'supporting' })
+  return response
 })
 </script>
 

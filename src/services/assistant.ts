@@ -98,7 +98,7 @@ function reviewSetDraft(reviewSet: FlashcardReviewSet): FlashcardReviewSetDraft 
     frontSeconds: reviewSet.frontSeconds,
     backSeconds: reviewSet.backSeconds,
     backSpeechRepeatCount: reviewSet.backSpeechRepeatCount,
-    noteBeforeBack: reviewSet.noteBeforeBack,
+    backDisplay: reviewSet.backDisplay || 'back',
     speechEnabled: reviewSet.speechEnabled,
     frontLanguage: reviewSet.frontLanguage,
     backLanguage: reviewSet.backLanguage,
@@ -131,7 +131,7 @@ function reviewSetChanges(
   add('Front duration', `${current.frontSeconds} sec`, `${draft.frontSeconds} sec`)
   add('Back duration', `${current.backSeconds} sec`, `${draft.backSeconds} sec`)
   add('Back speech repeats', current.backSpeechRepeatCount, draft.backSpeechRepeatCount)
-  add('Show note before answer', current.noteBeforeBack, draft.noteBeforeBack)
+  add('Back value', current.backDisplay || 'back', draft.backDisplay || 'back')
   add('Read aloud', current.speechEnabled, draft.speechEnabled)
   add('Front language', current.frontLanguage, draft.frontLanguage)
   add('Back language', current.backLanguage, draft.backLanguage)
@@ -193,7 +193,7 @@ export function assistantReadToolResult(
               front_seconds: set.frontSeconds,
               back_seconds: set.backSeconds,
               back_speech_repeat_count: set.backSpeechRepeatCount,
-              show_note_before_answer: set.noteBeforeBack,
+              back_display: set.backDisplay || 'back',
               speech_enabled: set.speechEnabled,
               front_language: set.frontLanguage,
               back_language: set.backLanguage,
@@ -294,9 +294,9 @@ export function assistantWritePlan(
     draft.backSpeechRepeatCount = nullableInteger(
       call.arguments.back_speech_repeat_count, 1, 5, 'Back speech repeat count',
     ) ?? draft.backSpeechRepeatCount
-    draft.noteBeforeBack = nullableBoolean(
-      call.arguments.show_note_before_answer, 'Show note before answer',
-    ) ?? draft.noteBeforeBack
+    draft.backDisplay = nullableChoice(
+      call.arguments.back_display, ['back', 'transliteration'] as const, 'Back value',
+    ) ?? draft.backDisplay
     draft.speechEnabled = nullableBoolean(call.arguments.speech_enabled, 'Read aloud')
       ?? draft.speechEnabled
     if (call.arguments.front_language !== null && call.arguments.front_language !== undefined) {

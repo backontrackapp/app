@@ -3,9 +3,14 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import FlashcardCardsManager from '@/components/FlashcardCardsManager.vue'
 import { api } from '@/lib/api'
-import { curatedCards, curatedReviewSettings } from '@/services/curatedReviewSets'
+import {
+  curatedCards,
+  curatedReviewSettings,
+  preferredCuratedContentLanguage,
+} from '@/services/curatedReviewSets'
+import { loadFlashcardSpeechSupport } from '@/services/flashcardSpeech'
 import { useFlashcardStore } from '@/stores/flashcards'
-import type { CuratedReviewSetDetail, Flashcard } from '@/types/domain'
+import type { CuratedReviewSetDetail, Flashcard, FlashcardSpeechLanguage } from '@/types/domain'
 
 const route = useRoute()
 const router = useRouter()
@@ -13,6 +18,7 @@ const store = useFlashcardStore()
 const detail = ref<CuratedReviewSetDetail>()
 const frontLanguage = ref('')
 const backLanguage = ref('')
+const speechLanguages = ref<FlashcardSpeechLanguage[]>([])
 const loading = ref(true)
 const cloning = ref(false)
 const error = ref('')
@@ -20,7 +26,12 @@ const cards = computed(() => detail.value
   ? curatedCards(detail.value, frontLanguage.value, backLanguage.value)
   : [])
 const settings = computed(() => detail.value
-  ? curatedReviewSettings(detail.value, frontLanguage.value, backLanguage.value)
+  ? curatedReviewSettings(
+      detail.value,
+      frontLanguage.value,
+      backLanguage.value,
+      speechLanguages.value,
+    )
   : undefined)
 
 onMounted(load)
@@ -28,13 +39,23 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const [result] = await Promise.all([
+    const [result, , speechSupport] = await Promise.all([
       api.getCuratedReviewSet(String(route.params.slug || '')),
       store.loaded ? Promise.resolve() : store.load(),
+      loadFlashcardSpeechSupport(),
     ])
     detail.value = result
-    frontLanguage.value = result.defaultFrontLanguage
-    backLanguage.value = result.defaultBackLanguage
+    speechLanguages.value = speechSupport.languages
+    frontLanguage.value = preferredCuratedContentLanguage(
+      result.frontLanguages,
+      result.defaultFrontLanguage,
+      speechSupport.languages,
+    )
+    backLanguage.value = preferredCuratedContentLanguage(
+      result.backLanguages,
+      result.defaultBackLanguage,
+      speechSupport.languages,
+    )
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not load this curated Review set.'
   } finally {
@@ -125,7 +146,7 @@ async function cloneAll() {
           selectable
           :interactive="false"
           :can-add="false"
-          :bulk-actions="['create_review_set']"
+          :bulk-actions="['inject_into_review_set']"
           :review-set-from-cards-handler="cloneCards"
           :default-review-set-name="detail.name"
           empty-title="This curated set has no cards"

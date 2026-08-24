@@ -135,6 +135,7 @@ The reconstructed PHP-era history is:
 | `202608200007` | Added non-destructive task archiving |
 | `202608230001` | Added custom selected-card Review sets |
 | `202608230002` | Restored flashcard image URLs and private uploads |
+| `202608230003` | Added Back or Transliteration response selection for Review sets and session snapshots |
 | `202608220001` | Added opt-in, independently reorderable quick-log shortcuts for tasks |
 
 Existing PHP databases are advanced without recreating application data. The schema is validated after migration, including required columns.
@@ -180,13 +181,13 @@ Curated sets are read from `curated-review-sets/` beside the configured database
 The directory must contain `catalog.csv`. Each catalog row describes one set with these required columns:
 
 ```csv
-slug,name,description,category,keywords,file,default_front_language,default_back_language
-travel-basics,Travel basics,Everyday travel phrases,Languages,travel|phrases,travel-basics.csv,en-US,fr-FR
+slug,name,description,category,keywords,file,thumbnail,default_front_language,default_back_language
+travel-basics,Travel basics,Everyday travel phrases,Languages,travel|phrases,travel-basics.csv,images/travel.webp,en-US,fr-FR
 ```
 
-`slug` uses lowercase letters, numbers, and hyphens. `file` is a relative CSV path below the curated directory. `keywords` is pipe-separated. Optional catalog columns configure the cloned Review set: `mode`, `card_sides`, `indefinite`, `time_limit_seconds`, `max_cards`, `eject_behavior`, `front_seconds`, `back_seconds`, `back_speech_repeat_count`, `note_before_back`, `speech_enabled`, `sort_mode`, and `sort_direction`.
+`slug` uses lowercase letters, numbers, and hyphens. `file` is a relative CSV path below the curated directory. `keywords` is pipe-separated. The optional `thumbnail` accepts an HTTPS URL or a relative JPEG, PNG, or WebP path below the curated directory. When present, the storefront shows that image instead of the card-image slideshow. Other optional catalog columns configure the cloned Review set: `mode`, `card_sides`, `indefinite`, `time_limit_seconds`, `max_cards`, `eject_behavior`, `front_seconds`, `back_seconds`, `back_speech_repeat_count`, `back_display`, `speech_enabled`, `sort_mode`, and `sort_direction`.
 
-Set CSVs use a comma delimiter and a UTF-8 header. They may contain any number of supported text columns: `front`, `back`, `transliteration`, and `notes`, optionally suffixed with a BCP 47 language tag such as `front_en-US` or `notes_fr-FR`. Every row must have content in each advertised front and back language. The optional `image` column accepts either an HTTPS URL or a relative JPEG, PNG, or WebP path below the curated directory.
+Set CSVs use a comma delimiter and a UTF-8 header. They may contain any number of supported text columns: `front`, `back`, `transliteration`, and `notes`, optionally suffixed with a BCP 47 language tag such as `front_en-US` or `notes_fr-FR`. The catalog's default front and back languages annotate unsuffixed columns, allowing device TTS matching without duplicating single-language columns. Every row must have content in each advertised front and back language. The optional `image` column accepts either an HTTPS URL or a relative JPEG, PNG, or WebP path below the curated directory.
 
 ```csv
 front_en-US,front_fr-FR,back_en-US,back_fr-FR,transliteration_fr-FR,notes_en-US,image

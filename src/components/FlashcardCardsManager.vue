@@ -35,6 +35,7 @@ const props = withDefaults(defineProps<{
   showImport?: boolean
   importReviewSetId?: string
   importReturnTo?: string
+  sourceReviewSetId?: string
   bulkActions?: FlashcardBulkAction[]
   bulkActionHandler?: (
     action: FlashcardBulkRecordAction,
@@ -68,6 +69,7 @@ const props = withDefaults(defineProps<{
   showImport: false,
   importReviewSetId: '',
   importReturnTo: '',
+  sourceReviewSetId: '',
   selectable: false,
   interactive: true,
   canAdd: true,
@@ -152,9 +154,11 @@ const selectedCards = computed(() => {
 })
 const selectedCardsHaveTags = computed(() => selectedCards.value.some(card => card.tags.length > 0))
 const customReviewSets = computed(() => (store.reviewSets || []).filter(set => (
-  set.accessRole === 'owner' && set.selectionMode === 'cards'
+  set.accessRole === 'owner'
+  && set.selectionMode === 'cards'
+  && set.id !== props.sourceReviewSetId
 )))
-const canCreateReviewSet = computed(() => reviewSetDestination.value === 'new'
+const canInjectIntoReviewSet = computed(() => reviewSetDestination.value === 'new'
   ? Boolean(reviewSetName.value.trim())
   : customReviewSets.value.some(set => set.id === destinationReviewSetId.value))
 const secondSwapColumnOptions = computed(() => (
@@ -211,6 +215,10 @@ watch(customReviewSets, (reviewSets) => {
     destinationReviewSetId.value = ''
     return
   }
+  if (reviewSets.length === 1) {
+    destinationReviewSetId.value = reviewSets[0]!.id
+    return
+  }
   if (
     reviewSetDestination.value === 'existing'
     && !reviewSets.some(set => set.id === destinationReviewSetId.value)
@@ -242,10 +250,12 @@ function chooseBulkAction(action: FlashcardBulkAction | FlashcardSelectionAction
     openBulkTagAction(action)
     return
   }
-  if (action === 'create_review_set') {
+  if (action === 'inject_into_review_set') {
     reviewSetDestination.value = 'new'
     reviewSetName.value = props.defaultReviewSetName
-    destinationReviewSetId.value = ''
+    destinationReviewSetId.value = customReviewSets.value.length === 1
+      ? customReviewSets.value[0]!.id
+      : ''
     bulkError.value = ''
     reviewSetDialog.value = true
     return
@@ -341,8 +351,8 @@ async function deleteSelectedCards() {
   deleteCardsDialog.value = false
 }
 
-async function saveSelectedCardsToReviewSet() {
-  if (!canCreateReviewSet.value) return
+async function injectSelectedCardsIntoReviewSet() {
+  if (!canInjectIntoReviewSet.value) return
   const destination = reviewSetDestination.value
   bulkError.value = ''
   bulkSaving.value = true
@@ -506,9 +516,9 @@ async function saveSelectedCardsToReviewSet() {
 
       <ActionBottomSheet
         v-model="reviewSetDialog"
-        title="Create Review set"
+        title="Inject into Review set"
         :description="`Use ${selectedCardIds.length} selected ${selectedCardIds.length === 1 ? 'card' : 'cards'}.`"
-        aria-label="Create a Review set from selected cards"
+        aria-label="Inject selected cards into a Review set"
       >
         <template #content>
           <div v-if="reviewSetDialog">
@@ -523,7 +533,7 @@ async function saveSelectedCardsToReviewSet() {
                 :disabled="bulkSaving"
               />
               <v-radio
-                label="Add to an existing custom Review set"
+                label="Inject into an existing custom Review set"
                 value="existing"
                 hide-details="auto"
                 :disabled="bulkSaving || !customReviewSets.length"
@@ -534,7 +544,9 @@ async function saveSelectedCardsToReviewSet() {
               v-if="!customReviewSets.length"
               class="text-body-2 muted mt-2"
             >
-              No custom Review sets are available, so a new one will be created.
+              {{ sourceReviewSetId
+                ? 'No other custom Review sets are available, so a new one will be created.'
+                : 'No custom Review sets are available, so a new one will be created.' }}
             </p>
 
             <v-row class="mt-2">
@@ -572,10 +584,10 @@ async function saveSelectedCardsToReviewSet() {
               <v-btn
                 color="secondary"
                 :loading="bulkSaving"
-                :disabled="!canCreateReviewSet"
-                @click="saveSelectedCardsToReviewSet"
+                :disabled="!canInjectIntoReviewSet"
+                @click="injectSelectedCardsIntoReviewSet"
               >
-                {{ reviewSetDestination === 'new' ? 'Create' : 'Add cards' }}
+                {{ reviewSetDestination === 'new' ? 'Create set' : 'Inject cards' }}
               </v-btn>
             </div>
           </div>

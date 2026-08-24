@@ -99,7 +99,7 @@ const sessionSettingsDraft = reactive<FlashcardReviewSettings>({
   frontSeconds: 5,
   backSeconds: 5,
   backSpeechRepeatCount: 1,
-  noteBeforeBack: false,
+  backDisplay: 'back',
   speechEnabled: false,
   frontLanguage: '',
   backLanguage: '',
@@ -1047,7 +1047,7 @@ function copySessionSettings(value: FlashcardReviewSession) {
     frontSeconds: value.frontSeconds,
     backSeconds: value.backSeconds,
     backSpeechRepeatCount: value.backSpeechRepeatCount,
-    noteBeforeBack: value.noteBeforeBack,
+    backDisplay: value.backDisplay || 'back',
     speechEnabled: value.speechEnabled,
     frontLanguage: value.frontLanguage,
     backLanguage: value.backLanguage,
@@ -1449,8 +1449,10 @@ async function leaveRunner() {
                       </span>
                       <FlashcardResponseText
                         :back="currentCard.back"
+                        :transliteration="currentCard.transliteration"
                         :note="currentCard.note"
-                        :note-before-back="session.noteBeforeBack"
+                        :back-display="session.backDisplay"
+                        show-transliteration
                       />
                     </span>
                     <strong
@@ -1496,8 +1498,10 @@ async function leaveRunner() {
                       <span v-if="passiveSide === 'back'" class="review-card__answer">
                         <FlashcardResponseText
                           :back="currentCard.back"
+                          :transliteration="currentCard.transliteration"
                           :note="currentCard.note"
-                          :note-before-back="session.noteBeforeBack"
+                          :back-display="session.backDisplay"
+                          show-transliteration
                         />
                         <span
                           v-if="session.cardSides === 'both'"
