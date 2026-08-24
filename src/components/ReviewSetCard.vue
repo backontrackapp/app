@@ -562,7 +562,7 @@ defineExpose({ refitContent })
 .interval-flashcard-front-enter-from { opacity: 0; transform: translateY(-1.5rem); }
 
 @media (orientation: portrait) {
-  .interval-review-card__content { height: 9.5rem; }
+  .interval-review-card__content { height: 10.5rem; }
 }
 
 @media (orientation: landscape) and (max-height: 43.75rem) {
