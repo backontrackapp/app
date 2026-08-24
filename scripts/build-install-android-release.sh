@@ -102,7 +102,22 @@ case "$install_method" in
     if [[ -n "$device_serial" ]]; then
       adb_args=(-s "$device_serial")
     fi
-    adb "${adb_args[@]}" install -r -d "$apk_path"
+
+    install_output=""
+    if ! install_output="$(adb "${adb_args[@]}" install -r -d "$apk_path" 2>&1)"; then
+      printf '%s\n' "$install_output" >&2
+
+      if [[ "$install_output" != *INSTALL_FAILED_VERSION_DOWNGRADE* ]]; then
+        exit 1
+      fi
+
+      echo "Android rejected the in-place downgrade; reinstalling $application_id with local app data cleared…"
+      adb "${adb_args[@]}" uninstall "$application_id"
+      adb "${adb_args[@]}" install "$apk_path"
+    elif [[ -n "$install_output" ]]; then
+      printf '%s\n' "$install_output"
+    fi
+
     echo "Installed $application_id from $apk_path."
     ;;
 esac
