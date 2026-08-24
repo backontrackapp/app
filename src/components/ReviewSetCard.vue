@@ -495,6 +495,7 @@ defineExpose({ refitContent })
 .interval-review-card__face--hidden { visibility: hidden; }
 .interval-review-card__content strong { overflow-wrap: anywhere; font-size: clamp(1.05rem, 4.5vw, 1.5rem); line-height: 1.3; white-space: pre-wrap; }
 .interval-review-card :deep(.flashcard-response-text__supporting) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.interval-review-card :deep(.flashcard-response-text__supporting[data-response-part="note"]) { display: block; text-overflow: ellipsis; white-space: nowrap; -webkit-line-clamp: unset; }
 .interval-review-card__tag-actions { position: relative; z-index: 1; display: grid; padding: 0 1rem .75rem; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: .3rem; }
 .interval-review-card__quick-tags { display: flex; grid-column: 2; justify-self: center; gap: .3rem; }
 .interval-review-card__tag-control { height: 1.5rem !important; min-height: 1.5rem !important; font-size: .625rem; }
