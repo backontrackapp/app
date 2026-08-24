@@ -11,6 +11,15 @@ import { healthConnectEntrySession } from '@/services/healthConnectEntries'
 const CLIENT_ID_KEY = 'backontrack-sync-client-id'
 const SYNC_DATA_CHANGED_EVENT = 'backontrack-sync-data-changed'
 const SYNC_OUTBOX_CHANGED_EVENT = 'backontrack-sync-outbox-changed'
+const SILENTLY_DISCARDED_ENTRY_RESOURCES = new Set([
+  'entries',
+  'journal_entries',
+  'tracking_entries',
+])
+const SILENTLY_DISCARDED_ENTRY_REJECTIONS = new Set([
+  'Record not found.',
+  'Task log entries cannot have a value of zero.',
+])
 
 interface LocalAlias {
   key: string
@@ -727,18 +736,73 @@ export async function pendingOperationCount(accountId: string) {
 }
 
 export async function issueCount(accountId: string) {
-  return localDatabase.issues.where('[accountId+resolved]').equals([accountId, 0]).count()
+  return localDatabase.issues
+    .where('[accountId+resolved]')
+    .equals([accountId, 0])
+    .filter(issue => !silentlyDiscardEntryRejection(issue.resource, issue.message))
+    .count()
 }
 
 export async function listSyncIssues(accountId: string) {
   const issues = await localDatabase.issues
     .where('[accountId+resolved]')
     .equals([accountId, 0])
+    .filter(issue => !silentlyDiscardEntryRejection(issue.resource, issue.message))
     .toArray()
   return issues.sort((left, right) => (
     right.createdAt.localeCompare(left.createdAt)
     || right.id.localeCompare(left.id)
   ))
+}
+
+function silentlyDiscardEntryRejection(resource: string, message: string) {
+  return SILENTLY_DISCARDED_ENTRY_RESOURCES.has(resource)
+    && SILENTLY_DISCARDED_ENTRY_REJECTIONS.has(message)
+}
+
+async function discardIgnoredEntrySyncIssues(accountId: string) {
+  const issues = (await localDatabase.issues
+    .where('[accountId+resolved]')
+    .equals([accountId, 0])
+    .toArray())
+    .filter(issue => silentlyDiscardEntryRejection(issue.resource, issue.message))
+  if (!issues.length) return { count: 0, bootstrapRequired: false }
+
+  const changedResources = new Set<string>()
+  let bootstrapRequired = false
+  await localDatabase.transaction(
+    'rw',
+    localDatabase.resources,
+    localDatabase.outbox,
+    localDatabase.metadata,
+    localDatabase.issues,
+    async () => {
+      for (const issue of issues) {
+        const operation = await localDatabase.outbox.get(issue.operationId)
+        await localDatabase.outbox.delete(issue.operationId)
+        await localDatabase.issues.delete(issue.id)
+        if (!issue.recordId) continue
+
+        const remaining = await localDatabase.outbox
+          .where('[accountId+resource+recordId]')
+          .equals([accountId, issue.resource, issue.recordId])
+          .count()
+        if (!remaining) {
+          await localDatabase.resources.delete(resourceKey(accountId, issue.resource, issue.recordId))
+          changedResources.add(issue.resource)
+        }
+        if (!operation || operation.kind === 'patch') {
+          bootstrapRequired = true
+          const metadata = await localDatabase.metadata.get(accountId)
+          if (metadata) await localDatabase.metadata.put({ ...metadata, bootstrapped: false })
+        }
+      }
+    },
+  )
+
+  for (const resource of changedResources) notifyDataChanged(accountId, resource)
+  notifyOutboxChanged(accountId, 'reconciliation')
+  return { count: issues.length, bootstrapRequired }
 }
 
 export async function markOperationsSending(operationIds: string[]) {
@@ -800,7 +864,9 @@ export async function applyExchangeResults(
   changes: SyncResource[],
   receiptWatermark = 0,
 ) {
+  const ignoredIssues = await discardIgnoredEntrySyncIssues(accountId)
   const changedResources = new Set<string>()
+  let bootstrapRequired = ignoredIssues.bootstrapRequired
   await localDatabase.transaction(
     'rw',
     localDatabase.resources,
@@ -815,6 +881,25 @@ export async function applyExchangeResults(
         if (acknowledgement.status === 'rejected') {
           operation.status = 'rejected'
           operation.error = acknowledgement.error?.message || 'This change needs attention.'
+          if (silentlyDiscardEntryRejection(operation.resource, operation.error)) {
+            await localDatabase.outbox.delete(operation.operationId)
+            if (operation.recordId) {
+              const remaining = await localDatabase.outbox
+                .where('[accountId+resource+recordId]')
+                .equals([accountId, operation.resource, operation.recordId])
+                .count()
+              if (!remaining) {
+                await localDatabase.resources.delete(resourceKey(
+                  accountId,
+                  operation.resource,
+                  operation.recordId,
+                ))
+                changedResources.add(operation.resource)
+              }
+            }
+            bootstrapRequired ||= operation.kind === 'patch'
+            continue
+          }
           await localDatabase.outbox.put(operation)
           await localDatabase.issues.put({
             id: `issue-${acknowledgement.operationId}`,
@@ -874,7 +959,7 @@ export async function applyExchangeResults(
         accountId,
         clientId: previous?.clientId || syncClientId(),
         cursor,
-        bootstrapped: true,
+        bootstrapped: !bootstrapRequired,
         lastSyncedAt: new Date().toISOString(),
         serverTime,
         confirmedReceiptSequence: Math.max(
@@ -890,6 +975,7 @@ export async function applyExchangeResults(
   if (acknowledgements.length || changes.length) {
     notifyOutboxChanged(accountId, 'reconciliation')
   }
+  return { bootstrapRequired }
 }
 
 async function mergeRemoteResource(accountId: string, remote: SyncResource) {
