@@ -72,10 +72,12 @@ export function reviewRunnerSessionMenuItems(
   state: ReviewRunnerSessionMenuState,
 ): RunnerSessionMenuItem[] {
   const sessionUnavailable = state.preview || state.finished || state.busy
-  const cardItems = FLASHCARD_REVIEW_SESSION_MENU_ITEMS.map(item => ({
-    ...item,
-    disabled: reviewCardActionDisabled(item.action, state),
-  }))
+  const cardItems = FLASHCARD_REVIEW_SESSION_MENU_ITEMS
+    .filter(item => item.action !== 'eject')
+    .map(item => ({
+      ...item,
+      disabled: reviewCardActionDisabled(item.action, state),
+    }))
   return [
     ...cardItems,
     ...(state.speechAvailable
