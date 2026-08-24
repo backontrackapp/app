@@ -62,6 +62,7 @@ const props = withDefaults(defineProps<{
   firstCardLabel?: string
   showSearchFilter?: boolean
   tableSurface?: boolean
+  showActionColumn?: boolean
   showLastColumn?: boolean
   rowClass?: (card: Flashcard) => string | undefined
 }>(), {
@@ -80,6 +81,7 @@ const props = withDefaults(defineProps<{
   firstCardLabel: 'Add your first card',
   showSearchFilter: true,
   tableSurface: true,
+  showActionColumn: true,
   showLastColumn: true,
   defaultReviewSetName: '',
 })
@@ -463,6 +465,7 @@ async function injectSelectedCardsIntoReviewSet() {
       :selectable="selectable"
       :interactive="interactive"
       :surface="tableSurface"
+      :show-action-column="showActionColumn"
       :show-last-column="showLastColumn"
       :row-class="rowClass"
       @open-card="emit('open-card', $event)"

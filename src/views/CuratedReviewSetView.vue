@@ -8,9 +8,18 @@ import {
   curatedReviewSettings,
   preferredCuratedContentLanguage,
 } from '@/services/curatedReviewSets'
-import { loadFlashcardSpeechSupport } from '@/services/flashcardSpeech'
+import {
+  loadFlashcardSpeechSupport,
+  normalizeSpeechLanguage,
+  speechLanguageOptions,
+} from '@/services/flashcardSpeech'
 import { useFlashcardStore } from '@/stores/flashcards'
-import type { CuratedReviewSetDetail, Flashcard, FlashcardSpeechLanguage } from '@/types/domain'
+import type {
+  CuratedLanguageOption,
+  CuratedReviewSetDetail,
+  Flashcard,
+  FlashcardSpeechLanguage,
+} from '@/types/domain'
 
 const route = useRoute()
 const router = useRouter()
@@ -33,6 +42,19 @@ const settings = computed(() => detail.value
       speechLanguages.value,
     )
   : undefined)
+const frontLanguageOptions = computed(() => humanReadableLanguageOptions(detail.value?.frontLanguages || []))
+const backLanguageOptions = computed(() => humanReadableLanguageOptions(detail.value?.backLanguages || []))
+
+function humanReadableLanguageOptions(options: CuratedLanguageOption[]) {
+  const titles = new Map(speechLanguageOptions(options.map(option => option.value))
+    .map(option => [normalizeSpeechLanguage(option.tag), option.title]))
+  return options.map(option => ({
+    ...option,
+    title: option.value
+      ? titles.get(normalizeSpeechLanguage(option.value)) || option.title
+      : option.title,
+  }))
+}
 
 onMounted(load)
 async function load() {
@@ -112,19 +134,19 @@ async function cloneAll() {
         <div class="language-grid">
           <v-select
             v-model="frontLanguage"
-            :items="detail.frontLanguages"
+            :items="frontLanguageOptions"
             item-title="title"
             item-value="value"
             label="Front language"
-            hide-details
+            hide-details="auto"
           />
           <v-select
             v-model="backLanguage"
-            :items="detail.backLanguages"
+            :items="backLanguageOptions"
             item-title="title"
             item-value="value"
             label="Back language"
-            hide-details
+            hide-details="auto"
           />
           <div class="language-note">
             <v-icon icon="mdi-translate" color="secondary" />
@@ -146,6 +168,7 @@ async function cloneAll() {
           selectable
           :interactive="false"
           :can-add="false"
+          :show-action-column="false"
           :bulk-actions="['inject_into_review_set']"
           :review-set-from-cards-handler="cloneCards"
           :default-review-set-name="detail.name"
