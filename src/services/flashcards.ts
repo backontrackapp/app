@@ -177,7 +177,7 @@ export function flashcardReviewSettingsSignature(settings: FlashcardReviewSettin
     frontSeconds: settings.frontSeconds,
     backSeconds: settings.backSeconds,
     backSpeechRepeatCount: settings.backSpeechRepeatCount,
-    noteBeforeBack: settings.noteBeforeBack,
+    backDisplay: settings.backDisplay || 'back',
     speechEnabled: settings.speechEnabled,
     frontLanguage: settings.frontLanguage,
     backLanguage: settings.backLanguage,
@@ -208,9 +208,9 @@ export function flashcardReviewSettingsAreValid(
 
 export const FLASHCARD_BULK_MENU_ITEMS = [
   {
-    action: 'create_review_set',
-    title: 'Create Review set',
-    icon: 'mdi-card-multiple-outline',
+    action: 'inject_into_review_set',
+    title: 'Inject into Review set',
+    icon: 'mdi-playlist-plus',
   },
   { action: 'swap_columns', title: 'Swap column content', icon: 'mdi-swap-horizontal' },
   { action: 'add_tags', title: 'Add tags', icon: 'mdi-tag-plus-outline', divider: true },
@@ -519,6 +519,7 @@ export function flashcardReviewQueueState(
       id: card.id,
       front: card.front,
       back: card.back,
+      transliteration: card.transliteration || '',
       note: card.note,
       frontAudio: card.frontAudio,
       backAudio: card.backAudio,
@@ -564,7 +565,7 @@ export function createFlashcardReviewPreviewSession(
     backSpeechRepeatCount: reviewSet.mode === 'passive' && reviewSet.speechEnabled
       ? normalizeFlashcardBackSpeechRepeatCount(reviewSet.backSpeechRepeatCount)
       : DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
-    noteBeforeBack: reviewSet.noteBeforeBack,
+    backDisplay: reviewSet.backDisplay || 'back',
     speechEnabled: reviewSet.speechEnabled,
     frontLanguage: reviewSet.frontLanguage,
     backLanguage: reviewSet.backLanguage,
@@ -606,7 +607,7 @@ export function createIntervalFlashcardReviewSnapshot(
     backSpeechRepeatCount: reviewSet.mode === 'passive' && reviewSet.speechEnabled
       ? normalizeFlashcardBackSpeechRepeatCount(reviewSet.backSpeechRepeatCount)
       : DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
-    noteBeforeBack: reviewSet.noteBeforeBack,
+    backDisplay: reviewSet.backDisplay || 'back',
     speechEnabled: reviewSet.speechEnabled,
     frontLanguage: reviewSet.frontLanguage,
     backLanguage: reviewSet.backLanguage,

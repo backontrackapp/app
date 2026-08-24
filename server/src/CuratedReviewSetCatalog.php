@@ -32,6 +32,7 @@ final class CuratedReviewSetCatalog
                     'backLanguages' => $detail['backLanguages'],
                     'defaultFrontLanguage' => $detail['defaultFrontLanguage'],
                     'defaultBackLanguage' => $detail['defaultBackLanguage'],
+                    'thumbnail' => $detail['thumbnail'],
                     'previews' => array_slice(array_values(array_filter(array_map(
                         static fn (array $card): ?array => $card['image'] === '' ? null : [
                             'front' => (string) ($card['mappedFront'] ?? ''),
@@ -51,6 +52,7 @@ final class CuratedReviewSetCatalog
     public function detail(string $slug): array
     {
         $detail = $this->detailWithPrivateSources($slug);
+        unset($detail['thumbnailSource']);
         $detail['rows'] = array_map(static function (array $row): array {
             unset($row['imageSource']);
             return $row;
@@ -77,6 +79,21 @@ final class CuratedReviewSetCatalog
         if ($source === '' || str_starts_with($source, 'https://')) {
             throw new ApiException(404, 'Curated image not found.');
         }
+        $this->servePrivateImage($source);
+    }
+
+    public function serveThumbnail(string $slug): never
+    {
+        $detail = $this->detailWithPrivateSources($slug);
+        $source = (string) ($detail['thumbnailSource'] ?? '');
+        if ($source === '' || str_starts_with($source, 'https://')) {
+            throw new ApiException(404, 'Curated thumbnail not found.');
+        }
+        $this->servePrivateImage($source);
+    }
+
+    private function servePrivateImage(string $source): never
+    {
         $path = $this->privatePath($source);
         $contents = file_get_contents($path);
         $details = $contents === false ? false : @getimagesizefromstring($contents);
@@ -153,6 +170,19 @@ final class CuratedReviewSetCatalog
         $defaultFront = $this->defaultLanguage($catalog, 'default_front_language', $columns['front']);
         $defaultBack = $this->defaultLanguage($catalog, 'default_back_language', $columns['back']);
         $frontHeader = $this->columnHeader($columns['front'], $defaultFront);
+        $thumbnailSource = trim((string) ($catalog['thumbnail'] ?? ''));
+        $thumbnail = '';
+        if ($thumbnailSource !== '') {
+            if (str_starts_with($thumbnailSource, 'https://')) {
+                if (filter_var($thumbnailSource, FILTER_VALIDATE_URL) === false) {
+                    throw new ApiException(500, "Curated Review set {$slug} has an invalid thumbnail URL.");
+                }
+                $thumbnail = $thumbnailSource;
+            } else {
+                $this->privatePath($thumbnailSource);
+                $thumbnail = '/curated-review-sets/' . rawurlencode($slug) . '/thumbnail';
+            }
+        }
         $rows = [];
         foreach ($records as $index => $record) {
             $imageSource = trim((string) ($record['image'] ?? ''));
@@ -182,10 +212,12 @@ final class CuratedReviewSetCatalog
             'description' => trim((string) ($catalog['description'] ?? '')),
             'category' => $category,
             'keywords' => $this->pipeValues((string) ($catalog['keywords'] ?? '')),
-            'frontLanguages' => array_map($this->publicColumn(...), $columns['front']),
-            'backLanguages' => array_map($this->publicColumn(...), $columns['back']),
+            'frontLanguages' => $this->publicColumns($columns['front'], $defaultFront),
+            'backLanguages' => $this->publicColumns($columns['back'], $defaultBack),
             'defaultFrontLanguage' => $defaultFront,
             'defaultBackLanguage' => $defaultBack,
+            'thumbnail' => $thumbnail,
+            'thumbnailSource' => $thumbnailSource,
             'rows' => $rows,
             'settings' => $this->settings($catalog),
         ];
@@ -203,6 +235,17 @@ final class CuratedReviewSetCatalog
                 return $requested;
             }
         }
+        if (
+            $requested !== ''
+            && preg_match('/^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/', $requested) === 1
+            && array_reduce(
+                $columns,
+                static fn (bool $found, array $column): bool => $found || $column['value'] === '',
+                false,
+            )
+        ) {
+            return $requested;
+        }
         return (string) $columns[0]['value'];
     }
 
@@ -214,13 +257,34 @@ final class CuratedReviewSetCatalog
                 return $column['header'];
             }
         }
+        foreach ($columns as $column) {
+            if ($column['value'] === '') {
+                return $column['header'];
+            }
+        }
         throw new ApiException(500, 'A curated language mapping is invalid.');
     }
 
-    /** @param array{value: string, title: string, header: string} $column */
-    private function publicColumn(array $column): array
+    /** @param array<int, array{value: string, title: string, header: string}> $columns */
+    private function publicColumns(array $columns, string $defaultLanguage): array
     {
-        return ['value' => $column['value'], 'title' => $column['title']];
+        $defaultHasDedicatedColumn = array_reduce(
+            $columns,
+            static fn (bool $found, array $column): bool => $found
+                || $column['value'] === $defaultLanguage,
+            false,
+        );
+        return array_map(
+            static fn (array $column): array => [
+                'value' => !$defaultHasDedicatedColumn && $column['value'] === ''
+                    ? $defaultLanguage
+                    : $column['value'],
+                'title' => !$defaultHasDedicatedColumn && $column['value'] === ''
+                    ? $defaultLanguage
+                    : $column['title'],
+            ],
+            $columns,
+        );
     }
 
     /** @param array<string, string> $row */
@@ -245,7 +309,9 @@ final class CuratedReviewSetCatalog
             'frontSeconds' => max(1, min(60, $integer('front_seconds', 5))),
             'backSeconds' => max(1, min(60, $integer('back_seconds', 5))),
             'backSpeechRepeatCount' => max(1, min(5, $integer('back_speech_repeat_count', 1))),
-            'noteBeforeBack' => $boolean('note_before_back', false),
+            'backDisplay' => ($row['back_display'] ?? '') === 'transliteration'
+                ? 'transliteration'
+                : 'back',
             'speechEnabled' => $boolean('speech_enabled', false),
             'frontLanguage' => '',
             'backLanguage' => '',

@@ -104,7 +104,7 @@ function mapReviewSet(record: Record<string, any>): FlashcardReviewSet {
     backSpeechRepeatCount: Number(
       record.back_speech_repeat_count || DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
     ),
-    noteBeforeBack: Boolean(record.note_before_back),
+    backDisplay: record.back_display === 'transliteration' ? 'transliteration' : 'back',
     speechEnabled: Boolean(record.speech_enabled),
     frontLanguage: record.front_language || '',
     backLanguage: record.back_language || '',
@@ -155,7 +155,7 @@ function mapSession(record: Record<string, any>): FlashcardReviewSession {
     backSpeechRepeatCount: Number(
       record.back_speech_repeat_count_snapshot || DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
     ),
-    noteBeforeBack: Boolean(record.note_before_back_snapshot),
+    backDisplay: record.back_display_snapshot === 'transliteration' ? 'transliteration' : 'back',
     speechEnabled: Boolean(record.speech_enabled_snapshot),
     frontLanguage: record.front_language_snapshot || '',
     backLanguage: record.back_language_snapshot || '',
@@ -219,6 +219,30 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     .filter(session => session.status === 'completed' || session.status === 'ended')
     .slice(0, 30))
 
+  function hydrateSessionTransliterations(
+    session: FlashcardReviewSession,
+    sourceCards: Flashcard[],
+  ) {
+    const sourceCardsById = new Map(sourceCards.map(card => [card.id, card]))
+    session.queue.forEach((card) => {
+      if (card.transliteration !== undefined) return
+      const sourceCard = sourceCardsById.get(card.id)
+      if (sourceCard) card.transliteration = sourceCard.transliteration || ''
+    })
+  }
+
+  async function hydrateLoadedSessionTransliterations(session: FlashcardReviewSession) {
+    if (session.queue.every(card => card.transliteration !== undefined)) return
+    const reviewSet = reviewSets.value.find(item => item.id === session.reviewSet)
+    if (!reviewSet || reviewSet.accessRole === 'owner') {
+      hydrateSessionTransliterations(session, cards.value)
+      return
+    }
+    const sourceCards = reviewSetCards.value[reviewSet.id]
+      || await loadReviewSetCards(reviewSet.id)
+    hydrateSessionTransliterations(session, sourceCards)
+  }
+
   async function load() {
     if (!api.authStore.record) return
     loading.value = true
@@ -234,6 +258,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       cards.value = cardRecords.map(mapCard)
       reviewSets.value = setRecords.map(mapReviewSet)
       sessions.value = sessionRecords.items.map(mapSession)
+      sessions.value.forEach(session => hydrateSessionTransliterations(session, cards.value))
       loaded.value = true
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Could not load flashcards.'
@@ -245,9 +270,13 @@ export const useFlashcardStore = defineStore('flashcards', () => {
 
   async function loadSession(id: string) {
     const existing = sessions.value.find(session => session.id === id)
-    if (existing) return existing
+    if (existing) {
+      await hydrateLoadedSessionTransliterations(existing)
+      return existing
+    }
     const record = await api.collection('flashcard_review_sessions').getOne(id)
     const session = mapSession(record)
+    await hydrateLoadedSessionTransliterations(session)
     sessions.value.unshift(session)
     return session
   }
@@ -346,6 +375,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           id: card.id,
           front: card.front,
           back: card.back,
+          transliteration: card.transliteration || '',
           note: card.note,
           frontAudio: card.frontAudio,
           backAudio: card.backAudio,
@@ -607,7 +637,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       front_seconds: draft.frontSeconds,
       back_seconds: draft.backSeconds,
       back_speech_repeat_count: draft.backSpeechRepeatCount,
-      note_before_back: draft.noteBeforeBack,
+      back_display: draft.backDisplay || 'back',
       speech_enabled: draft.speechEnabled,
       front_language: draft.frontLanguage,
       back_language: draft.backLanguage,
@@ -677,7 +707,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         frontSeconds: 5,
         backSeconds: 5,
         backSpeechRepeatCount: DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
-        noteBeforeBack: false,
+        backDisplay: 'back',
         speechEnabled: false,
         frontLanguage: '',
         backLanguage: '',
@@ -823,6 +853,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     const records = await api.getFlashcardReviewSetCards(id)
     const mapped = records.map(mapCard)
     reviewSetCards.value = { ...reviewSetCards.value, [id]: mapped }
+    sessions.value
+      .filter(session => session.reviewSet === id)
+      .forEach(session => hydrateSessionTransliterations(session, mapped))
     const reviewSet = reviewSets.value.find(item => item.id === id)
     if (reviewSet) reviewSet.matchingCardCount = mapped.length
     return mapped
@@ -960,6 +993,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
             id: optimisticCard.id,
             front: optimisticCard.front,
             back: optimisticCard.back,
+            transliteration: optimisticCard.transliteration || '',
             note: optimisticCard.note,
             frontAudio: optimisticCard.frontAudio,
             backAudio: optimisticCard.backAudio,
@@ -1193,7 +1227,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         front_seconds_snapshot: preview.frontSeconds,
         back_seconds_snapshot: preview.backSeconds,
         back_speech_repeat_count_snapshot: preview.backSpeechRepeatCount,
-        note_before_back_snapshot: preview.noteBeforeBack,
+        back_display_snapshot: preview.backDisplay || 'back',
         speech_enabled_snapshot: preview.speechEnabled,
         front_language_snapshot: preview.frontLanguage,
         back_language_snapshot: preview.backLanguage,
@@ -1350,6 +1384,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           id: card.id,
           front: card.front,
           back: card.back,
+          transliteration: card.transliteration || '',
           note: card.note,
           frontAudio: card.frontAudio,
           backAudio: card.backAudio,
@@ -1386,7 +1421,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           front_seconds_snapshot: settings.frontSeconds,
           back_seconds_snapshot: settings.backSeconds,
           back_speech_repeat_count_snapshot: settings.backSpeechRepeatCount,
-          note_before_back_snapshot: settings.noteBeforeBack,
+          back_display_snapshot: settings.backDisplay || 'back',
           speech_enabled_snapshot: settings.speechEnabled,
           front_language_snapshot: settings.frontLanguage,
           back_language_snapshot: settings.backLanguage,
@@ -1475,7 +1510,11 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         : 'ended'
       endedAt = now
     } else {
-      if (status !== 'running') throw new Error('Resume this flashcard review before continuing.')
+      const navigatingPausedSession = status === 'paused'
+        && (action === 'previous' || action === 'next')
+      if (status !== 'running' && !navigatingPausedSession) {
+        throw new Error('Resume this flashcard review before continuing.')
+      }
       if (action === 'undo_eject') {
         if (ejectedCount <= 0) throw new Error('There is no ejected flashcard to restore.')
         const ejectedEvents = await api.collection('flashcard_review_events').getFullList({
@@ -1498,6 +1537,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           id: card.id,
           front: card.front,
           back: card.back,
+          transliteration: card.transliteration || '',
           note: card.note,
           frontAudio: card.frontAudio,
           backAudio: card.backAudio,
@@ -1542,6 +1582,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
                   id: replacement.id,
                   front: replacement.front,
                   back: replacement.back,
+                  transliteration: replacement.transliteration || '',
                   note: replacement.note,
                   frontAudio: replacement.frontAudio,
                   backAudio: replacement.backAudio,

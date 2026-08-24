@@ -187,6 +187,7 @@ function cardTagNames(card: Flashcard) {
           <div class="card-library-header__cell" aria-hidden="true">
             <slot name="action-column-heading">Card</slot>
           </div>
+          <div class="card-library-header__cell card-library-header__image" aria-hidden="true">Image</div>
           <div class="card-library-header__cell" aria-hidden="true">Faces</div>
           <div class="card-library-header__cell" aria-hidden="true">Transliteration</div>
           <div v-if="showLastColumn" class="card-library-header__cell" aria-hidden="true">
@@ -211,6 +212,7 @@ function cardTagNames(card: Flashcard) {
           <colgroup>
             <col v-if="selectable" class="card-library-table__select-column">
             <col class="card-library-table__action-column">
+            <col class="card-library-table__image-column">
             <col class="card-library-table__faces-column">
             <col class="card-library-table__transliteration-column">
             <col v-if="showLastColumn" class="card-library-table__tags-column">
@@ -222,6 +224,7 @@ function cardTagNames(card: Flashcard) {
               <th scope="col" class="card-library-table__action-heading">
                 <slot name="action-column-heading">Card</slot>
               </th>
+              <th scope="col" class="card-library-table__image-heading">Image</th>
               <th scope="col" class="card-library-table__faces-heading">Faces</th>
               <th scope="col" class="card-library-table__transliteration-heading">Transliteration</th>
               <th v-if="showLastColumn" scope="col" class="card-library-table__tags-heading">
@@ -269,15 +272,24 @@ function cardTagNames(card: Flashcard) {
               </td>
               <td class="card-library-table__action-cell text-no-wrap">
                 <slot name="action-column" :card="card">
-                  <div class="flashcard-table__image-frame">
-                    <v-img v-if="card.image" :src="card.image" alt="" cover class="flashcard-table__image">
-                      <template #error>
-                        <v-icon icon="mdi-image-off-outline" size="18" aria-label="Image unavailable" />
-                      </template>
-                    </v-img>
-                    <v-icon v-else icon="mdi-card-text-outline" size="18" color="secondary" aria-hidden="true" />
-                  </div>
+                  <v-icon icon="mdi-card-text-outline" size="18" color="secondary" aria-hidden="true" />
                 </slot>
+              </td>
+              <td class="card-library-table__image-cell">
+                <div class="flashcard-table__image-frame">
+                  <v-img
+                    v-if="card.image"
+                    :src="card.image"
+                    :alt="`Image for ${card.front}`"
+                    cover
+                    class="flashcard-table__image"
+                  >
+                    <template #error>
+                      <v-icon icon="mdi-image-off-outline" size="18" aria-label="Image unavailable" />
+                    </template>
+                  </v-img>
+                  <v-icon v-else icon="mdi-image-outline" size="18" aria-label="No image" />
+                </div>
               </td>
               <td class="card-library-table__faces-cell text-no-wrap">
                 <span v-ripple class="card-library-table__row-ripple" aria-hidden="true" />
@@ -340,22 +352,24 @@ function cardTagNames(card: Flashcard) {
 <style scoped>
 .card-library { overflow: clip; }
 .card-library-header { position: sticky; z-index: 3; top: calc(3.75rem + max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem))); width: 100%; height: 2.25rem; overflow: hidden; background: rgb(var(--v-theme-surface)); box-shadow: 0 .0625rem 0 rgba(var(--v-theme-on-surface), .1); }
-.card-library-header__track { display: grid; width: max(68rem, 100%); height: 100%; grid-template-columns: 3rem 3rem repeat(4, minmax(12rem, 1fr)); will-change: transform; }
-.card-library-header__track--without-selection { grid-template-columns: 3rem repeat(4, minmax(12rem, 1fr)); }
-.card-library-header__track--without-last-column { width: max(32rem, 100%); grid-template-columns: 3rem 3rem repeat(2, minmax(12rem, 1fr)); }
-.card-library-header__track--without-selection.card-library-header__track--without-last-column { grid-template-columns: 3rem repeat(2, minmax(12rem, 1fr)); }
+.card-library-header__track { display: grid; width: max(72rem, 100%); height: 100%; grid-template-columns: 3rem 3rem 4rem repeat(4, minmax(12rem, 1fr)); will-change: transform; }
+.card-library-header__track--without-selection { grid-template-columns: 3rem 4rem repeat(4, minmax(12rem, 1fr)); }
+.card-library-header__track--without-last-column { width: max(36rem, 100%); grid-template-columns: 3rem 3rem 4rem repeat(2, minmax(12rem, 1fr)); }
+.card-library-header__track--without-selection.card-library-header__track--without-last-column { grid-template-columns: 3rem 4rem repeat(2, minmax(12rem, 1fr)); }
 .card-library-header__cell { display: flex; min-width: 0; height: 2.25rem; padding: 0 .75rem; align-items: center; color: rgba(var(--v-theme-on-surface), .52); font-size: .64rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
 .card-library-header__select { justify-content: center; padding-right: .25rem; padding-left: .25rem; }
+.card-library-header__image { justify-content: center; }
 .card-library-header__select :deep(.v-selection-control) { justify-content: center; }
 .card-library-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
 .card-library-scroll:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: -.125rem; }
-.card-library-table { min-width: 68rem; max-width: none; background: transparent; }
-.card-library-table--without-last-column { min-width: 32rem; }
+.card-library-table { min-width: 72rem; max-width: none; background: transparent; }
+.card-library-table--without-last-column { min-width: 36rem; }
 .card-library-table :deep(.v-table__wrapper) { overflow: visible; }
 
 .card-library-table__semantic-heading { position: absolute; width: .0625rem; height: .0625rem; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .card-library-table__select-column { width: 3rem; }
 .card-library-table__action-column { width: 3rem; }
+.card-library-table__image-column { width: 4rem; }
 .card-library-table--without-last-column .card-library-table__faces-column,
 .card-library-table--without-last-column .card-library-table__transliteration-column { width: 50%; }
 .card-library-table__faces-column,
@@ -366,6 +380,8 @@ function cardTagNames(card: Flashcard) {
 .card-library-table td.card-library-table__select { padding-right: .25rem !important; padding-left: .25rem !important; text-align: center; }
 .card-library-table th.card-library-table__action-heading,
 .card-library-table td.card-library-table__action-cell { padding-right: .5rem !important; padding-left: .5rem !important; text-align: center; }
+.card-library-table th.card-library-table__image-heading,
+.card-library-table td.card-library-table__image-cell { padding-right: .5rem !important; padding-left: .5rem !important; text-align: center; }
 .card-library-table tbody .card-library-table__select { position: relative; z-index: 2; cursor: pointer; }
 .card-library-table__select :deep(.v-selection-control) { position: relative; z-index: 2; justify-content: center; }
 .card-library-table td { height: 4rem !important; padding: .5rem .75rem !important; vertical-align: middle; }
@@ -388,7 +404,7 @@ function cardTagNames(card: Flashcard) {
 .card-library-pagination :deep(.v-btn) { min-width: 2.75rem; min-height: 2.75rem; }
 .flashcard-table__text { display: -webkit-box; overflow-wrap: anywhere; font-size: .78rem; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .flashcard-table__faces { display: grid; min-width: 0; gap: .2rem; }
-.flashcard-table__image-frame { display: grid; width: 2rem; height: 2rem; overflow: hidden; border: .0625rem solid rgba(var(--v-theme-on-surface), .08); border-radius: .35rem; place-items: center; background: rgba(var(--v-theme-on-surface), .04); }
+.flashcard-table__image-frame { display: grid; width: 2.5rem; height: 2.5rem; margin: 0 auto; overflow: hidden; border: .0625rem solid rgba(var(--v-theme-on-surface), .08); border-radius: .35rem; color: rgba(var(--v-theme-on-surface), .42); place-items: center; background: rgba(var(--v-theme-on-surface), .04); }
 .flashcard-table__image { width: 100%; height: 100%; }
 .flashcard-table__front { color: rgb(var(--v-theme-on-surface)); font-weight: 900; }
 .flashcard-table__back { color: rgba(var(--v-theme-on-surface), .72); }
@@ -403,7 +419,9 @@ function cardTagNames(card: Flashcard) {
   .card-library-table td { padding-right: .5rem !important; padding-left: .5rem !important; }
   .card-library-table th.card-library-table__select,
   .card-library-table td.card-library-table__select { padding-right: .125rem !important; padding-left: .125rem !important; }
-  .card-library-header__track { grid-template-columns: 3rem 3rem repeat(4, minmax(12rem, 1fr)); }
-  .card-library-header__track--without-selection { grid-template-columns: 3rem repeat(4, minmax(12rem, 1fr)); }
+  .card-library-header__track { grid-template-columns: 3rem 3rem 4rem repeat(4, minmax(12rem, 1fr)); }
+  .card-library-header__track--without-selection { grid-template-columns: 3rem 4rem repeat(4, minmax(12rem, 1fr)); }
+  .card-library-header__track--without-last-column { grid-template-columns: 3rem 3rem 4rem repeat(2, minmax(12rem, 1fr)); }
+  .card-library-header__track--without-selection.card-library-header__track--without-last-column { grid-template-columns: 3rem 4rem repeat(2, minmax(12rem, 1fr)); }
 }
 </style>

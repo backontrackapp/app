@@ -43,6 +43,7 @@ const form = ref()
 const saving = ref(false)
 const deleting = ref(false)
 const deleteDialog = ref(false)
+const deleteCardsWithReviewSet = ref(false)
 const error = ref('')
 const ready = ref(false)
 const original = ref('')
@@ -69,7 +70,7 @@ const draft = reactive<FlashcardReviewSetDraft>({
   frontSeconds: 5,
   backSeconds: 5,
   backSpeechRepeatCount: DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
-  noteBeforeBack: false,
+  backDisplay: 'back',
   speechEnabled: false,
   frontLanguage: '',
   backLanguage: '',
@@ -117,7 +118,7 @@ function applyReviewSet(reviewSet: FlashcardReviewSet) {
     frontSeconds: reviewSet.frontSeconds,
     backSeconds: reviewSet.backSeconds,
     backSpeechRepeatCount: reviewSet.backSpeechRepeatCount,
-    noteBeforeBack: reviewSet.noteBeforeBack,
+    backDisplay: reviewSet.backDisplay || 'back',
     speechEnabled: reviewSet.speechEnabled,
     frontLanguage: reviewSet.frontLanguage,
     backLanguage: reviewSet.backLanguage,
@@ -170,6 +171,7 @@ const orderedMatchingCards = computed(() => sortFlashcardsForReview(
 const excludedCardIds = computed(() => new Set(draft.excludedCards || []))
 const includedCardCount = computed(() => orderedMatchingCards.value
   .filter(card => !excludedCardIds.value.has(card.id)).length)
+const deleteCardCount = computed(() => orderedMatchingCards.value.length)
 const reviewSetBulkActions = computed<FlashcardBulkAction[]>(() => {
   if (!canEditCards.value) return ['export_clipboard']
   if (isOwner.value) return FLASHCARD_BULK_MENU_ITEMS.map(item => item.action)
@@ -271,17 +273,35 @@ function openCard(card: Flashcard) {
   })
 }
 
+function openDeleteDialog() {
+  deleteCardsWithReviewSet.value = false
+  deleteDialog.value = true
+}
+
 async function remove() {
   if (!draft.id) return
+  const cardIds = deleteCardsWithReviewSet.value
+    ? orderedMatchingCards.value.map(card => card.id)
+    : []
   deleting.value = true
   error.value = ''
+  let reviewSetDeleted = false
   try {
     await store.deleteReviewSet(draft.id)
+    reviewSetDeleted = true
+    if (cardIds.length) await store.bulkUpdateCards('delete', cardIds)
     deleteDialog.value = false
     await router.replace('/flashcards')
   } catch (cause) {
-    error.value = store.error || (cause instanceof Error ? cause.message : 'Could not delete this Review set.')
     deleteDialog.value = false
+    if (reviewSetDeleted) {
+      store.error = cause instanceof Error
+        ? `The Review set was deleted, but its cards could not be deleted: ${cause.message}`
+        : 'The Review set was deleted, but its cards could not be deleted.'
+      await router.replace('/flashcards')
+    } else {
+      error.value = store.error || (cause instanceof Error ? cause.message : 'Could not delete this Review set.')
+    }
   } finally {
     deleting.value = false
   }
@@ -380,6 +400,7 @@ async function remove() {
           :show-import="canEditCards"
           :import-review-set-id="draft.id"
           :import-return-to="editorReturnTo"
+          :source-review-set-id="draft.id"
           :row-class="cardRowClass"
           :table-surface="false"
           :empty-title="draft.selectionMode === 'cards'
@@ -430,7 +451,7 @@ async function remove() {
       :delete-disabled="deleting"
       @submit="save"
       @cancel="router.back()"
-      @delete="deleteDialog = true"
+      @delete="openDeleteDialog"
     />
 
     <ConfirmDialog
@@ -441,7 +462,25 @@ async function remove() {
       icon="mdi-delete-outline"
       :loading="deleting"
       @confirm="remove"
-    />
+    >
+      <div v-if="deleteCardCount" class="delete-card-choice mt-4">
+        <v-checkbox
+          v-model="deleteCardsWithReviewSet"
+          color="error"
+          hide-details="auto"
+          :label="`Also delete ${deleteCardCount === 1 ? 'its card' : `all ${deleteCardCount} cards`}`"
+        />
+        <v-alert
+          v-if="deleteCardsWithReviewSet"
+          type="warning"
+          variant="tonal"
+          density="compact"
+          class="mt-2"
+        >
+          These cards will be removed from the Card library and every other Review set.
+        </v-alert>
+      </div>
+    </ConfirmDialog>
   </main>
 </template>
 

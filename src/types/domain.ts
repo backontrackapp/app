@@ -263,7 +263,7 @@ export interface IntervalFlashcardReviewSnapshot {
   frontSeconds: number
   backSeconds: number
   backSpeechRepeatCount: number
-  noteBeforeBack: boolean
+  backDisplay?: FlashcardBackDisplay
   speechEnabled: boolean
   speechPaused?: boolean
   speechPausedElapsedMs?: number
@@ -344,6 +344,7 @@ export interface QuickIntervalSettings extends QuickIntervalDraft {
 export type FlashcardReviewMode = 'manual' | 'passive'
 export type FlashcardReviewSide = 'front' | 'back'
 export type FlashcardReviewCardSides = 'both' | FlashcardReviewSide
+export type FlashcardBackDisplay = 'back' | 'transliteration'
 export type FlashcardReviewSort = 'difficult' | 'never_reviewed' | 'least_recent' | 'recently_added' | 'random'
 export type FlashcardReviewSortDirection = 'asc' | 'desc'
 export type FlashcardReviewEjectBehavior = 'remove' | 'replace' | 'exclude' | 'replace_exclude'
@@ -380,7 +381,7 @@ export interface RunnerSessionMenuItem {
 }
 
 export type FlashcardBulkAction =
-  | 'create_review_set'
+  | 'inject_into_review_set'
   | 'swap_columns'
   | 'swap_front_back'
   | 'swap_note_back'
@@ -392,7 +393,7 @@ export type FlashcardBulkAction =
   | 'delete'
 export type FlashcardBulkRecordAction = Exclude<
   FlashcardBulkAction,
-  'create_review_set' | 'export_clipboard'
+  'inject_into_review_set' | 'export_clipboard'
 >
 export type FlashcardBulkSwapColumn = 'front' | 'back' | 'transliteration' | 'note'
 export type FlashcardSelectionAction = 'exclude' | 'include'
@@ -477,7 +478,7 @@ export interface FlashcardReviewSettings {
   frontSeconds: number
   backSeconds: number
   backSpeechRepeatCount: number
-  noteBeforeBack: boolean
+  backDisplay?: FlashcardBackDisplay
   speechEnabled: boolean
   frontLanguage: string
   backLanguage: string
@@ -506,6 +507,7 @@ export interface CuratedReviewSetSummary {
   backLanguages: CuratedLanguageOption[]
   defaultFrontLanguage: string
   defaultBackLanguage: string
+  thumbnail: string
   previews: CuratedReviewSetPreview[]
 }
 
@@ -586,6 +588,7 @@ export interface FlashcardReviewQueueCard {
   id: string
   front: string
   back: string
+  transliteration?: string
   note: string
   frontAudio?: string
   backAudio?: string
@@ -671,6 +674,8 @@ export type AssistantToolName =
   | 'get_owned_review_set_cards'
   | 'create_flashcard_review_set'
   | 'add_flashcards_to_review_set'
+  | 'update_flashcard_review_set'
+  | 'present_choices'
 
 export interface AssistantMessageItem {
   type: 'message'
@@ -723,6 +728,20 @@ export interface AssistantWritePlan {
   reusedCardIds: string[]
   convertsTagSelection: boolean
   maxCards: number
+  updatedReviewSet?: FlashcardReviewSetDraft
+  changes?: AssistantReviewSetChange[]
+}
+
+export interface AssistantReviewSetChange {
+  label: string
+  before: string
+  after: string
+}
+
+export interface AssistantChoice {
+  call: AssistantToolCallItem
+  prompt: string
+  choices: string[]
 }
 
 export type PhoneSpeechPermission = 'prompt' | 'granted' | 'denied' | 'restricted'

@@ -252,7 +252,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
           </div>
           <div class="card-library-summary__actions">
             <v-btn
-              variant="tonal"
+              color="secondary"
               prepend-icon="mdi-card-plus-outline"
               :to="{ name: 'flashcard-new' }"
             >
@@ -341,7 +341,13 @@ async function reorderReviewSets(result: LongPressDragResult) {
         >
           <div class="review-set__main">
             <div class="min-width-0">
-              <h3 class="text-body-1 font-weight-black text-truncate">{{ reviewSet.name }}</h3>
+              <div class="review-set__heading">
+                <h3 class="text-body-1 font-weight-black text-truncate">{{ reviewSet.name }}</h3>
+                <span class="review-set__total">
+                  {{ reviewSet.matchingCardCount }}
+                  {{ reviewSet.matchingCardCount === 1 ? 'card' : 'cards' }}
+                </span>
+              </div>
               <div class="review-set__meta mt-2">
                 <span v-if="reviewSet.selectionMode === 'cards'" class="review-set__meta-item">
                   <v-icon icon="mdi-card-multiple-outline" size="small" />
@@ -358,15 +364,15 @@ async function reorderReviewSets(result: LongPressDragResult) {
                   />
                   <span>{{ reviewSet.mode === 'passive' ? 'Passive' : 'Manual' }}</span>
                 </span>
-                <span v-if="reviewSet.speechEnabled" class="review-set__meta-item review-set__meta-item--active">
+                <span v-if="reviewSet.speechEnabled" class="review-set__meta-item">
                   <v-icon icon="mdi-volume-high" size="small" />
                   <span>Speech</span>
                 </span>
-                <span v-if="reviewSet.indefinite" class="review-set__meta-item review-set__meta-item--active">
+                <span v-if="reviewSet.indefinite" class="review-set__meta-item">
                   <v-icon icon="mdi-infinity" size="small" />
                   <span>Indefinite</span>
                 </span>
-                <span v-if="reviewSet.timeLimitSeconds" class="review-set__meta-item review-set__meta-item--active">
+                <span v-if="reviewSet.timeLimitSeconds" class="review-set__meta-item">
                   <v-icon icon="mdi-timer-outline" size="small" />
                   <span>{{ formatReviewDuration(reviewSet.timeLimitSeconds) }} limit</span>
                 </span>
@@ -419,11 +425,17 @@ async function reorderReviewSets(result: LongPressDragResult) {
         >
           <div class="review-set__main">
             <div class="min-width-0">
-              <div class="shared-review-set__heading">
+              <div class="review-set__heading">
                 <h3 class="text-body-1 font-weight-black text-truncate">{{ reviewSet.name }}</h3>
-                <v-chip size="x-small" :color="reviewSet.accessRole === 'editor' ? 'secondary' : undefined">
-                  {{ reviewSet.accessRole === 'editor' ? 'Editor' : 'Read only' }}
-                </v-chip>
+                <div class="review-set__heading-meta">
+                  <v-chip size="x-small" :color="reviewSet.accessRole === 'editor' ? 'secondary' : undefined">
+                    {{ reviewSet.accessRole === 'editor' ? 'Editor' : 'Read only' }}
+                  </v-chip>
+                  <span class="review-set__total">
+                    {{ reviewSet.matchingCardCount }}
+                    {{ reviewSet.matchingCardCount === 1 ? 'card' : 'cards' }}
+                  </span>
+                </div>
               </div>
               <p class="shared-review-set__owner mt-1">
                 <v-icon icon="mdi-account-outline" size="x-small" />
@@ -442,7 +454,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
                   <v-icon :icon="reviewSet.mode === 'passive' ? 'mdi-play-speed' : 'mdi-gesture-tap'" size="small" />
                   <span>{{ reviewSet.mode === 'passive' ? 'Passive' : 'Manual' }}</span>
                 </span>
-                <span v-if="reviewSet.timeLimitSeconds" class="review-set__meta-item review-set__meta-item--active">
+                <span v-if="reviewSet.timeLimitSeconds" class="review-set__meta-item">
                   <v-icon icon="mdi-timer-outline" size="small" />
                   <span>{{ formatReviewDuration(reviewSet.timeLimitSeconds) }} limit</span>
                 </span>
@@ -650,12 +662,13 @@ async function reorderReviewSets(result: LongPressDragResult) {
 .review-set { overflow: hidden; cursor: pointer; }
 .review-set:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .1875rem; }
 .review-set__main { min-width: 0; }
+.review-set__heading { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; }
+.review-set__heading h3 { min-width: 0; }
+.review-set__heading-meta { display: flex; flex: 0 0 auto; align-items: center; gap: .5rem; }
+.review-set__total { flex: 0 0 auto; color: rgba(var(--v-theme-on-surface), .6); font-size: .7rem; font-weight: 900; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .review-set__meta { display: flex; flex-wrap: wrap; gap: .35rem .75rem; color: rgba(var(--v-theme-on-surface), .6); font-size: .7rem; font-weight: 800; line-height: 1.35; }
 .review-set__meta-item { display: inline-flex; min-width: 0; align-items: center; gap: .25rem; }
 .review-set__meta-item :deep(.v-icon) { flex: 0 0 auto; opacity: .8; }
-.review-set__meta-item--active { color: rgb(var(--v-theme-secondary)); }
-.shared-review-set__heading { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; }
-.shared-review-set__heading h3 { min-width: 0; }
 .shared-review-set__owner { display: flex; align-items: center; gap: .25rem; color: rgba(var(--v-theme-on-surface), .56); font-size: .7rem; font-weight: 800; }
 .review-history-content-enter-active { transition: opacity 180ms ease, transform 220ms cubic-bezier(.22, 1, .36, 1); }
 .review-history-content-enter-from { opacity: 0; transform: translateY(.75rem); }

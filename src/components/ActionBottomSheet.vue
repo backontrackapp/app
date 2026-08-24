@@ -255,7 +255,9 @@ onBeforeUnmount(() => {
         </p>
       </div>
       <div v-if="$slots.content" class="action-menu__content pa-4">
-        <slot name="content" />
+        <v-defaults-provider :defaults="{ VMenu: { zIndex: zIndex + 10 } }">
+          <slot name="content" />
+        </v-defaults-provider>
       </div>
       <v-list v-if="$slots.default" density="compact" class="action-menu__list pa-1">
         <slot />
@@ -292,7 +294,9 @@ onBeforeUnmount(() => {
       </div>
       <div class="action-bottom-sheet__scroll">
         <div v-if="$slots.content" class="action-bottom-sheet__content px-4 pt-2 pb-4">
-          <slot name="content" />
+          <v-defaults-provider :defaults="{ VMenu: { zIndex: zIndex + 10 } }">
+            <slot name="content" />
+          </v-defaults-provider>
         </div>
         <v-list v-if="$slots.default" class="action-bottom-sheet__content px-2 pb-4">
           <slot />

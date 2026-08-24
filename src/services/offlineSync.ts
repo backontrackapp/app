@@ -453,7 +453,7 @@ async function exchange(accountId: string) {
       await bootstrap(accountId)
       return { hasMore: true, hadActivity: true, cursorAdvanced: true }
     }
-    await applyExchangeResults(
+    const reconciliation = await applyExchangeResults(
       accountId,
       response.cursor,
       response.serverTime,
@@ -461,6 +461,11 @@ async function exchange(accountId: string) {
       response.changes,
       response.receiptWatermark,
     )
+    if (reconciliation?.bootstrapRequired) {
+      await bootstrap(accountId)
+      await stageNativeBackgroundBatch(accountId)
+      return { hasMore: true, hadActivity: true, cursorAdvanced: true }
+    }
     await stageNativeBackgroundBatch(accountId)
     return {
       hasMore: response.hasMore || operations.length < pending.length,

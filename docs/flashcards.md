@@ -2,15 +2,15 @@
 
 ## Curated Review sets
 
-The lime **+ Curated** button opens a searchable catalog of Review sets prepared by the BackOnTrack team. The catalog uses a three-column desktop grid (two columns on tablets and one on phones); available card images cycle in each tile with the front text overlaid. Opening a set shows its cards in the shared flashcard table.
+The lime **+ Curated** button opens a searchable catalog of Review sets prepared by the BackOnTrack team. The catalog uses a three-column desktop grid (two columns on tablets and one on phones). A catalog thumbnail replaces the tile slideshow when provided; otherwise, available card images cycle with the front text overlaid. Opening a set shows its cards in the shared flashcard table.
 
-Before cloning, users choose the front and back languages. `front`, `back`, `transliteration`, and `notes` may each have BCP 47 language suffixes such as `front_en-US` or `notes_fr-FR`. Transliteration and notes follow the selected back language and fall back to their unsuffixed columns. Images are retained as references when cards are cloned. A full clone creates an owned selected-card Review set with the curated defaults and opens its editor; selected cards can instead be sent through the table's bulk menu to a new or existing owned custom set.
+Before cloning, users choose the front and back languages. The initial selections prefer the catalog defaults when a compatible device TTS voice exists, then try the other available CSV languages before falling back to the catalog selection. Exact TTS locales are preferred, followed by the closest installed voice with the same base language, so `fr` or `fr-CA` can use an available `fr-FR` voice. The cloned Review set stores that installed voice locale separately from the CSV column selection. `front`, `back`, `transliteration`, and `notes` may each have BCP 47 language suffixes such as `front_en-US` or `notes_fr-FR`. Transliteration and notes follow the selected back language and fall back to their unsuffixed columns. Images are retained as references when cards are cloned. A full clone creates an owned selected-card Review set with the curated defaults and opens its editor; selected cards can instead be sent through the table's bulk menu to a new or existing owned custom set.
 
 Curated source files are not database records. The API reads them from the private data directory at request time, while cloned cards and Review sets use the normal offline-first synchronization path.
 
 ## Card images
 
-Cards accept an optional HTTPS image URL or a cropped 256 × 256 JPEG upload. Uploaded files are stored under the private data directory and served through immutable card-image URLs. Review screens render the image as a dimmed full-card background; Interval reviews use it behind the progress rings. Shared Review set editors can update images through the same set-scoped permissions as other card fields.
+Cards accept an optional HTTPS image URL or a cropped 256 × 256 JPEG upload. Uploaded files are stored under the private data directory and served through immutable card-image URLs. Review screens render the image as a dimmed full-card background. Interval reviews keep the image on the Review set card and leave the circular timer unobstructed. Shared Review set editors can update images through the same set-scoped permissions as other card fields.
 
 ## AI assistant
 
@@ -18,15 +18,19 @@ The sparkle button between synchronization and the account menu is enabled on Fl
 
 Android and iOS users can dictate a request with the phone's speech recognizer. The operating system converts speech to text; BackOnTrack does not send raw microphone audio to its server or to OpenAI. The transcript stays in the composer so it can be reviewed or edited before sending. Typed requests remain available everywhere.
 
-The POC declares exactly four assistant tools: list the current user's owned Review sets, read matching cards and current-user review statistics from one owned set, propose a new selected-card Review set, and propose adding cards to an owned set. The model cannot invoke undeclared CRUD operations. Read tools run automatically against the local account data. Every create or add proposal shows a preview and requires confirmation; cancellation is returned to the model as a cancelled tool result.
+The POC declares six assistant tools: list the current user's owned Review sets and settings, read matching cards and current-user review statistics from one owned set, propose a new selected-card Review set, propose adding cards to an owned set, propose changing an owned set's name or review settings, and present two to five answer choices. The model cannot invoke undeclared CRUD operations. Read tools run automatically against the local account data. When a question has a discrete answer, its choices appear as buttons below the assistant prompt; the selected choice stays visible in the conversation and is returned to the model. Every create, add, or update proposal shows a preview and requires confirmation; cancellation is returned to the model as a cancelled tool result.
 
-Confirmed writes use one `flashcards.assistant_apply` offline-sync command. New cards and the selected-card Review set relationship are changed together in the local database and replayed together in one server transaction. Adding cards to a tag-based set converts it to a fixed card selection while preserving all cards that matched before the change.
+When a user asks the assistant to create a Review set in two languages, generated cards include a transliteration of the back-language phrase or word and a short explanation in the note field by default. An explicit request to omit or use different content for either field takes precedence.
 
-The PHP server owns the OpenAI credential and calls the Responses API with response storage disabled, parallel tool calls disabled, a pseudonymous safety identifier, and strict schemas for the four declared tools. Tool results are scoped to the authenticated account before they enter the conversation. Assistant requests and confirmed writes are rate limited per account.
+Confirmed create and add writes use one `flashcards.assistant_apply` offline-sync command. New cards and the selected-card Review set relationship are changed together in the local database and replayed together in one server transaction. Adding cards to a tag-based set converts it to a fixed card selection while preserving all cards that matched before the change. Confirmed updates reuse the Review set editor's optimistic offline-first save path and preserve card membership, exclusions, tags, sharing, and ownership.
+
+The PHP server owns the OpenAI credential and calls the Responses API with response storage disabled, parallel tool calls disabled, a pseudonymous safety identifier, and strict schemas for the six declared tools. Tool results are scoped to the authenticated account before they enter the conversation. Assistant requests and confirmed create or add writes are rate limited per account.
 
 ## Review set card actions
 
-Selecting an owned or shared Review set card opens its action menu. **Review** is the first action, followed by the management actions available for that set's access level.
+The shared card table used by Manage cards, Review set forms, and curated-set previews includes a dedicated Image column, keeping thumbnails visible even when the action column contains an Edit control. Its bulk menu exposes one **Inject into Review set** action for creating a Review set or injecting the selected cards into an existing owned custom Review set. Review set cards show their total matching card count at the top-right. Selecting an owned or shared Review set card opens its action menu. **Review** is the first action, followed by the management actions available for that set's access level.
+
+Deleting an owned Review set asks whether its currently matching cards should also be deleted. Card deletion is off by default; when selected, those cards are removed from the Card library and every other Review set after the Review set itself is successfully deleted.
 
 ## Recent session history
 
@@ -46,7 +50,7 @@ The card manager and owned Review set card table expose one **Swap column conten
 
 ## Custom selected-card Review sets
 
-The card manager and owned Review set card tables expose **Create Review set** in their bulk menu. The dialog can create a named Review set from the selected cards or add the selection to an existing owned custom set. When no custom set is available, the dialog keeps the new-set option selected.
+The card manager and owned Review set card tables expose **Inject into Review set** in their bulk menu. The sheet can create a named Review set from the selected cards or inject the selection into another existing owned custom set; the source Review set is never offered as its own destination. When exactly one destination exists, it is selected automatically. When no other custom set is available, the sheet keeps the new-set option selected.
 
 Selected-card Review sets persist explicit card membership instead of deriving membership from tags. They are created from a card list's bulk menu. After creation, their editor replaces the Review set tag field with an information area explaining the custom selection; more cards can be added from the same bulk workflow.
 
@@ -55,6 +59,8 @@ Creating a custom Review set from the bulk dialog redirects directly to its edit
 ## Runner settings
 
 Active Interval settings include the same Review cards section as the Interval form, so a Review set can be attached, replaced, or removed during a run. The Apply to menu in active Interval and Review set settings offers Current session, the saved Interval or Review set, and Both. Choosing Both updates the saved source and the active session snapshot so the current run reflects the new settings immediately.
+
+Standalone and mini Interval Review sets choose either **Back** or **Transliteration** as the primary response value. When Transliteration is selected and present, the Back value appears underneath it; otherwise Back remains primary. The alternate value is followed by the note, so transliteration always appears above the note. Standalone response content scrolls within its card instead of overflowing. Mini Review sets stay compact, with each supporting value limited to one line in portrait and two lines in landscape.
 
 ## Standalone review time limits
 
@@ -74,16 +80,22 @@ Ejecting the current card advances both standalone and mini interval Review set 
 
 Opening a Review set and starting its session use the same forward horizontal navigation as interval runners. The welcome screen remains intact while the running session enters, preventing an intermediate session-layout flash during startup; reduced-motion preferences continue to disable directional movement.
 
-The standalone review header reports the current card's position within the live queue. Its position follows previous and next swipes, while its queue size immediately follows session-setting changes, grading, ejection, undo, card additions, and card removal.
+The standalone review header reports the current card's position within the live queue. Its position follows previous and next swipes, including while the session is paused, while its queue size immediately follows session-setting changes, grading, ejection, undo, card additions, and card removal.
 
 ## Standalone review motion
 
 Automatic and manual standalone Review set changes use the same directional model: previous and next cards move down and up, while front and back faces move right and left. Motion is limited to the card value, answer, and note; the face label, replay or reveal hint, card surface, and passive progress remain stationary. Reduced-motion preferences replace the content without directional movement.
 
+Background images crossfade and move in the same direction as the card content when the standalone reviewer changes cards. Reduced-motion preferences replace them immediately.
+
 Standalone Review set sessions show the current card position centered above the card, between the review mode and elapsed time. Finite sessions advance from 1 through the session total, while indefinite sessions wrap the position at the start of each loop.
+
+Standalone front text uses `3.6rem` as the default and maximum size on `.review-card__content`, scales down until its widest word and rendered lines fit the available card space, and is limited to three rendered lines. Each primary `.flashcard-response-text__part` independently uses the same `3.6rem` width-and-two-line fitting. A `.flashcard-response-text__supporting` part retains its original calculated default and maximum size, does not width-fit, and only scales down when needed to remain within two lines. After those independent calculations, an overflowing `.flashcard-response-text` proportionally reduces all of its part sizes until the combined response fits its container. The primary response is not reduced below `1.25rem`; overflow remains scrollable when that floor prevents a complete fit. Front and response fitting use separate size properties so their calculated sizes do not carry between faces during a swipe, and response overflow remains hidden until fitting settles to avoid a transient scrollbar. Both card faces remain mounted as independent absolute layers, with visibility transitions switching between them so their fitted state survives front/back alternation. Other review typography retains its standard sizing.
+
+In mobile landscape, a standalone Review set session uses a two-pane runner. The card fills the wider left pane, while a spaced metadata row, grading controls, compact tag controls, previous/pause/next navigation, and card actions form a compact control rail on the right. Portrait and taller desktop layouts keep the standard vertical flow.
 
 Mini Review set cards in an active Interval append the current card position to the Review set title as `(X of Y)`.
 
-In mobile landscape, an active Interval with a Review set uses a two-pane runner. The session title and `Interval X of Y` are centered in the header between Leave and session options. The current step, its group iteration chips, the enlarged timer, and interval navigation stay centered in the left pane, while the Review set card fills the right pane. Landscape intervals without a Review set keep the standard timer-focused layout.
+In mobile landscape, an active Interval with a Review set uses a two-pane runner. The session title and `Interval X of Y` are centered in the header between Leave and session options. The current step, enlarged timer, and interval navigation stay centered in the left pane, while the same compact mini Review-set card used in portrait is centered in the right pane and shrinks to the available runner-stage height when necessary. Landscape intervals without a Review set keep the standard timer-focused layout.
 
-The full Review-set pane in a landscape Interval supports the same directional swipe navigation as the mini card in portrait and the standalone reviewer. Gesture capture belongs to the complete card surface, while eject and tag controls remain independent tap targets.
+The mini Review-set card in a landscape Interval supports the same directional swipe navigation as portrait and the standalone reviewer. Gesture capture belongs to the complete card surface, while eject and tag controls remain independent tap targets.

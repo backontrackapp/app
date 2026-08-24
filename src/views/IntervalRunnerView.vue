@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { isValid, parseISO } from 'date-fns'
+import fitty, { type FittyInstance } from 'fitty'
 import { useRoute, useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import AppDialog from '@/components/AppDialog.vue'
@@ -101,6 +102,8 @@ const store = useIntervalStore()
 const flashcardStore = useFlashcardStore()
 const taskStore = useTaskStore()
 const displayRemainingMs = ref(0)
+const progressRingsContent = ref<HTMLElement>()
+const timerValueElement = ref<HTMLElement>()
 const syncing = ref(false)
 const starting = ref(false)
 const speechOverAmplified = ref(flashcardSpeechOverAmplificationIsEnabled())
@@ -160,7 +163,7 @@ const flashcardSettingsDraft = reactive<FlashcardReviewSettings>({
   frontSeconds: 5,
   backSeconds: 5,
   backSpeechRepeatCount: 1,
-  noteBeforeBack: false,
+  backDisplay: 'back',
   speechEnabled: false,
   frontLanguage: '',
   backLanguage: '',
@@ -184,7 +187,14 @@ let runnerMounted = false
 let lastCountCue = ''
 let timerEffectTimeout: number | undefined
 let intervalFlashcardClickResetTimer: number | undefined
-let intervalFlashcardSwipeStart: { pointerId: number; x: number; y: number } | undefined
+let intervalFlashcardSwipeStart: {
+  pointerId: number
+  x: number
+  y: number
+  scrollElement?: HTMLElement
+  scrollTop: number
+  maxScrollTop: number
+} | undefined
 let suppressIntervalFlashcardClick = false
 let lastSpokenFlashcardKey = ''
 let reconcilingVisibilitySpeech = false
@@ -193,6 +203,8 @@ let resumeAfterFlashcardModal = false
 let resumeAfterIntervalSettings = false
 let flashcardSaveWork: Promise<void> = Promise.resolve()
 const cueHandoff = createIntervalCueHandoff(document.visibilityState)
+let timerFit: FittyInstance | undefined
+let timerFitResizeObserver: ResizeObserver | undefined
 
 const previewSession = ref<IntervalSession>()
 const intervalSettingsDraft = reactive({
@@ -251,6 +263,12 @@ const flashcardPhase = computed(() => session.value?.flashcardReview
 const intervalFlashcardTransitionKey = computed(() => flashcardPhase.value
   ? `${flashcardPhase.value.card.id}:${flashcardPhase.value.side}`
   : '')
+const flashcardContextDisabled = computed(() => Boolean(
+  isTemplatePreview.value
+  || syncing.value
+  || openingFlashcardContext.value
+  || flashcardNavigating.value,
+))
 const flashcardReviewSet = computed(() => flashcardStore.reviewSets
   .find(item => item.id === session.value?.flashcardReview?.reviewSet))
 const canManageIntervalCards = computed(() => Boolean(
@@ -478,6 +496,43 @@ watch(flashcardTagSheet, (open, wasOpen) => {
   if (wasOpen && !open) void finishFlashcardModal()
 })
 
+function createTimerFit() {
+  timerFit?.unsubscribe()
+  timerFit = undefined
+  const container = progressRingsContent.value
+  const value = timerValueElement.value
+  if (!container || !value || !container.clientWidth || !container.clientHeight) return
+
+  const style = window.getComputedStyle(value)
+  const fontSize = Number.parseFloat(style.fontSize) || 64
+  const lineHeight = Number.parseFloat(style.lineHeight)
+  const lineHeightRatio = Number.isFinite(lineHeight) ? lineHeight / fontSize : 1.2
+  timerFit = fitty(value, {
+    minSize: 1,
+    maxSize: Math.max(1, Math.min(fontSize, container.clientHeight / lineHeightRatio)),
+    multiLine: false,
+    observeMutations: false,
+  })
+  timerFit.fit({ sync: true })
+}
+
+watch([progressRingsContent, timerValueElement], ([container, value]) => {
+  timerFitResizeObserver?.disconnect()
+  timerFitResizeObserver = undefined
+  timerFit?.unsubscribe()
+  timerFit = undefined
+  if (!container || !value) return
+  if ('ResizeObserver' in window) {
+    timerFitResizeObserver = new ResizeObserver(createTimerFit)
+    timerFitResizeObserver.observe(container)
+  }
+  createTimerFit()
+}, { flush: 'post' })
+
+watch(remainingLabel, () => {
+  void nextTick(() => timerFit?.fit({ sync: true }))
+}, { flush: 'post' })
+
 onMounted(async () => {
   runnerMounted = true
   try {
@@ -577,6 +632,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   runnerMounted = false
+  timerFitResizeObserver?.disconnect()
+  timerFit?.unsubscribe()
   if (animationFrame !== undefined) window.cancelAnimationFrame(animationFrame)
   if (timerEffectTimeout) window.clearTimeout(timerEffectTimeout)
   if (intervalFlashcardClickResetTimer) window.clearTimeout(intervalFlashcardClickResetTimer)
@@ -1277,9 +1334,7 @@ async function openFlashcardContext() {
   const item = session.value
   if (
     !item
-    || isTemplatePreview.value
-    || syncing.value
-    || openingFlashcardContext.value
+    || flashcardContextDisabled.value
   ) return
   resumeAfterFlashcardContext = item.status === 'running'
   openingFlashcardContext.value = true
@@ -1411,7 +1466,7 @@ async function showIntervalFlashcardSide(
 function beginIntervalFlashcardSwipe(event: PointerEvent) {
   const review = session.value?.flashcardReview
   const startedFromTagControl = (event.target as Element | null)
-    ?.closest('.interval-review-card__tag-actions')
+    ?.closest('.interval-review-card__tag-control')
   if (
     !event.isPrimary
     || (event.pointerType === 'mouse' && event.button !== 0)
@@ -1424,7 +1479,18 @@ function beginIntervalFlashcardSwipe(event: PointerEvent) {
     || flashcardNavigating.value
   ) return
 
-  intervalFlashcardSwipeStart = { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
+  const response = (event.target as Element | null)?.closest('.flashcard-response-text')
+  const scrollElement = response instanceof HTMLElement ? response : undefined
+  intervalFlashcardSwipeStart = {
+    pointerId: event.pointerId,
+    x: event.clientX,
+    y: event.clientY,
+    scrollElement,
+    scrollTop: scrollElement?.scrollTop || 0,
+    maxScrollTop: scrollElement
+      ? Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight)
+      : 0,
+  }
   try {
     if (event.currentTarget instanceof HTMLElement) {
       event.currentTarget.setPointerCapture(event.pointerId)
@@ -1434,20 +1500,46 @@ function beginIntervalFlashcardSwipe(event: PointerEvent) {
   }
 }
 
-function finishIntervalFlashcardSwipe(event: PointerEvent) {
+function moveIntervalFlashcardSwipe(event: PointerEvent) {
   const start = intervalFlashcardSwipeStart
-  if (!start || start.pointerId !== event.pointerId) return
-  intervalFlashcardSwipeStart = undefined
+  if (!start?.scrollElement || start.pointerId !== event.pointerId) return
+  const deltaX = event.clientX - start.x
+  const deltaY = event.clientY - start.y
+  if (Math.abs(deltaY) <= Math.abs(deltaX)) return
+  start.scrollElement.scrollTop = Math.min(
+    start.maxScrollTop,
+    Math.max(0, start.scrollTop - deltaY),
+  )
+}
 
-  const gesture = flashcardReviewActionFromSwipe(start, { x: event.clientX, y: event.clientY })
-  if (!gesture) return
-
+function suppressNextIntervalFlashcardClick() {
   suppressIntervalFlashcardClick = true
   if (intervalFlashcardClickResetTimer) window.clearTimeout(intervalFlashcardClickResetTimer)
   intervalFlashcardClickResetTimer = window.setTimeout(() => {
     suppressIntervalFlashcardClick = false
     intervalFlashcardClickResetTimer = undefined
   }, 350)
+}
+
+function finishIntervalFlashcardSwipe(event: PointerEvent) {
+  const start = intervalFlashcardSwipeStart
+  if (!start || start.pointerId !== event.pointerId) return
+  intervalFlashcardSwipeStart = undefined
+
+  const gesture = flashcardReviewActionFromSwipe(start, { x: event.clientX, y: event.clientY })
+  if (!gesture) {
+    if (start.scrollElement && Math.abs(start.scrollElement.scrollTop - start.scrollTop) > 1) {
+      suppressNextIntervalFlashcardClick()
+    }
+    return
+  }
+
+  const responseConsumedGesture = start.scrollElement && (
+    (gesture.action === 'next' && start.scrollTop < start.maxScrollTop)
+    || (gesture.action === 'previous' && start.scrollTop > 0)
+  )
+  suppressNextIntervalFlashcardClick()
+  if (responseConsumedGesture) return
   if (gesture.action === 'previous' || gesture.action === 'next') {
     void navigateIntervalFlashcard(gesture.action, gesture.transition)
   } else {
@@ -1515,6 +1607,7 @@ function snapshotCard(card: Flashcard) {
     id: card.id,
     front: card.front,
     back: card.back,
+    transliteration: card.transliteration || '',
     note: card.note,
     frontAudio: card.frontAudio,
     backAudio: card.backAudio,
@@ -1625,6 +1718,7 @@ async function ejectIntervalFlashcard() {
           id: replacement.id,
           front: replacement.front,
           back: replacement.back,
+          transliteration: replacement.transliteration || '',
           note: replacement.note,
           frontAudio: replacement.frontAudio,
           backAudio: replacement.backAudio,
@@ -1711,7 +1805,7 @@ async function openFlashcardSettings() {
     frontSeconds: review.frontSeconds,
     backSeconds: review.backSeconds,
     backSpeechRepeatCount: review.backSpeechRepeatCount,
-    noteBeforeBack: review.noteBeforeBack,
+    backDisplay: review.backDisplay || 'back',
     speechEnabled: review.speechEnabled,
     frontLanguage: review.frontLanguage,
     backLanguage: review.backLanguage,
@@ -1760,7 +1854,7 @@ async function saveFlashcardSettings(target: FlashcardSettingsApplyTarget = 'ses
         frontSeconds: flashcardSettingsDraft.frontSeconds,
         backSeconds: flashcardSettingsDraft.backSeconds,
         backSpeechRepeatCount: flashcardSettingsDraft.backSpeechRepeatCount,
-        noteBeforeBack: flashcardSettingsDraft.noteBeforeBack,
+        backDisplay: flashcardSettingsDraft.backDisplay || 'back',
         speechEnabled: flashcardSettingsDraft.speechEnabled,
         frontLanguage: flashcardSettingsDraft.frontLanguage,
         backLanguage: flashcardSettingsDraft.backLanguage,
@@ -1988,34 +2082,26 @@ async function runAgain(repetitions?: number) {
           class="runner-stage"
           :class="{ 'runner-stage--with-review': flashcardPhase && session.flashcardReview }"
         >
-          <section class="runner-main" :class="{ 'runner-main--with-review': flashcardPhase }">
+          <div class="runner-stage__primary">
+            <section class="runner-main" :class="{ 'runner-main--with-review': flashcardPhase }">
             <div class="runner-details">
               <p class="runner-session">{{ session.name }}</p>
               <p v-if="attributedTaskName" class="runner-task-link">
                 Completes {{ attributedTaskName }}
               </p>
               <p class="runner-label runner-position">Interval {{ current.index + 1 }} of {{ current.totalSteps }}</p>
-              <div v-if="current.groups.length" class="group-breadcrumb">
-                <span v-for="group in current.groups" :key="`${group.name}-${group.iteration}`">{{ group.name }} {{ group.iteration }}/{{ group.total }}</span>
-              </div>
               <h1 class="runner-step">{{ current.step.name }}</h1>
-              <div v-if="current.groups.length" class="runner-review-groups">
-                <span v-for="group in current.groups" :key="`${group.name}-${group.iteration}`">
-                  {{ group.name }} {{ group.iteration }}/{{ group.total }}
-                </span>
-              </div>
             </div>
             <div class="runner-progress-stack">
               <div class="runner-progress">
-                <div class="progress-rings" :class="{ 'progress-rings--with-image': Boolean(flashcardPhase?.card.image) }">
+                <div class="progress-rings">
                   <IntervalTypeIcon
                     v-if="current.step.kind"
                     class="runner-type-backdrop"
                     :kind="current.step.kind"
                     size="clamp(8rem, 44vw, 8rem)"
-                    :animated="session.status === 'running' && !flashcardPhase?.card.image"
+                    :animated="session.status === 'running'"
                   />
-                  <img v-if="flashcardPhase?.card.image" :src="flashcardPhase.card.image" alt="" class="runner-flashcard-image" />
                   <v-progress-circular
                     v-if="showTotalProgress"
                     class="progress-ring progress-ring--total"
@@ -2042,9 +2128,14 @@ async function runAgain(repetitions?: number) {
                     bg-color="surface-variant"
                     :aria-label="`Current item progress: ${Math.round(progress.item)}%`"
                   />
-                  <div v-if="!currentConfirmation" class="progress-rings__content">
+                  <div
+                    v-if="!currentConfirmation"
+                    ref="progressRingsContent"
+                    class="progress-rings__content"
+                  >
                     <span
                       :key="timerEffectKey"
+                      ref="timerValueElement"
                       class="timer-value"
                       :class="{
                         'timer-value--count': timerEffect === 'count',
@@ -2057,7 +2148,58 @@ async function runAgain(repetitions?: number) {
               </div>
             </div>
             <p class="next-copy">{{ next ? `Next: ${next.step.name}` : 'Final interval' }}</p>
-          </section>
+            </section>
+
+            <footer class="runner-controls runner-controls--landscape">
+              <v-btn
+                v-if="currentConfirmation"
+                color="secondary"
+                class="runner-confirm-button"
+                append-icon="mdi-arrow-right"
+                :loading="starting || syncing"
+                :disabled="!isTemplatePreview && session.status !== 'running'"
+                @touchstart.stop
+                @click.stop="isTemplatePreview ? requestStartTemplate() : confirmCurrent()"
+              >
+                {{ isTemplatePreview ? playActionLabel : 'Continue' }}
+              </v-btn>
+              <template v-else>
+                <v-btn
+                  icon="mdi-skip-previous"
+                  variant="tonal"
+                  :disabled="isTemplatePreview || current.index === 0"
+                  aria-label="Previous interval"
+                  @click="previous"
+                />
+                <v-btn
+                  :icon="session.status === 'paused' ? 'mdi-play' : 'mdi-pause'"
+                  color="secondary"
+                  class="runner-pause-button"
+                  :loading="starting"
+                  :aria-label="session.status === 'paused' ? playActionLabel : 'Pause'"
+                  @touchstart.stop
+                  @click.stop="isTemplatePreview ? requestStartTemplate() : session.status === 'paused' ? resume() : pause()"
+                />
+                <v-btn icon="mdi-skip-next" variant="tonal" aria-label="Next interval" :disabled="isTemplatePreview" @click="skip" />
+              </template>
+              <v-btn
+                icon="mdi-chevron-left"
+                variant="text"
+                class="runner-back-button"
+                aria-label="Leave runner"
+                :to="returnTo"
+              />
+              <v-btn
+                icon="mdi-dots-vertical"
+                variant="text"
+                class="runner-actions-button"
+                aria-label="Interval actions"
+                :disabled="sessionActionsDisabled"
+                @touchstart.stop
+                @click.stop="sessionActionsSheet = true"
+              />
+            </footer>
+          </div>
 
           <footer class="runner-controls runner-controls--portrait">
             <v-btn
@@ -2091,23 +2233,39 @@ async function runAgain(repetitions?: number) {
           <div
             v-if="flashcardPhase && session.flashcardReview"
             class="interval-review-card"
-            :class="{ 'interval-review-card--playback-paused': !flashcardReviewPlaybackEnabled }"
-            @pointerdown="beginIntervalFlashcardSwipe"
-            @pointerup="finishIntervalFlashcardSwipe"
-            @pointercancel="cancelIntervalFlashcardSwipe"
-            @lostpointercapture="cancelIntervalFlashcardSwipe"
+            :class="{
+              'interval-review-card--playback-paused': !flashcardReviewPlaybackEnabled,
+              'interval-review-card--disabled': flashcardContextDisabled,
+            }"
+            role="button"
+            :tabindex="flashcardContextDisabled ? -1 : 0"
+            :aria-disabled="flashcardContextDisabled"
+            :aria-label="flashcardReviewPlaybackEnabled
+              ? `${session.flashcardReview.name}, ${flashcardPhase.side}, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`
+              : `${session.flashcardReview.name} paused for this step, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`"
+            @pointerdown.capture="beginIntervalFlashcardSwipe"
+            @pointermove.capture="moveIntervalFlashcardSwipe"
+            @pointerup.capture="finishIntervalFlashcardSwipe"
+            @pointercancel.capture="cancelIntervalFlashcardSwipe"
+            @lostpointercapture.capture="cancelIntervalFlashcardSwipe"
             @click="openFlashcardContext"
+            @keydown.enter.self="openFlashcardContext"
+            @keydown.space.self.prevent="openFlashcardContext"
           >
-            <img v-if="flashcardPhase.card.image" :src="flashcardPhase.card.image" alt="" class="interval-review-card__image" />
-            <button
-              v-ripple
-              type="button"
-              class="interval-review-card__main"
-              :aria-label="flashcardReviewPlaybackEnabled
-                ? `${session.flashcardReview.name}, ${flashcardPhase.side}, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`
-                : `${session.flashcardReview.name} paused for this step, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`"
-              :disabled="isTemplatePreview || syncing || openingFlashcardContext || flashcardNavigating"
+            <transition
+              :name="intervalFlashcardTransitionDirection
+                ? `interval-flashcard-${intervalFlashcardTransitionDirection}`
+                : undefined"
             >
+              <img
+                v-if="flashcardPhase.card.image"
+                :key="flashcardPhase.card.id"
+                :src="flashcardPhase.card.image"
+                alt=""
+                class="interval-review-card__image"
+              />
+            </transition>
+            <div class="interval-review-card__main">
               <div class="interval-review-card__content">
                 <div class="interval-review-card__heading">
                   <span class="interval-review-card__set">
@@ -2157,16 +2315,18 @@ async function runAgain(repetitions?: number) {
                         }"
                         :aria-hidden="flashcardPhase.side !== 'back' ? 'true' : undefined"
                         :back="flashcardPhase.card.back"
+                        :transliteration="flashcardPhase.card.transliteration"
                         :note="flashcardPhase.card.note"
-                        :note-before-back="session.flashcardReview.noteBeforeBack"
+                        :back-display="session.flashcardReview.backDisplay || 'back'"
+                        show-transliteration
                         density="compact"
                       />
                     </div>
                   </transition>
                 </div>
               </div>
-            </button>
-            <footer class="interval-review-card__tag-actions" aria-label="Flashcard tags" @click.stop>
+            </div>
+            <footer class="interval-review-card__tag-actions" aria-label="Flashcard tags">
               <v-btn
                 class="interval-review-card__tag-control interval-review-card__eject-button"
                 size="x-small"
@@ -2222,55 +2382,6 @@ async function runAgain(repetitions?: number) {
             />
           </div>
 
-          <footer class="runner-controls runner-controls--landscape">
-            <v-btn
-              v-if="currentConfirmation"
-              color="secondary"
-              class="runner-confirm-button"
-              append-icon="mdi-arrow-right"
-              :loading="starting || syncing"
-              :disabled="!isTemplatePreview && session.status !== 'running'"
-              @touchstart.stop
-              @click.stop="isTemplatePreview ? requestStartTemplate() : confirmCurrent()"
-            >
-              {{ isTemplatePreview ? playActionLabel : 'Continue' }}
-            </v-btn>
-            <template v-else>
-              <v-btn
-                icon="mdi-skip-previous"
-                variant="tonal"
-                :disabled="isTemplatePreview || current.index === 0"
-                aria-label="Previous interval"
-                @click="previous"
-              />
-              <v-btn
-                :icon="session.status === 'paused' ? 'mdi-play' : 'mdi-pause'"
-                color="secondary"
-                class="runner-pause-button"
-                :loading="starting"
-                :aria-label="session.status === 'paused' ? playActionLabel : 'Pause'"
-                @touchstart.stop
-                @click.stop="isTemplatePreview ? requestStartTemplate() : session.status === 'paused' ? resume() : pause()"
-              />
-              <v-btn icon="mdi-skip-next" variant="tonal" aria-label="Next interval" :disabled="isTemplatePreview" @click="skip" />
-            </template>
-            <v-btn
-              icon="mdi-chevron-left"
-              variant="text"
-              class="runner-back-button"
-              aria-label="Leave runner"
-              :to="returnTo"
-            />
-            <v-btn
-              icon="mdi-dots-vertical"
-              variant="text"
-              class="runner-actions-button"
-              aria-label="Interval actions"
-              :disabled="sessionActionsDisabled"
-              @touchstart.stop
-              @click.stop="sessionActionsSheet = true"
-            />
-          </footer>
         </div>
       </div>
     </transition>
@@ -2611,7 +2722,10 @@ async function runAgain(repetitions?: number) {
   max-width: 100vw;
   height: 100dvh;
   min-height: 0;
-  padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom));
+  padding:
+    max(1rem, env(safe-area-inset-top))
+    1rem
+    max(1rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
   flex-direction: column;
   overflow-x: hidden;
   overflow-y: auto;
@@ -2657,6 +2771,7 @@ async function runAgain(repetitions?: number) {
 .runner-actions-button { min-width: 2.75rem; min-height: 2.75rem; }
 .runner-label { color: rgb(var(--v-theme-on-surface) / .52); font-size: .68rem; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
 .runner-stage { position: relative; display: flex; min-height: 0; flex: 1; flex-direction: column; isolation: isolate; }
+.runner-stage__primary { display: contents; }
 .runner-type-backdrop {
   position: absolute;
   z-index: 0;
@@ -2684,15 +2799,12 @@ async function runAgain(repetitions?: number) {
 .runner-session { display: none; }
 .runner-task-link { margin-top: .45rem; color: rgb(var(--v-theme-secondary)); font-size: .76rem; font-weight: 800; }
 .runner-position { display: none; }
-.group-breadcrumb { display: flex; flex-wrap: wrap; justify-content: center; gap: .35rem; margin-bottom: 1.25rem; }
-.group-breadcrumb span { padding: 4px 8px; border-radius: 999px; background: rgb(var(--v-theme-surface-variant)); color: rgb(var(--v-theme-on-surface) / .7); font-size: .65rem; }
-.runner-review-groups { display: none; }
 .runner-step { min-width: 0; max-width: 40rem; margin-top: .5rem; font-size: clamp(2rem, 10vw, 4.5rem); font-weight: 900; line-height: 1; }
-.interval-review-card { position: relative; width: min(100%, 34rem); overflow: hidden; border: .0625rem solid rgba(var(--v-theme-on-surface), .08); border-radius: .75rem; background: rgba(var(--v-theme-on-surface), .055); box-shadow: none; color: inherit; font: inherit; text-align: left; touch-action: none; }
+.interval-review-card { position: relative; width: min(100%, 34rem); overflow: hidden; border: .0625rem solid rgba(var(--v-theme-on-surface), .08); border-radius: .75rem; background: rgba(var(--v-theme-on-surface), .055); box-shadow: none; color: inherit; cursor: pointer; font: inherit; text-align: left; touch-action: none; }
+.interval-review-card:focus-visible { outline: .1875rem solid rgba(var(--v-theme-secondary), .72); outline-offset: -.1875rem; }
+.interval-review-card--disabled { cursor: default; }
 .interval-review-card__image { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .52; pointer-events: none; filter: brightness(.38) saturate(.8); }
-.interval-review-card__main { display: block; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; touch-action: none; cursor: pointer; }
-.interval-review-card__main:focus-visible { outline: .1875rem solid rgba(var(--v-theme-secondary), .72); outline-offset: -.1875rem; }
-.interval-review-card__main:disabled { cursor: default; opacity: .72; }
+.interval-review-card__main { display: block; width: 100%; color: inherit; font: inherit; text-align: left; touch-action: none; }
 .interval-review-card--playback-paused { border-style: dashed; background: rgba(var(--v-theme-on-surface), .025); opacity: .72; }
 .interval-review-card :deep(.v-ripple__container) { z-index: 2; }
 .interval-review-card__content { position: relative; z-index: 1; display: flex; box-sizing: border-box; min-height: 8.5rem; padding: 1rem; align-items: center; justify-content: flex-start; flex-direction: column; gap: .65rem; text-align: center; }
@@ -2738,6 +2850,7 @@ async function runAgain(repetitions?: number) {
 }
 .interval-review-card__face--hidden { visibility: hidden; }
 .interval-review-card__content strong { overflow-wrap: anywhere; font-size: clamp(1.05rem, 4.5vw, 1.5rem); line-height: 1.3; white-space: pre-wrap; }
+.interval-review-card :deep(.flashcard-response-text__supporting) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .interval-review-card__tag-actions { position: relative; z-index: 1; display: grid; padding: 0 1rem .75rem; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: .3rem; }
 .interval-review-card__quick-tags { display: flex; grid-column: 2; justify-self: center; gap: .3rem; }
 .interval-review-card__tag-control { height: 1.5rem !important; min-height: 1.5rem !important; font-size: .625rem; }
@@ -2767,8 +2880,6 @@ async function runAgain(repetitions?: number) {
   isolation: isolate;
 }
 .progress-rings :deep(.v-progress-circular__overlay) { transition: none; }
-.runner-flashcard-image { position: absolute; z-index: 0; inset: 1.75rem; width: calc(100% - 3.5rem); height: calc(100% - 3.5rem); border-radius: 100%; object-fit: cover; opacity: .68; pointer-events: none; filter: brightness(.72) saturate(.9); }
-.progress-rings--with-image .timer-value { text-shadow: 0 .125rem .75rem rgba(0, 0, 0, .9); }
 .progress-ring {
   position: absolute;
   z-index: 1;
@@ -2897,6 +3008,10 @@ async function runAgain(repetitions?: number) {
   .runner-page {
     padding-bottom: max(2rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
   }
+
+  .interval-review-card__content {
+    height: 9.5rem;
+  }
 }
 
 @media (orientation: landscape) and (max-height: 700px) {
@@ -2907,9 +3022,9 @@ async function runAgain(repetitions?: number) {
     height: 100dvh;
     min-height: 0;
     padding:
-      max(.5rem, env(safe-area-inset-top))
+      1rem
       max(1rem, env(safe-area-inset-right))
-      max(.5rem, env(safe-area-inset-bottom))
+      max(1rem, env(safe-area-inset-bottom))
       max(1rem, env(safe-area-inset-left));
     gap: .5rem;
     overflow: hidden;
@@ -2933,6 +3048,7 @@ async function runAgain(repetitions?: number) {
     display: grid;
     min-width: 0;
     min-height: 0;
+    padding-top: 1rem;
     grid-template-columns: minmax(0, 1.15fr) minmax(14rem, .85fr);
     grid-template-rows: minmax(0, 1fr) auto auto auto;
     gap: .5rem 1rem;
@@ -2990,20 +3106,6 @@ async function runAgain(repetitions?: number) {
     color: rgb(var(--v-theme-secondary));
   }
 
-  .group-breadcrumb {
-    min-width: 0;
-    margin: 0 0 .55rem;
-    flex-wrap: nowrap;
-    justify-content: flex-start;
-    overflow: hidden;
-  }
-
-  .group-breadcrumb span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   .runner-step {
     margin-top: 0;
     overflow-wrap: anywhere;
@@ -3035,6 +3137,18 @@ async function runAgain(repetitions?: number) {
     font-size: clamp(.9rem, 2.5dvh, 1.2rem);
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;
+  }
+
+  .interval-review-card :deep(.flashcard-response-text--compact) {
+    max-height: none;
+  }
+
+  .interval-review-card :deep(.flashcard-response-text__supporting) {
+    display: -webkit-box;
+    text-overflow: clip;
+    white-space: pre-wrap;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
 
   .runner-progress {
@@ -3150,9 +3264,19 @@ async function runAgain(repetitions?: number) {
   }
 
   .runner-stage--with-review {
-    grid-template-columns: minmax(13rem, .75fr) minmax(0, 1.25fr);
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1.25fr) minmax(13rem, .75fr);
+    grid-template-rows: minmax(0, 1fr);
     gap: .5rem 1rem;
+  }
+
+  .runner-stage--with-review .runner-stage__primary {
+    display: grid;
+    min-width: 0;
+    min-height: 0;
+    grid-column: 2;
+    grid-row: 1;
+    grid-template-rows: auto auto auto;
+    align-content: space-between;
   }
 
   .runner-header--with-review {
@@ -3188,6 +3312,7 @@ async function runAgain(repetitions?: number) {
     padding: .5rem .75rem 0;
     grid-column: 1;
     grid-row: 1;
+    align-self: start;
     justify-content: flex-start;
     align-items: center;
     border-left: 0;
@@ -3199,34 +3324,12 @@ async function runAgain(repetitions?: number) {
   }
 
   .runner-stage--with-review .runner-session,
-  .runner-stage--with-review .runner-position,
-  .runner-stage--with-review .group-breadcrumb {
+  .runner-stage--with-review .runner-position {
     display: none;
   }
 
   .runner-stage--with-review .runner-step {
     font-size: clamp(1.35rem, 5dvh, 2.5rem);
-  }
-
-  .runner-stage--with-review .runner-review-groups {
-    display: flex;
-    max-width: 100%;
-    margin-top: .5rem;
-    justify-content: center;
-    gap: .35rem;
-    overflow: hidden;
-  }
-
-  .runner-stage--with-review .runner-review-groups span {
-    min-width: 0;
-    padding: .25rem .5rem;
-    overflow: hidden;
-    border-radius: 999rem;
-    background: rgb(var(--v-theme-surface-variant));
-    color: rgb(var(--v-theme-on-surface) / .7);
-    font-size: .65rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .runner-stage--with-review .runner-progress-stack {
@@ -3239,7 +3342,11 @@ async function runAgain(repetitions?: number) {
   }
 
   .runner-stage--with-review .progress-rings {
-    width: min(15.833rem, 50dvh, calc(100% - .5rem));
+    width: min(13.458rem, 42.5dvh, calc(85% - .425rem));
+  }
+
+  .runner-stage--with-review .runner-type-backdrop {
+    --interval-type-size: max(0rem, calc(75cqi - 2.625rem)) !important;
   }
 
   .runner-stage--with-review .timer-value {
@@ -3263,62 +3370,46 @@ async function runAgain(repetitions?: number) {
 
   .runner-stage--with-review > .interval-review-card {
     display: flex;
-    width: 100%;
-    max-width: none;
+    width: min(100%, 34rem);
+    max-width: 34rem;
     height: 100%;
+    max-height: 100%;
     min-height: 0;
-    grid-column: 2;
-    grid-row: 1 / 4;
+    margin: 0 auto;
+    grid-column: 1;
+    grid-row: 1;
     align-self: stretch;
     flex-direction: column;
-    border-radius: 1.25rem;
-    background: rgb(var(--v-theme-surface));
-  }
-
-  .runner-stage--with-review > .interval-review-card--playback-paused {
-    background: rgb(var(--v-theme-surface) / .72);
   }
 
   .runner-stage--with-review .interval-review-card__main {
     display: flex;
     min-height: 0;
     flex: 1 1 auto;
+    overflow: hidden;
   }
 
   .runner-stage--with-review .interval-review-card__content {
     width: 100%;
-    height: 100%;
     min-height: 0;
-    padding: 1rem;
-    gap: 1rem;
+    padding: clamp(.5rem, 2dvh, 1rem);
+    flex: 1 1 auto;
+    gap: clamp(.35rem, 1.5dvh, .65rem);
+  }
+
+  .runner-stage--with-review .interval-review-card__face-window,
+  .runner-stage--with-review .interval-review-card__faces {
+    height: 100%;
   }
 
   .runner-stage--with-review .interval-review-card__faces {
-    align-content: center;
-    overflow-y: auto;
+    align-items: center;
+    justify-items: center;
   }
 
-  .runner-stage--with-review .interval-review-card__content strong {
-    display: block;
-    overflow: visible;
-    -webkit-line-clamp: unset;
-  }
-
-  .runner-stage--with-review .interval-review-card__tag-actions {
-    padding: .5rem 1rem .75rem;
-  }
-
-  .runner-stage--with-review .interval-review-card__tag-control {
-    height: 2.75rem !important;
-    min-height: 2.75rem !important;
-  }
-
-  .runner-stage--with-review .interval-review-card__eject-button {
-    min-width: 2.75rem;
-  }
-
-  .runner-stage--with-review .interval-review-card__quick-tag {
-    --v-chip-height: 2.75rem;
+  .runner-stage--with-review .interval-review-card__tag-actions,
+  .runner-stage--with-review .interval-review-card__progress {
+    flex: 0 0 auto;
   }
 
   .runner-page--finished {
