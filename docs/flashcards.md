@@ -20,6 +20,8 @@ Android and iOS users can dictate a request with the phone's speech recognizer. 
 
 The POC declares exactly four assistant tools: list the current user's owned Review sets, read matching cards and current-user review statistics from one owned set, propose a new selected-card Review set, and propose adding cards to an owned set. The model cannot invoke undeclared CRUD operations. Read tools run automatically against the local account data. Every create or add proposal shows a preview and requires confirmation; cancellation is returned to the model as a cancelled tool result.
 
+When a user asks the assistant to create a Review set in two languages, generated cards include a transliteration of the back-language phrase or word and a short explanation in the note field by default. An explicit request to omit or use different content for either field takes precedence.
+
 Confirmed writes use one `flashcards.assistant_apply` offline-sync command. New cards and the selected-card Review set relationship are changed together in the local database and replayed together in one server transaction. Adding cards to a tag-based set converts it to a fixed card selection while preserving all cards that matched before the change.
 
 The PHP server owns the OpenAI credential and calls the Responses API with response storage disabled, parallel tool calls disabled, a pseudonymous safety identifier, and strict schemas for the four declared tools. Tool results are scoped to the authenticated account before they enter the conversation. Assistant requests and confirmed writes are rate limited per account.
