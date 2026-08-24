@@ -5370,6 +5370,7 @@ final class Api
             'backSpeechRepeatCount' => $isPassive && (bool) $reviewSet['speech_enabled']
                 ? (int) $reviewSet['back_speech_repeat_count']
                 : 1,
+            'backDisplay' => (string) ($reviewSet['back_display'] ?? 'back'),
             'speechEnabled' => (bool) $reviewSet['speech_enabled'],
             'frontLanguage' => (string) $reviewSet['front_language'],
             'backLanguage' => (string) $reviewSet['back_language'],

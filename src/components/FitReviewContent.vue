@@ -15,7 +15,7 @@ useFitLargestWord(
   () => measurementElement.value,
   () => textElement.value ? [textElement.value] : [],
   toRef(props, 'text'),
-  { maxLines: 3, fontSizeProperty: '--fit-review-content-size' },
+  { maxLines: 3, fitHeight: true, fontSizeProperty: '--fit-review-content-size' },
 )
 </script>
 

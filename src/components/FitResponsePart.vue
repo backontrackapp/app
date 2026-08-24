@@ -8,10 +8,12 @@ const props = withDefaults(defineProps<{
   defaultFontSize?: string
   minSizeRem?: number
   maxSizeRem?: number
+  maxLines?: number
   fitWidth?: boolean
 }>(), {
   defaultFontSize: '3.6rem',
   maxSizeRem: 3.6,
+  maxLines: 2,
   fitWidth: true,
 })
 
@@ -24,7 +26,7 @@ useFitLargestWord(
   () => partElement.value ? [partElement.value] : [],
   computed(() => `${props.text}:${props.minSizeRem}:${props.maxSizeRem}:${props.fitWidth}`),
   {
-    maxLines: 2,
+    maxLines: props.maxLines,
     minSizeRem: () => props.minSizeRem,
     maxSizeRem: () => props.maxSizeRem,
     fitWidth: () => props.fitWidth,

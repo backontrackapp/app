@@ -4,12 +4,14 @@ import { nextTick, onBeforeUnmount, onMounted, watch, type WatchSource } from 'v
 const DEFAULT_FITTED_FONT_SIZE_PROPERTY = '--fit-largest-word-size'
 const MAX_FITTED_FONT_SIZE_REM = 3.6
 const MEASUREMENT_SELECTOR = '[data-fit-largest-word-measurement]'
+export const REFIT_TEXT_CONTENT_EVENT = 'refit-text-content'
 
 type FitLargestWordOptions = {
   maxLines: number
   minSizeRem?: number | (() => number | undefined)
   maxSizeRem?: number | (() => number)
   fitWidth?: boolean | (() => boolean)
+  fitHeight?: boolean
   fontSizeProperty?: string
 }
 
@@ -56,6 +58,7 @@ export function useFitLargestWord(
   let fitListener: EventListener | undefined
   let resizeObserver: ResizeObserver | undefined
   let mounted = false
+  let eventHost: HTMLElement | undefined
 
   const fontSizeProperty = options.fontSizeProperty ?? DEFAULT_FITTED_FONT_SIZE_PROPERTY
   const minSizeRem = () => {
@@ -100,25 +103,32 @@ export function useFitLargestWord(
     host()?.dispatchEvent(new CustomEvent('fit-largest-word-complete', { bubbles: true }))
   }
 
-  function fitsLineLimit() {
-    return targetElements().every(element => renderedLineCount(element) <= options.maxLines)
+  function fitsContent() {
+    return targetElements().every(element => (
+      (options.maxLines === 1
+        ? element.scrollWidth <= element.clientWidth
+        : renderedLineCount(element) <= options.maxLines)
+      && (!options.fitHeight || sources().every(source => (
+        source.getBoundingClientRect().height <= element.clientHeight
+      )))
+    ))
   }
 
-  function constrainToLineLimit(widthFitSize: number) {
+  function constrainToFit(widthFitSize: number) {
     const minimumSize = rootFontSizeInPixels() * minSizeRem()
     const maximumSize = Math.max(minimumSize, widthFitSize)
     setFittedFontSize(maximumSize)
-    if (fitsLineLimit()) return
+    if (fitsContent()) return
 
     let fittingSize = minimumSize
     let overflowingSize = maximumSize
     setFittedFontSize(fittingSize)
-    if (!fitsLineLimit()) return
+    if (!fitsContent()) return
 
     for (let iteration = 0; iteration < 12; iteration += 1) {
       const candidate = (fittingSize + overflowingSize) / 2
       setFittedFontSize(candidate)
-      if (fitsLineLimit()) fittingSize = candidate
+      if (fitsContent()) fittingSize = candidate
       else overflowingSize = candidate
     }
     setFittedFontSize(fittingSize)
@@ -131,15 +141,21 @@ export function useFitLargestWord(
 
     clearInstance()
     if (!fitsWidth()) {
-      constrainToLineLimit(rootFontSizeInPixels() * maxSizeRem())
+      constrainToFit(rootFontSizeInPixels() * maxSizeRem())
       notifyFitComplete()
       if ('ResizeObserver' in window) {
         let observedWidth = hostElement.clientWidth
+        let observedHeight = hostElement.clientHeight
         resizeObserver = new ResizeObserver(() => {
           const nextWidth = hostElement.clientWidth
-          if (Math.abs(nextWidth - observedWidth) < 1) return
+          const nextHeight = hostElement.clientHeight
+          if (
+            Math.abs(nextWidth - observedWidth) < 1
+            && (!options.fitHeight || Math.abs(nextHeight - observedHeight) < 1)
+          ) return
           observedWidth = nextWidth
-          constrainToLineLimit(rootFontSizeInPixels() * maxSizeRem())
+          observedHeight = nextHeight
+          constrainToFit(rootFontSizeInPixels() * maxSizeRem())
           notifyFitComplete()
         })
         resizeObserver.observe(hostElement)
@@ -178,7 +194,7 @@ export function useFitLargestWord(
     Object.assign(probe.style, widestTypography, { fontSize: '100px' })
     probe.textContent = widestWord
     fitListener = ((event: CustomEvent<{ newValue: number }>) => {
-      constrainToLineLimit(event.detail.newValue)
+      constrainToFit(event.detail.newValue)
       notifyFitComplete()
     }) as EventListener
     probe.addEventListener('fit', fitListener)
@@ -189,6 +205,17 @@ export function useFitLargestWord(
       observeMutations: false,
     })
     instance.fit({ sync: true })
+
+    if (options.fitHeight && 'ResizeObserver' in window) {
+      let observedHeight = hostElement.clientHeight
+      resizeObserver = new ResizeObserver(() => {
+        const nextHeight = hostElement.clientHeight
+        if (Math.abs(nextHeight - observedHeight) < 1) return
+        observedHeight = nextHeight
+        fit()
+      })
+      resizeObserver.observe(hostElement)
+    }
   }
 
   function queueFit() {
@@ -199,6 +226,8 @@ export function useFitLargestWord(
 
   onMounted(() => {
     mounted = true
+    eventHost = host()
+    eventHost?.addEventListener(REFIT_TEXT_CONTENT_EVENT, fit)
     queueFit()
     void document.fonts?.ready.then(() => {
       if (mounted) fit()
@@ -207,6 +236,8 @@ export function useFitLargestWord(
 
   onBeforeUnmount(() => {
     mounted = false
+    eventHost?.removeEventListener(REFIT_TEXT_CONTENT_EVENT, fit)
+    eventHost = undefined
     clearInstance()
     targetElements().forEach((element) => {
       element.style.removeProperty(fontSizeProperty)

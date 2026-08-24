@@ -263,6 +263,7 @@ export interface IntervalFlashcardReviewSnapshot {
   frontSeconds: number
   backSeconds: number
   backSpeechRepeatCount: number
+  backDisplay?: FlashcardBackDisplay
   speechEnabled: boolean
   speechPaused?: boolean
   speechPausedElapsedMs?: number

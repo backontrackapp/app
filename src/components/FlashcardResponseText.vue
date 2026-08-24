@@ -27,8 +27,6 @@ type ResponsePart = {
   value: string
 }
 
-const MIN_FITTED_PART_SIZE_REM = 1.25
-
 const parts = computed<ResponsePart[]>(() => {
   const back = { kind: 'back' as const, value: props.back }
   const transliteration = { kind: 'transliteration' as const, value: props.transliteration }
@@ -71,9 +69,7 @@ function setPartScale(elements: HTMLElement[], scale: number) {
   elements.forEach((element) => {
     const baseSize = Number.parseFloat(element.dataset.fitLargestWordSize || '')
     if (!Number.isFinite(baseSize)) return
-    const minimumSize = element.classList.contains('flashcard-response-text__primary')
-      ? rootFontSize * MIN_FITTED_PART_SIZE_REM
-      : 1
+    const minimumSize = 1
     element.style.setProperty(
       '--fit-response-part-size',
       `${Math.max(minimumSize, baseSize * scale) / rootFontSize}rem`,
@@ -149,8 +145,8 @@ onBeforeUnmount(() => {
         :tag="part.presentation === 'primary' ? 'strong' : 'span'"
         :text="part.value"
         :default-font-size="`${fittedPartDefaultSize(part)}rem`"
-        :min-size-rem="part.presentation === 'primary' ? MIN_FITTED_PART_SIZE_REM : undefined"
         :max-size-rem="fittedPartDefaultSize(part)"
+        :max-lines="part.presentation === 'primary' && density === 'compact' ? 1 : 2"
         :fit-width="part.presentation === 'primary'"
         :class="[
           'flashcard-response-text__part',
@@ -162,23 +158,30 @@ onBeforeUnmount(() => {
       />
     </template>
     <template v-else>
+      <FitResponsePart
+        v-if="parts[0]"
+        :key="parts[0].kind"
+        :tag="'strong'"
+        :text="parts[0].value"
+        :default-font-size="flashcardTextFontSize(parts[0].value, 'face', density)"
+        :max-size-rem="Number.parseFloat(flashcardTextFontSize(parts[0].value, 'face', density))"
+        :max-lines="density === 'compact' ? 1 : 2"
+        class="flashcard-response-text__part flashcard-response-text__primary text-secondary"
+        :data-response-part="parts[0].kind"
+        data-response-presentation="primary"
+      />
       <component
-        :is="part.presentation === 'primary' ? 'strong' : 'span'"
-        v-for="part in parts"
+        is="span"
+        v-for="part in parts.slice(1)"
         :key="part.kind"
         :class="[
           'flashcard-response-text__part',
-          `flashcard-response-text__${part.presentation}`,
-          { 'text-secondary': part.presentation === 'primary' },
+          'flashcard-response-text__supporting',
         ]"
         :data-response-part="part.kind"
-        :data-response-presentation="part.presentation"
+        data-response-presentation="supporting"
         :style="{
-          fontSize: flashcardTextFontSize(
-            part.value,
-            part.presentation === 'primary' ? 'face' : 'note',
-            density,
-          ),
+          fontSize: flashcardTextFontSize(part.value, 'note', density),
         }"
       >
         {{ part.value }}
@@ -225,8 +228,11 @@ onBeforeUnmount(() => {
 
 .flashcard-response-text__primary {
   max-width: 34rem;
+  overflow: hidden;
+  overflow-wrap: normal;
   font-weight: 850;
   line-height: 1.35;
+  white-space: nowrap;
 }
 
 .flashcard-response-text__supporting {
@@ -236,8 +242,15 @@ onBeforeUnmount(() => {
   line-height: 1.5;
 }
 
+.flashcard-response-text--full .flashcard-response-text__primary {
+  max-height: 2.7em;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .flashcard-response-text--compact {
   max-height: min(8rem, 30dvh);
+  justify-content: center;
   gap: .65rem;
 }
 

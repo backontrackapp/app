@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import AppForm from '@/components/AppForm.vue'
@@ -12,6 +12,7 @@ import FitReviewContent from '@/components/FitReviewContent.vue'
 import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsFields.vue'
 import RunnerStartScreen from '@/components/RunnerStartScreen.vue'
 import RunnerSessionActions from '@/components/RunnerSessionActions.vue'
+import { REFIT_TEXT_CONTENT_EVENT } from '@/composables/useFitLargestWord'
 import {
   backgroundFlashcardReviewState,
   flashcardSpeechOverAmplificationIsEnabled,
@@ -69,6 +70,7 @@ const busy = ref(false)
 const error = ref('')
 const revealed = ref(false)
 const reviewCardTransitionDirection = ref<ReviewCardTransitionDirection>()
+const reviewCardPane = ref<HTMLElement>()
 const sessionActionsSheet = ref(false)
 const endDialog = ref(false)
 const cardMenuOpen = ref(false)
@@ -326,20 +328,28 @@ watch([
   if (!cardId || !side || !previousCardId || !previousSide) return
   const cardChanged = cardId !== previousCardId
   const sideChanged = side !== previousSide
-  if (reviewCardTransitionDirection.value) {
-    if (cardChanged && !sideChanged) {
-      window.requestAnimationFrame(finishReviewCardTransition)
-    }
-    return
-  }
+  if (reviewCardTransitionDirection.value) return
 
   if (cardChanged) {
     reviewCardTransitionDirection.value = 'back'
-    if (!sideChanged) window.requestAnimationFrame(finishReviewCardTransition)
   } else if (sideChanged) {
     reviewCardTransitionDirection.value = side === 'back' ? 'next' : 'previous'
   }
 })
+
+function scheduleReviewContentFit() {
+  void nextTick(() => {
+    if (!mounted) return
+    reviewCardPane.value
+      ?.querySelectorAll<HTMLElement>('.fit-review-content, .fit-response-part')
+      .forEach(element => element.dispatchEvent(new Event(REFIT_TEXT_CONTENT_EVENT)))
+  })
+}
+
+watch([
+  () => currentCard.value?.id,
+  currentSpeechSide,
+], scheduleReviewContentFit, { flush: 'post' })
 
 watch(shouldKeepScreenAwake, (keepAwake) => {
   if (keepAwake && document.visibilityState === 'visible') void acquireWakeLock()
@@ -1000,6 +1010,7 @@ function suppressTagClickAfterSwipe(event: MouseEvent) {
 
 function finishReviewCardTransition() {
   reviewCardTransitionDirection.value = undefined
+  scheduleReviewContentFit()
 }
 
 async function syncNativeBackground() {
@@ -1460,16 +1471,17 @@ async function leaveRunner() {
           </span>
         </div>
 
-        <div
-          class="review-card-stack"
-          @pointerdown="beginReviewCardSwipe"
-          @pointermove="moveReviewCardSwipe"
-          @pointerup="finishReviewCardSwipe"
-          @pointercancel="cancelReviewCardSwipe"
-          @lostpointercapture="cancelReviewCardSwipe"
-          @click="handleReviewCardTap"
-        >
-          <div class="review-card-window">
+        <div ref="reviewCardPane" class="review-card-pane">
+          <div
+            class="review-card-stack"
+            @pointerdown="beginReviewCardSwipe"
+            @pointermove="moveReviewCardSwipe"
+            @pointerup="finishReviewCardSwipe"
+            @pointercancel="cancelReviewCardSwipe"
+            @lostpointercapture="cancelReviewCardSwipe"
+            @click="handleReviewCardTap"
+          >
+            <div class="review-card-window">
             <button
               v-if="session.mode === 'manual'"
               v-ripple
@@ -1503,6 +1515,7 @@ async function leaveRunner() {
                   @after-enter="finishReviewCardTransition"
                 >
                   <FitReviewContent
+                    :key="`manual-front-${currentCard.id}`"
                     v-show="!manualShowingBack"
                     :text="currentCard.front"
                     :aria-hidden="manualShowingBack"
@@ -1515,6 +1528,7 @@ async function leaveRunner() {
                   @after-enter="finishReviewCardTransition"
                 >
                   <span
+                    :key="`manual-back-${currentCard.id}`"
                     v-show="manualShowingBack"
                     class="review-card__content"
                     :aria-hidden="!manualShowingBack"
@@ -1578,6 +1592,7 @@ async function leaveRunner() {
                     @after-enter="finishReviewCardTransition"
                   >
                     <FitReviewContent
+                      :key="`passive-front-${currentCard.id}`"
                       v-show="passiveSide === 'front'"
                       :text="currentCard.front"
                       :aria-hidden="passiveSide !== 'front'"
@@ -1590,6 +1605,7 @@ async function leaveRunner() {
                     @after-enter="finishReviewCardTransition"
                   >
                     <span
+                      :key="`passive-back-${currentCard.id}`"
                       v-show="passiveSide === 'back'"
                       class="review-card__content"
                       :aria-hidden="passiveSide !== 'back'"
@@ -1626,6 +1642,7 @@ async function leaveRunner() {
                 height="6"
                 rounded
               />
+            </div>
             </div>
           </div>
 
@@ -1965,6 +1982,7 @@ async function leaveRunner() {
 .runner-meta > div { display: flex; align-items: center; gap: .4rem; }
 .runner-meta__card-count { justify-self: center; }
 .runner-meta__elapsed { justify-self: end; }
+.review-card-pane { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); flex: 1 1 auto; flex-direction: column; }
 .review-card-stack { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); flex: 1 1 auto; flex-direction: column; touch-action: none; }
 .review-card-window { display: grid; width: 100%; min-height: min(38dvh, 22rem); flex: 1 1 auto; overflow: hidden; border-radius: 1.5rem; }
 .review-card-window,
@@ -2082,6 +2100,12 @@ async function leaveRunner() {
 .completion-stats > div:last-child:nth-child(3n + 2) { grid-column: span 3; }
 .completion-stats strong { font-size: 1.25rem; }
 .completion-stats span { margin-top: .2rem; color: rgba(var(--v-theme-on-surface), .52); font-size: .65rem; font-weight: 800; text-transform: uppercase; }
+@media (orientation: portrait) {
+  .runner-body {
+    padding-bottom: 0;
+  }
+}
+
 @media (orientation: landscape) and (max-height: 43.75rem) {
   .runner-header {
     max-width: none;
@@ -2120,15 +2144,20 @@ async function leaveRunner() {
     justify-self: auto;
   }
 
-  .review-card-stack {
+  .review-card-pane {
     display: contents;
+  }
+
+  .review-card-stack {
+    height: 100%;
+    min-height: 0;
+    grid-column: 1;
+    grid-row: 1 / 5;
   }
 
   .review-card-window {
     height: 100%;
     min-height: 0;
-    grid-column: 1;
-    grid-row: 1 / 5;
   }
 
   .review-card,
@@ -2159,7 +2188,7 @@ async function leaveRunner() {
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
-    margin-bottom: clamp(3.375rem, calc(13dvh + .375rem), 4.375rem);
+    margin-bottom: 4.375rem;
     border-left: .0625rem solid rgb(var(--v-theme-on-surface) / .12);
   }
 
@@ -2207,7 +2236,7 @@ async function leaveRunner() {
     grid-column: 2;
     grid-row: 3;
     align-content: end;
-    gap: .5rem;
+    gap: 0;
   }
 
   .review-navigation :deep(.v-btn) {

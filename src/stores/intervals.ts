@@ -66,6 +66,9 @@ function mapSession(record: Record<string, any>): IntervalSession {
             ? { maxCards: Number(flashcardSnapshot.maxCards || flashcardSnapshot.cards.length) }
             : {}),
           backSpeechRepeatCount: Number(flashcardSnapshot.backSpeechRepeatCount || 1),
+          backDisplay: flashcardSnapshot.backDisplay === 'transliteration'
+            ? 'transliteration'
+            : 'back',
           cards: flashcardSnapshot.cards.map((card: Record<string, any>) => ({
             ...card,
             ...(typeof card.frontAudio === 'string' && card.frontAudio

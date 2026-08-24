@@ -607,6 +607,7 @@ export function createIntervalFlashcardReviewSnapshot(
     backSpeechRepeatCount: reviewSet.mode === 'passive' && reviewSet.speechEnabled
       ? normalizeFlashcardBackSpeechRepeatCount(reviewSet.backSpeechRepeatCount)
       : DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
+    backDisplay: reviewSet.backDisplay || 'back',
     speechEnabled: reviewSet.speechEnabled,
     frontLanguage: reviewSet.frontLanguage,
     backLanguage: reviewSet.backLanguage,
