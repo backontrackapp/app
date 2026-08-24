@@ -80,13 +80,19 @@ Ejecting the current card advances both standalone and mini interval Review set 
 
 Opening a Review set and starting its session use the same forward horizontal navigation as interval runners. The welcome screen remains intact while the running session enters, preventing an intermediate session-layout flash during startup; reduced-motion preferences continue to disable directional movement.
 
-The standalone review header reports the current card's position within the live queue. Its position follows previous and next swipes, while its queue size immediately follows session-setting changes, grading, ejection, undo, card additions, and card removal.
+The standalone review header reports the current card's position within the live queue. Its position follows previous and next swipes, including while the session is paused, while its queue size immediately follows session-setting changes, grading, ejection, undo, card additions, and card removal.
 
 ## Standalone review motion
 
 Automatic and manual standalone Review set changes use the same directional model: previous and next cards move down and up, while front and back faces move right and left. Motion is limited to the card value, answer, and note; the face label, replay or reveal hint, card surface, and passive progress remain stationary. Reduced-motion preferences replace the content without directional movement.
 
+Background images crossfade and move in the same direction as the card content when the standalone reviewer changes cards. Reduced-motion preferences replace them immediately.
+
 Standalone Review set sessions show the current card position centered above the card, between the review mode and elapsed time. Finite sessions advance from 1 through the session total, while indefinite sessions wrap the position at the start of each loop.
+
+Standalone front text uses `3.6rem` as the default and maximum size on `.review-card__content`, scales down until its widest word fits, and is limited to three rendered lines. Each primary `.flashcard-response-text__part` independently uses the same `3.6rem` width-and-two-line fitting. A `.flashcard-response-text__supporting` part retains its original calculated default and maximum size, does not width-fit, and only scales down when needed to remain within two lines. After those independent calculations, an overflowing `.flashcard-response-text` proportionally reduces all of its part sizes until the combined response fits its container. The primary response is not reduced below `1.25rem`; overflow remains scrollable when that floor prevents a complete fit. Front and response fitting use separate size properties so their calculated sizes do not carry between faces during a swipe, and response overflow remains hidden until fitting settles to avoid a transient scrollbar. Both card faces remain mounted as independent absolute layers, with visibility transitions switching between them so their fitted state survives front/back alternation. Other review typography retains its standard sizing.
+
+In mobile landscape, a standalone Review set session uses a two-pane runner. The card fills the wider left pane, while a spaced metadata row, grading controls, compact tag controls, previous/pause/next navigation, and card actions form a compact control rail on the right. Portrait and taller desktop layouts keep the standard vertical flow.
 
 Mini Review set cards in an active Interval append the current card position to the Review set title as `(X of Y)`.
 

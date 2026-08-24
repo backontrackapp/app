@@ -4607,7 +4607,9 @@ final class Api
                     : 'ended';
                 $endedAt = $now;
             } else {
-                if ($status !== 'running') {
+                $navigatingPausedSession = $status === 'paused'
+                    && ($action === 'previous' || $action === 'next');
+                if ($status !== 'running' && !$navigatingPausedSession) {
                     throw new ApiException(409, 'Resume this flashcard review before continuing.');
                 }
                 if ($action === 'undo_eject') {

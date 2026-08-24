@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import FitResponsePart from '@/components/FitResponsePart.vue'
 import { flashcardTextFontSize } from '@/services/flashcards'
 import type { FlashcardBackDisplay } from '@/types/domain'
 
@@ -10,12 +11,14 @@ const props = withDefaults(defineProps<{
   backDisplay?: FlashcardBackDisplay
   showTransliteration?: boolean
   density?: 'full' | 'compact'
+  fitLargestWord?: boolean
 }>(), {
   transliteration: '',
   note: '',
   backDisplay: 'back',
   showTransliteration: false,
   density: 'full',
+  fitLargestWord: false,
 })
 
 type ResponsePart = {
@@ -23,6 +26,8 @@ type ResponsePart = {
   presentation: 'primary' | 'supporting'
   value: string
 }
+
+const MIN_FITTED_PART_SIZE_REM = 1.25
 
 const parts = computed<ResponsePart[]>(() => {
   const back = { kind: 'back' as const, value: props.back }
@@ -41,31 +46,144 @@ const parts = computed<ResponsePart[]>(() => {
   if (props.note) response.push({ kind: 'note', value: props.note, presentation: 'supporting' })
   return response
 })
+
+function fittedPartDefaultSize(part: ResponsePart) {
+  if (part.presentation === 'primary') return 3.6
+  return Number.parseFloat(flashcardTextFontSize(part.value, 'note', props.density))
+}
+
+const responseElement = ref<HTMLElement>()
+const responseIsFitting = ref(props.fitLargestWord)
+let responseFitFrame: number | undefined
+let responseResizeObserver: ResizeObserver | undefined
+
+function fittedPartElements() {
+  if (!responseElement.value) return []
+  return [...responseElement.value.querySelectorAll<HTMLElement>(
+    '.flashcard-response-text__part[data-fit-largest-word-size]',
+  )]
+}
+
+function setPartScale(elements: HTMLElement[], scale: number) {
+  const rootFontSize = Number.parseFloat(
+    window.getComputedStyle(document.documentElement).fontSize,
+  ) || 16
+  elements.forEach((element) => {
+    const baseSize = Number.parseFloat(element.dataset.fitLargestWordSize || '')
+    if (!Number.isFinite(baseSize)) return
+    const minimumSize = element.classList.contains('flashcard-response-text__primary')
+      ? rootFontSize * MIN_FITTED_PART_SIZE_REM
+      : 1
+    element.style.setProperty(
+      '--fit-response-part-size',
+      `${Math.max(minimumSize, baseSize * scale) / rootFontSize}rem`,
+    )
+  })
+}
+
+function fitCombinedResponse() {
+  const response = responseElement.value
+  const elements = fittedPartElements()
+  if (!props.fitLargestWord || !response || !elements.length || !response.clientHeight) return
+
+  setPartScale(elements, 1)
+  if (response.scrollHeight <= response.clientHeight) return
+
+  let fittingScale = .01
+  let overflowingScale = 1
+  setPartScale(elements, fittingScale)
+  if (response.scrollHeight > response.clientHeight) return
+
+  for (let iteration = 0; iteration < 12; iteration += 1) {
+    const candidate = (fittingScale + overflowingScale) / 2
+    setPartScale(elements, candidate)
+    if (response.scrollHeight <= response.clientHeight) fittingScale = candidate
+    else overflowingScale = candidate
+  }
+  setPartScale(elements, fittingScale)
+}
+
+function scheduleCombinedResponseFit() {
+  responseIsFitting.value = props.fitLargestWord
+  if (responseFitFrame !== undefined) window.cancelAnimationFrame(responseFitFrame)
+  responseFitFrame = window.requestAnimationFrame(() => {
+    responseFitFrame = undefined
+    void nextTick(() => {
+      fitCombinedResponse()
+      responseIsFitting.value = false
+    })
+  })
+}
+
+watch([() => props.fitLargestWord, parts], scheduleCombinedResponseFit, { flush: 'post' })
+
+onMounted(() => {
+  if ('ResizeObserver' in window && responseElement.value) {
+    responseResizeObserver = new ResizeObserver(scheduleCombinedResponseFit)
+    responseResizeObserver.observe(responseElement.value)
+  }
+  scheduleCombinedResponseFit()
+})
+
+onBeforeUnmount(() => {
+  if (responseFitFrame !== undefined) window.cancelAnimationFrame(responseFitFrame)
+  responseResizeObserver?.disconnect()
+})
+
 </script>
 
 <template>
-  <span :class="['flashcard-response-text', `flashcard-response-text--${density}`]">
-    <component
-      :is="part.presentation === 'primary' ? 'strong' : 'span'"
-      v-for="part in parts"
-      :key="part.kind"
-      :class="[
-        'flashcard-response-text__part',
-        `flashcard-response-text__${part.presentation}`,
-        { 'text-secondary': part.presentation === 'primary' },
-      ]"
-      :data-response-part="part.kind"
-      :data-response-presentation="part.presentation"
-      :style="{
-        fontSize: flashcardTextFontSize(
-          part.value,
-          part.presentation === 'primary' ? 'face' : 'note',
-          density,
-        ),
-      }"
-    >
-      {{ part.value }}
-    </component>
+  <span
+    ref="responseElement"
+    :class="[
+      'flashcard-response-text',
+      `flashcard-response-text--${density}`,
+      { 'flashcard-response-text--fitting': responseIsFitting },
+    ]"
+    @fit-largest-word-complete="scheduleCombinedResponseFit"
+  >
+    <template v-if="fitLargestWord">
+      <FitResponsePart
+        v-for="part in parts"
+        :key="part.kind"
+        :tag="part.presentation === 'primary' ? 'strong' : 'span'"
+        :text="part.value"
+        :default-font-size="`${fittedPartDefaultSize(part)}rem`"
+        :min-size-rem="part.presentation === 'primary' ? MIN_FITTED_PART_SIZE_REM : undefined"
+        :max-size-rem="fittedPartDefaultSize(part)"
+        :fit-width="part.presentation === 'primary'"
+        :class="[
+          'flashcard-response-text__part',
+          `flashcard-response-text__${part.presentation}`,
+          { 'text-secondary': part.presentation === 'primary' },
+        ]"
+        :data-response-part="part.kind"
+        :data-response-presentation="part.presentation"
+      />
+    </template>
+    <template v-else>
+      <component
+        :is="part.presentation === 'primary' ? 'strong' : 'span'"
+        v-for="part in parts"
+        :key="part.kind"
+        :class="[
+          'flashcard-response-text__part',
+          `flashcard-response-text__${part.presentation}`,
+          { 'text-secondary': part.presentation === 'primary' },
+        ]"
+        :data-response-part="part.kind"
+        :data-response-presentation="part.presentation"
+        :style="{
+          fontSize: flashcardTextFontSize(
+            part.value,
+            part.presentation === 'primary' ? 'face' : 'note',
+            density,
+          ),
+        }"
+      >
+        {{ part.value }}
+      </component>
+    </template>
   </span>
 </template>
 
@@ -90,6 +208,10 @@ const parts = computed<ResponsePart[]>(() => {
   scrollbar-width: thin;
   touch-action: none;
   -webkit-overflow-scrolling: touch;
+}
+
+.flashcard-response-text--fitting {
+  overflow-y: hidden;
 }
 
 .flashcard-response-text__part {

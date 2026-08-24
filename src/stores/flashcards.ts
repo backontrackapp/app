@@ -1510,7 +1510,11 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         : 'ended'
       endedAt = now
     } else {
-      if (status !== 'running') throw new Error('Resume this flashcard review before continuing.')
+      const navigatingPausedSession = status === 'paused'
+        && (action === 'previous' || action === 'next')
+      if (status !== 'running' && !navigatingPausedSession) {
+        throw new Error('Resume this flashcard review before continuing.')
+      }
       if (action === 'undo_eject') {
         if (ejectedCount <= 0) throw new Error('There is no ejected flashcard to restore.')
         const ejectedEvents = await api.collection('flashcard_review_events').getFullList({
