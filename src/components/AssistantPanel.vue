@@ -363,7 +363,7 @@ onBeforeUnmount(() => {
           <v-card v-if="pendingPlan" class="surface-card assistant-plan pa-4" rounded="xl">
             <div class="d-flex align-start ga-3">
               <v-avatar color="secondary" variant="tonal" size="36">
-                <v-icon icon="mdi-card-multiple-outline" />
+                <v-icon :icon="pendingPlan.updatedReviewSet ? 'mdi-card-edit-outline' : 'mdi-card-multiple-outline'" />
               </v-avatar>
               <div class="min-width-0">
                 <strong>{{ pendingPlan.title }}</strong>
@@ -379,6 +379,14 @@ onBeforeUnmount(() => {
             >
               This tag-based set will become a fixed card list while keeping its current cards.
             </v-alert>
+            <v-list v-if="pendingPlan.changes?.length" bg-color="transparent" density="compact" class="mt-2 pa-0">
+              <v-list-item
+                v-for="change in pendingPlan.changes"
+                :key="change.label"
+                :title="change.label"
+                :subtitle="`${change.before} → ${change.after}`"
+              />
+            </v-list>
             <v-list v-if="pendingPlan.newCards.length" bg-color="transparent" density="compact" class="mt-2 pa-0">
               <v-list-item
                 v-for="card in pendingPlan.newCards.slice(0, 5)"

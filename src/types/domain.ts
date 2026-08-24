@@ -671,6 +671,7 @@ export type AssistantToolName =
   | 'get_owned_review_set_cards'
   | 'create_flashcard_review_set'
   | 'add_flashcards_to_review_set'
+  | 'update_flashcard_review_set'
   | 'present_choices'
 
 export interface AssistantMessageItem {
@@ -724,6 +725,14 @@ export interface AssistantWritePlan {
   reusedCardIds: string[]
   convertsTagSelection: boolean
   maxCards: number
+  updatedReviewSet?: FlashcardReviewSetDraft
+  changes?: AssistantReviewSetChange[]
+}
+
+export interface AssistantReviewSetChange {
+  label: string
+  before: string
+  after: string
 }
 
 export interface AssistantChoice {
