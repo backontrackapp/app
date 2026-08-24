@@ -23,7 +23,7 @@
     "android:build": "bash scripts/build-android.sh",
     "android:build:release": "bash scripts/build-android.sh release",
     "android:bundle": "bash scripts/build-android.sh bundle",
-    "android:install:release": "adb install -r android/app/build/outputs/apk/release/app-release.apk",
+    "android:install:release": "adb install -r -d android/app/build/outputs/apk/release/app-release.apk",
     "ios:sync": "pnpm build:prod && cap sync ios",
     "ios:assets": "capacitor-assets generate --ios",
     "ios:open": "cap open ios",
