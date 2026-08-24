@@ -222,6 +222,8 @@ onBeforeUnmount(() => {
   width: 100%;
   min-width: 0;
   max-width: 100%;
+  /* Preserve each row's rendered height so combined overflow remains measurable. */
+  flex: 0 0 auto;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
