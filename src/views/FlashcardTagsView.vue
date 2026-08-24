@@ -86,29 +86,33 @@ async function removeTag() {
             v-model="tagNames[tag.id]"
             label="Tag name"
             maxlength="50"
-            autocomplete="off"
             prepend-inner-icon="mdi-tag-outline"
             :disabled="tagSaving === tag.id"
             :rules="[value => Boolean(value?.trim()) || 'Tag name is required']"
             @keyup.enter="saveTagName(tag)"
-          />
-          <v-btn
-            icon="mdi-content-save-outline"
-            variant="tonal"
-            color="secondary"
-            :loading="tagSaving === tag.id"
-            :disabled="!tagNames[tag.id]?.trim() || tagNames[tag.id]?.trim() === tag.name"
-            :aria-label="`Save ${tag.name}`"
-            @click="saveTagName(tag)"
-          />
-          <v-btn
-            icon="mdi-delete-outline"
-            variant="text"
-            color="error"
-            :disabled="Boolean(tagSaving)"
-            :aria-label="`Delete ${tag.name}`"
-            @click="confirmDelete(tag)"
-          />
+          >
+            <template #append-inner>
+              <div class="flashcard-tag-actions d-flex align-center ga-1">
+                <v-btn
+                  icon="mdi-content-save-outline"
+                  variant="text"
+                  color="secondary"
+                  :loading="tagSaving === tag.id"
+                  :disabled="!tagNames[tag.id]?.trim() || tagNames[tag.id]?.trim() === tag.name"
+                  :aria-label="`Save ${tag.name}`"
+                  @click="saveTagName(tag)"
+                />
+                <v-btn
+                  icon="mdi-delete-outline"
+                  variant="text"
+                  color="error"
+                  :disabled="Boolean(tagSaving)"
+                  :aria-label="`Delete ${tag.name}`"
+                  @click="confirmDelete(tag)"
+                />
+              </div>
+            </template>
+          </v-text-field>
         </div>
       </div>
     </v-card>
@@ -138,7 +142,6 @@ async function removeTag() {
 
 <style scoped>
 .flashcard-tags-list { display: grid; gap: .75rem; }
-.flashcard-tag-row { display: grid; grid-template-columns: minmax(0, 1fr) 2.75rem 2.75rem; align-items: start; gap: .5rem; }
-.flashcard-tag-row > .v-btn { min-width: 2.75rem; min-height: 2.75rem; }
+.flashcard-tag-actions > .v-btn { min-width: 2.75rem; min-height: 2.75rem; }
 .flashcard-tags-loading { display: flex; align-items: center; justify-content: center; gap: .75rem; }
 </style>
