@@ -60,7 +60,7 @@ Creating a custom Review set from the bulk dialog redirects directly to its edit
 
 Active Interval settings include the same Review cards section as the Interval form, so a Review set can be attached, replaced, or removed during a run. The Apply to menu in active Interval and Review set settings offers Current session, the saved Interval or Review set, and Both. Choosing Both updates the saved source and the active session snapshot so the current run reflects the new settings immediately.
 
-Standalone Review sets choose either **Back** or **Transliteration** as the primary response value. When Transliteration is selected and present, the Back value appears underneath it; otherwise Back remains primary. The alternate value is followed by the note, so transliteration always appears above the note. Mini Review sets inside Interval sessions stay compact and show only Back followed by Note.
+Standalone Review sets choose either **Back** or **Transliteration** as the primary response value. When Transliteration is selected and present, the Back value appears underneath it; otherwise Back remains primary. The alternate value is followed by the note, so transliteration always appears above the note. Response content scrolls within its card instead of overflowing. Mini Review sets inside Interval sessions stay compact and show only Back followed by Note.
 
 ## Standalone review time limits
 

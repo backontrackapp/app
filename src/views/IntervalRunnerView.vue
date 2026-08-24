@@ -183,7 +183,14 @@ let runnerMounted = false
 let lastCountCue = ''
 let timerEffectTimeout: number | undefined
 let intervalFlashcardClickResetTimer: number | undefined
-let intervalFlashcardSwipeStart: { pointerId: number; x: number; y: number } | undefined
+let intervalFlashcardSwipeStart: {
+  pointerId: number
+  x: number
+  y: number
+  scrollElement?: HTMLElement
+  scrollTop: number
+  maxScrollTop: number
+} | undefined
 let suppressIntervalFlashcardClick = false
 let lastSpokenFlashcardKey = ''
 let reconcilingVisibilitySpeech = false
@@ -1423,7 +1430,18 @@ function beginIntervalFlashcardSwipe(event: PointerEvent) {
     || flashcardNavigating.value
   ) return
 
-  intervalFlashcardSwipeStart = { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
+  const response = (event.target as Element | null)?.closest('.flashcard-response-text')
+  const scrollElement = response instanceof HTMLElement ? response : undefined
+  intervalFlashcardSwipeStart = {
+    pointerId: event.pointerId,
+    x: event.clientX,
+    y: event.clientY,
+    scrollElement,
+    scrollTop: scrollElement?.scrollTop || 0,
+    maxScrollTop: scrollElement
+      ? Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight)
+      : 0,
+  }
   try {
     if (event.currentTarget instanceof HTMLElement) {
       event.currentTarget.setPointerCapture(event.pointerId)
@@ -1433,20 +1451,46 @@ function beginIntervalFlashcardSwipe(event: PointerEvent) {
   }
 }
 
-function finishIntervalFlashcardSwipe(event: PointerEvent) {
+function moveIntervalFlashcardSwipe(event: PointerEvent) {
   const start = intervalFlashcardSwipeStart
-  if (!start || start.pointerId !== event.pointerId) return
-  intervalFlashcardSwipeStart = undefined
+  if (!start?.scrollElement || start.pointerId !== event.pointerId) return
+  const deltaX = event.clientX - start.x
+  const deltaY = event.clientY - start.y
+  if (Math.abs(deltaY) <= Math.abs(deltaX)) return
+  start.scrollElement.scrollTop = Math.min(
+    start.maxScrollTop,
+    Math.max(0, start.scrollTop - deltaY),
+  )
+}
 
-  const gesture = flashcardReviewActionFromSwipe(start, { x: event.clientX, y: event.clientY })
-  if (!gesture) return
-
+function suppressNextIntervalFlashcardClick() {
   suppressIntervalFlashcardClick = true
   if (intervalFlashcardClickResetTimer) window.clearTimeout(intervalFlashcardClickResetTimer)
   intervalFlashcardClickResetTimer = window.setTimeout(() => {
     suppressIntervalFlashcardClick = false
     intervalFlashcardClickResetTimer = undefined
   }, 350)
+}
+
+function finishIntervalFlashcardSwipe(event: PointerEvent) {
+  const start = intervalFlashcardSwipeStart
+  if (!start || start.pointerId !== event.pointerId) return
+  intervalFlashcardSwipeStart = undefined
+
+  const gesture = flashcardReviewActionFromSwipe(start, { x: event.clientX, y: event.clientY })
+  if (!gesture) {
+    if (start.scrollElement && Math.abs(start.scrollElement.scrollTop - start.scrollTop) > 1) {
+      suppressNextIntervalFlashcardClick()
+    }
+    return
+  }
+
+  const responseConsumedGesture = start.scrollElement && (
+    (gesture.action === 'next' && start.scrollTop < start.maxScrollTop)
+    || (gesture.action === 'previous' && start.scrollTop > 0)
+  )
+  suppressNextIntervalFlashcardClick()
+  if (responseConsumedGesture) return
   if (gesture.action === 'previous' || gesture.action === 'next') {
     void navigateIntervalFlashcard(gesture.action, gesture.transition)
   } else {
@@ -1514,6 +1558,7 @@ function snapshotCard(card: Flashcard) {
     id: card.id,
     front: card.front,
     back: card.back,
+    transliteration: card.transliteration || '',
     note: card.note,
     frontAudio: card.frontAudio,
     backAudio: card.backAudio,
@@ -1624,6 +1669,7 @@ async function ejectIntervalFlashcard() {
           id: replacement.id,
           front: replacement.front,
           back: replacement.back,
+          transliteration: replacement.transliteration || '',
           note: replacement.note,
           frontAudio: replacement.frontAudio,
           backAudio: replacement.backAudio,
@@ -2089,6 +2135,7 @@ async function runAgain(repetitions?: number) {
             class="interval-review-card"
             :class="{ 'interval-review-card--playback-paused': !flashcardReviewPlaybackEnabled }"
             @pointerdown="beginIntervalFlashcardSwipe"
+            @pointermove="moveIntervalFlashcardSwipe"
             @pointerup="finishIntervalFlashcardSwipe"
             @pointercancel="cancelIntervalFlashcardSwipe"
             @lostpointercapture="cancelIntervalFlashcardSwipe"

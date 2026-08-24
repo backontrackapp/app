@@ -519,6 +519,7 @@ export function flashcardReviewQueueState(
       id: card.id,
       front: card.front,
       back: card.back,
+      transliteration: card.transliteration || '',
       note: card.note,
       frontAudio: card.frontAudio,
       backAudio: card.backAudio,

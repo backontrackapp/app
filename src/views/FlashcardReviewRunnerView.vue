@@ -131,7 +131,14 @@ let speechRequest = 0
 let wakeLock: ScreenWakeLock | undefined
 let acquiringWakeLock = false
 let wakeLockRetryRequested = false
-let manualSwipeStart: { pointerId: number; x: number; y: number } | undefined
+let manualSwipeStart: {
+  pointerId: number
+  x: number
+  y: number
+  scrollElement?: HTMLElement
+  scrollTop: number
+  maxScrollTop: number
+} | undefined
 let suppressManualCardTap = false
 let manualCardTapResetTimer: number | undefined
 let resumeAfterSessionSettings = false
@@ -862,10 +869,17 @@ function beginReviewCardSwipe(event: PointerEvent) {
     || (event.pointerType === 'mouse' && event.button !== 0)
   ) return
 
+  const response = (event.target as Element | null)?.closest('.flashcard-response-text')
+  const scrollElement = response instanceof HTMLElement ? response : undefined
   manualSwipeStart = {
     pointerId: event.pointerId,
     x: event.clientX,
     y: event.clientY,
+    scrollElement,
+    scrollTop: scrollElement?.scrollTop || 0,
+    maxScrollTop: scrollElement
+      ? Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight)
+      : 0,
   }
   const startedFromTagControl = (event.target as Element | null)
     ?.closest('.review-card__tag-actions')
@@ -879,20 +893,46 @@ function beginReviewCardSwipe(event: PointerEvent) {
   }
 }
 
-function finishReviewCardSwipe(event: PointerEvent) {
+function moveReviewCardSwipe(event: PointerEvent) {
   const start = manualSwipeStart
-  if (!start || start.pointerId !== event.pointerId) return
-  manualSwipeStart = undefined
+  if (!start?.scrollElement || start.pointerId !== event.pointerId) return
+  const deltaX = event.clientX - start.x
+  const deltaY = event.clientY - start.y
+  if (Math.abs(deltaY) <= Math.abs(deltaX)) return
+  start.scrollElement.scrollTop = Math.min(
+    start.maxScrollTop,
+    Math.max(0, start.scrollTop - deltaY),
+  )
+}
 
-  const gesture = flashcardReviewActionFromSwipe(start, { x: event.clientX, y: event.clientY })
-  if (!gesture) return
-
+function suppressNextManualCardTap() {
   suppressManualCardTap = true
   if (manualCardTapResetTimer) window.clearTimeout(manualCardTapResetTimer)
   manualCardTapResetTimer = window.setTimeout(() => {
     suppressManualCardTap = false
     manualCardTapResetTimer = undefined
   }, 250)
+}
+
+function finishReviewCardSwipe(event: PointerEvent) {
+  const start = manualSwipeStart
+  if (!start || start.pointerId !== event.pointerId) return
+  manualSwipeStart = undefined
+
+  const gesture = flashcardReviewActionFromSwipe(start, { x: event.clientX, y: event.clientY })
+  if (!gesture) {
+    if (start.scrollElement && Math.abs(start.scrollElement.scrollTop - start.scrollTop) > 1) {
+      suppressNextManualCardTap()
+    }
+    return
+  }
+
+  const responseConsumedGesture = start.scrollElement && (
+    (gesture.action === 'next' && start.scrollTop < start.maxScrollTop)
+    || (gesture.action === 'previous' && start.scrollTop > 0)
+  )
+  suppressNextManualCardTap()
+  if (responseConsumedGesture) return
   if (gesture.action === 'previous') void navigateLeft(gesture.transition)
   else if (gesture.action === 'next') void navigateRight(gesture.transition)
   else showReviewCardSide(gesture.action, gesture.transition)
@@ -1195,6 +1235,7 @@ function handleCardSaved(card: Flashcard) {
     id: card.id,
     front: card.front,
     back: card.back,
+    transliteration: card.transliteration || '',
     note: card.note,
     frontAudio: card.frontAudio,
     backAudio: card.backAudio,
@@ -1416,6 +1457,7 @@ async function leaveRunner() {
         <div
           class="review-card-stack"
           @pointerdown="beginReviewCardSwipe"
+          @pointermove="moveReviewCardSwipe"
           @pointerup="finishReviewCardSwipe"
           @pointercancel="cancelReviewCardSwipe"
           @lostpointercapture="cancelReviewCardSwipe"
@@ -1875,6 +1917,7 @@ async function leaveRunner() {
 .review-card-window { display: grid; width: 100%; min-height: min(38dvh, 22rem); flex: 1 1 auto; overflow: hidden; border-radius: 1.5rem; }
 .review-card-window,
 .review-card-window * { pointer-events: none; }
+.review-card-window :deep(.flashcard-response-text) { pointer-events: auto; }
 .review-card-window > * { width: 100%; min-height: inherit; grid-area: 1 / 1; }
 .review-card { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); padding: 2rem 2rem 5.5rem; border: .0625rem solid rgba(var(--v-theme-on-surface), .1); border-radius: 1.5rem; align-items: center; flex: 1 1 auto; flex-direction: column; gap: 1.5rem; overflow: hidden; background: rgb(var(--v-theme-surface)); color: inherit; cursor: pointer; font: inherit; text-align: center; touch-action: none; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); }
 .review-card > :not(.review-card__image), .passive-card > :not(.review-card__image) { position: relative; z-index: 1; }
@@ -1886,14 +1929,14 @@ async function leaveRunner() {
 .passive-card small { color: rgba(var(--v-theme-on-surface), .48); font-size: .68rem; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
 .review-card strong,
 .passive-card strong { max-width: 34rem; overflow-wrap: anywhere; font-size: clamp(1.3rem, 5vw, 2.1rem); font-weight: 850; line-height: 1.35; white-space: pre-wrap; }
-.review-card__content-window { position: relative; display: grid; width: 100%; min-height: 0; flex: 1 1 auto; overflow: hidden; }
-.review-card__content { display: flex; width: 100%; min-height: 0; max-height: 100%; grid-area: 1 / 1; align-items: center; align-self: stretch; justify-content: center; flex-direction: column; overflow-y: auto; }
-.review-card__answer { display: flex; align-items: center; flex-direction: column; gap: .45rem; }
+.review-card__content-window { position: relative; display: grid; width: 100%; height: 0; min-height: 0; flex: 1 1 0; overflow: hidden; }
+.review-card__content { display: flex; width: 100%; height: 100%; min-height: 0; max-height: 100%; grid-area: 1 / 1; align-items: center; align-self: stretch; justify-content: center; flex-direction: column; overflow: hidden; }
+.review-card__answer { display: flex; width: 100%; height: 100%; min-width: 0; min-height: 0; max-height: 100%; align-items: center; justify-content: center; flex-direction: column; gap: .45rem; overflow: hidden; }
 .review-card__front-reference { max-width: 30rem; overflow-wrap: anywhere; color: rgba(var(--v-theme-on-surface), .48); font-size: clamp(.72rem, 2.2vw, .88rem); line-height: 1.4; white-space: pre-wrap; }
 .review-card__hint { display: flex; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .48); font-size: .72rem; font-weight: 800; }
 .passive-card { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); padding: 2rem 2rem 5.5rem; border: .0625rem solid rgba(var(--v-theme-secondary), .28); border-radius: 1.5rem; align-items: center; flex: 1 1 auto; flex-direction: column; gap: 1.5rem; overflow: hidden; background: rgb(var(--v-theme-surface)); color: inherit; font: inherit; text-align: center; touch-action: none; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); }
 .passive-card--interactive { cursor: pointer; }
-.passive-card__content { display: flex; width: 100%; flex: 1 1 auto; align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem; }
+.passive-card__content { display: flex; width: 100%; min-width: 0; min-height: 0; flex: 1 1 auto; align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem; overflow: hidden; }
 .passive-card .v-progress-linear { width: min(20rem, 100%); flex: 0 0 auto; }
 .review-card__tag-actions { position: absolute; z-index: 3; right: 1.5rem; bottom: 1.25rem; left: 1.5rem; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: .5rem; }
 .review-card__quick-tags { display: flex; grid-column: 1; justify-self: start; gap: .5rem; }

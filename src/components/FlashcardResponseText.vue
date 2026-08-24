@@ -72,13 +72,31 @@ const parts = computed<ResponsePart[]>(() => {
 <style scoped>
 .flashcard-response-text {
   display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
   max-width: 100%;
+  max-height: min(22rem, 50dvh);
+  flex: 0 1 auto;
   align-items: center;
+  align-self: stretch;
   flex-direction: column;
   gap: .45rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: rgba(var(--v-theme-on-surface), .28) transparent;
+  scrollbar-width: thin;
+  touch-action: none;
+  -webkit-overflow-scrolling: touch;
 }
 
 .flashcard-response-text__part {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
@@ -97,6 +115,7 @@ const parts = computed<ResponsePart[]>(() => {
 }
 
 .flashcard-response-text--compact {
+  max-height: min(8rem, 30dvh);
   gap: .65rem;
 }
 

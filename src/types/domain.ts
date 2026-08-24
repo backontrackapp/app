@@ -587,6 +587,7 @@ export interface FlashcardReviewQueueCard {
   id: string
   front: string
   back: string
+  transliteration?: string
   note: string
   frontAudio?: string
   backAudio?: string

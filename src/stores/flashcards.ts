@@ -219,6 +219,30 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     .filter(session => session.status === 'completed' || session.status === 'ended')
     .slice(0, 30))
 
+  function hydrateSessionTransliterations(
+    session: FlashcardReviewSession,
+    sourceCards: Flashcard[],
+  ) {
+    const sourceCardsById = new Map(sourceCards.map(card => [card.id, card]))
+    session.queue.forEach((card) => {
+      if (card.transliteration !== undefined) return
+      const sourceCard = sourceCardsById.get(card.id)
+      if (sourceCard) card.transliteration = sourceCard.transliteration || ''
+    })
+  }
+
+  async function hydrateLoadedSessionTransliterations(session: FlashcardReviewSession) {
+    if (session.queue.every(card => card.transliteration !== undefined)) return
+    const reviewSet = reviewSets.value.find(item => item.id === session.reviewSet)
+    if (!reviewSet || reviewSet.accessRole === 'owner') {
+      hydrateSessionTransliterations(session, cards.value)
+      return
+    }
+    const sourceCards = reviewSetCards.value[reviewSet.id]
+      || await loadReviewSetCards(reviewSet.id)
+    hydrateSessionTransliterations(session, sourceCards)
+  }
+
   async function load() {
     if (!api.authStore.record) return
     loading.value = true
@@ -234,6 +258,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       cards.value = cardRecords.map(mapCard)
       reviewSets.value = setRecords.map(mapReviewSet)
       sessions.value = sessionRecords.items.map(mapSession)
+      sessions.value.forEach(session => hydrateSessionTransliterations(session, cards.value))
       loaded.value = true
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Could not load flashcards.'
@@ -245,9 +270,13 @@ export const useFlashcardStore = defineStore('flashcards', () => {
 
   async function loadSession(id: string) {
     const existing = sessions.value.find(session => session.id === id)
-    if (existing) return existing
+    if (existing) {
+      await hydrateLoadedSessionTransliterations(existing)
+      return existing
+    }
     const record = await api.collection('flashcard_review_sessions').getOne(id)
     const session = mapSession(record)
+    await hydrateLoadedSessionTransliterations(session)
     sessions.value.unshift(session)
     return session
   }
@@ -346,6 +375,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           id: card.id,
           front: card.front,
           back: card.back,
+          transliteration: card.transliteration || '',
           note: card.note,
           frontAudio: card.frontAudio,
           backAudio: card.backAudio,
@@ -823,6 +853,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     const records = await api.getFlashcardReviewSetCards(id)
     const mapped = records.map(mapCard)
     reviewSetCards.value = { ...reviewSetCards.value, [id]: mapped }
+    sessions.value
+      .filter(session => session.reviewSet === id)
+      .forEach(session => hydrateSessionTransliterations(session, mapped))
     const reviewSet = reviewSets.value.find(item => item.id === id)
     if (reviewSet) reviewSet.matchingCardCount = mapped.length
     return mapped
@@ -960,6 +993,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
             id: optimisticCard.id,
             front: optimisticCard.front,
             back: optimisticCard.back,
+            transliteration: optimisticCard.transliteration || '',
             note: optimisticCard.note,
             frontAudio: optimisticCard.frontAudio,
             backAudio: optimisticCard.backAudio,
@@ -1350,6 +1384,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           id: card.id,
           front: card.front,
           back: card.back,
+          transliteration: card.transliteration || '',
           note: card.note,
           frontAudio: card.frontAudio,
           backAudio: card.backAudio,
@@ -1498,6 +1533,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           id: card.id,
           front: card.front,
           back: card.back,
+          transliteration: card.transliteration || '',
           note: card.note,
           frontAudio: card.frontAudio,
           backAudio: card.backAudio,
@@ -1542,6 +1578,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
                   id: replacement.id,
                   front: replacement.front,
                   back: replacement.back,
+                  transliteration: replacement.transliteration || '',
                   note: replacement.note,
                   frontAudio: replacement.frontAudio,
                   backAudio: replacement.backAudio,
