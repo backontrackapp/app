@@ -70,6 +70,19 @@ onBeforeUnmount(() => {
   transform: translateX(2rem);
 }
 
+/* AppShell contains viewport-fixed chrome. Translating its root makes those
+   elements use the moving shell as their containing block until the
+   transition ends, which causes the bottom navigation to snap sideways. */
+.session-forward-enter-active.v-application,
+.session-back-leave-active.v-application {
+  transition: opacity 240ms ease;
+}
+
+.session-forward-enter-from.v-application,
+.session-back-leave-to.v-application {
+  transform: none;
+}
+
 .session-forward-leave-to {
   opacity: 0;
   transform: translateX(-1.5rem);
