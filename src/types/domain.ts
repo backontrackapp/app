@@ -671,6 +671,7 @@ export type AssistantToolName =
   | 'get_owned_review_set_cards'
   | 'create_flashcard_review_set'
   | 'add_flashcards_to_review_set'
+  | 'present_choices'
 
 export interface AssistantMessageItem {
   type: 'message'
@@ -723,6 +724,12 @@ export interface AssistantWritePlan {
   reusedCardIds: string[]
   convertsTagSelection: boolean
   maxCards: number
+}
+
+export interface AssistantChoice {
+  call: AssistantToolCallItem
+  prompt: string
+  choices: string[]
 }
 
 export type PhoneSpeechPermission = 'prompt' | 'granted' | 'denied' | 'restricted'

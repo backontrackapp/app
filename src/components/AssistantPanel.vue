@@ -2,11 +2,13 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import {
+  assistantChoice,
   assistantReadToolResult,
   assistantWritePlan,
   cancelledAssistantToolOutput,
   executeAssistantWritePlan,
   requestAssistantResponse,
+  selectedAssistantChoice,
 } from '@/services/assistant'
 import {
   cancelPhoneSpeechRecognition,
@@ -25,6 +27,7 @@ import {
 import { useOverlayStack } from '@/services/overlayStack'
 import { useFlashcardStore } from '@/stores/flashcards'
 import type {
+  AssistantChoice,
   AssistantConversationItem,
   AssistantMessageItem,
   AssistantToolCallItem,
@@ -43,6 +46,7 @@ const busy = ref(false)
 const recording = ref(false)
 const error = ref('')
 const pendingPlan = ref<AssistantWritePlan>()
+const pendingChoice = ref<AssistantChoice>()
 const messagesElement = ref<HTMLElement>()
 const speechStatus = ref<PhoneSpeechStatus>({ available: false, permission: 'prompt' })
 const spokenReplies = ref(true)
@@ -52,7 +56,12 @@ let requestRevision = 0
 const messages = computed(() => items.value.filter(
   (item): item is AssistantMessageItem => item.type === 'message',
 ))
-const canSend = computed(() => Boolean(composer.value.trim()) && !busy.value && !pendingPlan.value)
+const visibleItems = computed(() => items.value.filter(item => (
+  item.type === 'message' || (item.type === 'function_call' && item.name === 'present_choices')
+)))
+const canSend = computed(() => (
+  Boolean(composer.value.trim()) && !busy.value && !pendingPlan.value && !pendingChoice.value
+))
 const voiceAvailable = computed(() => phoneSpeechRecognitionIsNative() && speechStatus.value.available)
 
 const suggestions = [
@@ -73,7 +82,7 @@ async function speakReply(content: string) {
 }
 
 async function runAssistant() {
-  if (busy.value || pendingPlan.value) return
+  if (busy.value || pendingPlan.value || pendingChoice.value) return
   const revision = ++requestRevision
   busy.value = true
   error.value = ''
@@ -82,12 +91,22 @@ async function runAssistant() {
       const response = await requestAssistantResponse(items.value)
       if (revision !== requestRevision || !model.value) return
       const responseItems = response.items
+      responseItems.forEach(item => {
+        if (item.type === 'function_call' && item.name === 'present_choices') assistantChoice(item)
+      })
       items.value.push(...responseItems)
       await scrollMessagesToEnd()
       let continued = false
       for (const item of responseItems) {
         if (item.type === 'message' && item.role === 'assistant') void speakReply(item.content)
         if (item.type !== 'function_call') continue
+        const choice = assistantChoice(item)
+        if (choice) {
+          pendingChoice.value = choice
+          void speakReply(choice.prompt)
+          await scrollMessagesToEnd()
+          return
+        }
         const readResult = assistantReadToolResult(item, flashcards)
         if (readResult) {
           items.value.push(readResult)
@@ -111,10 +130,28 @@ async function runAssistant() {
 
 async function submit(message = composer.value) {
   const content = message.trim()
-  if (!content || busy.value || pendingPlan.value) return
+  if (!content || busy.value || pendingPlan.value || pendingChoice.value) return
   await stopFlashcardSpeech()
   composer.value = ''
   items.value.push({ type: 'message', role: 'user', content })
+  await scrollMessagesToEnd()
+  await runAssistant()
+}
+
+function choiceSelection(callId: string) {
+  const result = items.value.find(item => (
+    item.type === 'function_call_output' && item.callId === callId
+  ))
+  return result?.type === 'function_call_output' && typeof result.output.selected_choice === 'string'
+    ? result.output.selected_choice
+    : ''
+}
+
+async function chooseAnswer(choice: AssistantChoice, answer: string) {
+  if (busy.value || pendingPlan.value || pendingChoice.value?.call.callId !== choice.call.callId) return
+  await stopFlashcardSpeech()
+  items.value.push(selectedAssistantChoice(choice.call.callId, answer))
+  pendingChoice.value = undefined
   await scrollMessagesToEnd()
   await runAssistant()
 }
@@ -145,7 +182,13 @@ async function cancelPlan() {
 }
 
 async function beginListening() {
-  if (busy.value || recording.value || pendingPlan.value || !phoneSpeechRecognitionIsNative()) return
+  if (
+    busy.value
+    || recording.value
+    || pendingPlan.value
+    || pendingChoice.value
+    || !phoneSpeechRecognitionIsNative()
+  ) return
   await stopFlashcardSpeech()
   error.value = ''
   liveTranscript.value = ''
@@ -190,6 +233,7 @@ async function resetPanel() {
   busy.value = false
   error.value = ''
   pendingPlan.value = undefined
+  pendingChoice.value = undefined
 }
 
 watch(model, async (open) => {
@@ -282,17 +326,37 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <template v-for="(message, index) in messages" :key="`${message.role}-${index}`">
-            <div class="assistant-message" :class="`assistant-message--${message.role}`">
-              {{ message.content }}
+          <template v-for="(item, index) in visibleItems" :key="`${item.type}-${index}`">
+            <div v-if="item.type === 'message'" class="assistant-message" :class="`assistant-message--${item.role}`">
+              {{ item.content }}
               <v-btn
-                v-if="message.role === 'assistant' && replySpeechLanguage"
+                v-if="item.role === 'assistant' && replySpeechLanguage"
                 icon="mdi-volume-high"
                 size="x-small"
                 variant="text"
                 aria-label="Replay assistant reply"
-                @click="speakReply(message.content)"
+                @click="speakReply(item.content)"
               />
+            </div>
+            <div v-else-if="assistantChoice(item)" class="assistant-choice">
+              <div class="assistant-message assistant-message--assistant">
+                {{ assistantChoice(item)?.prompt }}
+              </div>
+              <div class="assistant-choice__actions" role="group" :aria-label="assistantChoice(item)?.prompt">
+                <v-btn
+                  v-for="choice in assistantChoice(item)?.choices"
+                  :key="choice"
+                  :color="choiceSelection(item.callId) === choice ? 'secondary' : undefined"
+                  :variant="choiceSelection(item.callId) === choice ? 'flat' : 'outlined'"
+                  :disabled="Boolean(choiceSelection(item.callId)) || busy || pendingChoice?.call.callId !== item.callId"
+                  class="assistant-choice__button"
+                  :class="{ 'assistant-choice__button--selected': choiceSelection(item.callId) === choice }"
+                  :aria-pressed="choiceSelection(item.callId) === choice"
+                  @click="chooseAnswer(assistantChoice(item)!, choice)"
+                >
+                  {{ choice }}
+                </v-btn>
+              </div>
             </div>
           </template>
 
@@ -351,7 +415,7 @@ onBeforeUnmount(() => {
             auto-grow
             max-rows="4"
             hide-details="auto"
-            :disabled="busy || recording || Boolean(pendingPlan)"
+            :disabled="busy || recording || Boolean(pendingPlan) || Boolean(pendingChoice)"
             @keydown.enter.exact.prevent="submit()"
           >
             <template #append-inner>
@@ -362,7 +426,7 @@ onBeforeUnmount(() => {
                   :color="recording ? 'error' : voiceAvailable ? 'secondary' : undefined"
                   variant="text"
                   :aria-label="recording ? 'Stop listening' : 'Start voice request'"
-                  :disabled="busy || Boolean(pendingPlan)"
+                  :disabled="busy || Boolean(pendingPlan) || Boolean(pendingChoice)"
                   @click="recording ? stopListening() : beginListening()"
                 />
                 <v-btn
@@ -428,6 +492,21 @@ onBeforeUnmount(() => {
 .assistant-message--user { align-self: flex-end; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); }
 .assistant-message--assistant { align-self: flex-start; border: .0625rem solid rgb(var(--v-theme-on-surface) / .08); background: rgb(var(--v-theme-surface)); }
 .assistant-message--assistant .v-btn { margin: -.4rem -.6rem -.4rem .25rem; }
+.assistant-choice { display: flex; flex-direction: column; align-items: flex-start; gap: .5rem; }
+.assistant-choice__actions { display: flex; width: 100%; flex-wrap: wrap; gap: .5rem; }
+.assistant-choice__button {
+  height: auto !important;
+  min-height: 2.75rem;
+  max-width: 100%;
+  padding: .625rem 1rem;
+  letter-spacing: normal;
+}
+.assistant-choice__button :deep(.v-btn__content) {
+  overflow-wrap: anywhere;
+  text-align: left;
+  white-space: normal;
+}
+.assistant-choice__button--selected:disabled { opacity: 1; }
 .assistant-plan { background: rgb(var(--v-theme-surface)); }
 .assistant-panel__thinking,
 .assistant-panel__listening { display: flex; align-items: center; gap: .5rem; }

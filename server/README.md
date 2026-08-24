@@ -60,7 +60,7 @@ Only `VITE_API_URL` is exposed to the browser build. Variables beginning with `B
 
 ## Flashcard AI assistant
 
-`POST /assistant/respond` sends an authenticated, bounded conversation to the configured OpenAI Responses API. The server fixes the instruction set and exposes only four strict function schemas: list owned Review sets, read cards and reviewer statistics from an owned set, propose a Review set creation, and propose adding cards to an owned set. The client executes read calls only after filtering its synchronized data to the current owner. Write calls pause for explicit user confirmation.
+`POST /assistant/respond` sends an authenticated, bounded conversation to the configured OpenAI Responses API. The server fixes the instruction set and exposes only five strict function schemas: list owned Review sets, read cards and reviewer statistics from an owned set, propose a Review set creation, propose adding cards to an owned set, and present two to five answer choices. The client executes read calls only after filtering its synchronized data to the current owner. Choice calls render buttons and return the selected value to the model. Write calls pause for explicit user confirmation.
 
 The OpenAI request uses `store: false`, disables parallel tool calls, and includes an HMAC-derived safety identifier instead of an account ID. The API key never enters the web or native bundle. Assistant responses are rate limited to 30 requests per five minutes per account.
 

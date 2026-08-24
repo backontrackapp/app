@@ -1,6 +1,7 @@
 import { api } from '@/lib/api'
 import { cardMatchesReviewSet } from '@/services/flashcards'
 import type {
+  AssistantChoice,
   AssistantConversationItem,
   AssistantFlashcardDraft,
   AssistantToolCallItem,
@@ -12,6 +13,7 @@ import type { useFlashcardStore } from '@/stores/flashcards'
 type FlashcardStore = ReturnType<typeof useFlashcardStore>
 
 const MAX_ASSISTANT_CARDS = 100
+const MAX_ASSISTANT_CHOICES = 5
 
 function normalizedText(value: unknown, maximum: number) {
   if (typeof value !== 'string') return ''
@@ -45,6 +47,26 @@ function stringArray(value: unknown) {
 function integer(value: unknown, fallback: number) {
   const parsed = Number(value)
   return Number.isInteger(parsed) ? parsed : fallback
+}
+
+export function assistantChoice(call: AssistantToolCallItem): AssistantChoice | undefined {
+  if (call.name !== 'present_choices') return undefined
+  const prompt = normalizedText(call.arguments.prompt, 500)
+  const choices = [...new Set(
+    stringArray(call.arguments.choices)
+      .map(choice => choice.trim().slice(0, 160))
+      .filter(Boolean),
+  )].slice(0, MAX_ASSISTANT_CHOICES)
+  if (!prompt || choices.length < 2) throw new Error('The assistant returned invalid choices.')
+  return { call, prompt, choices }
+}
+
+export function selectedAssistantChoice(callId: string, choice: string): AssistantToolOutputItem {
+  return {
+    type: 'function_call_output',
+    callId,
+    output: { selected_choice: choice },
+  }
 }
 
 export function assistantReadToolResult(
