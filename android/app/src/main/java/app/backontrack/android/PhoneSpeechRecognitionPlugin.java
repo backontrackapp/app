@@ -28,6 +28,7 @@ import java.util.Locale;
 public class PhoneSpeechRecognitionPlugin extends Plugin implements RecognitionListener {
 
     private static final long MAX_LISTENING_MS = 60_000L;
+    private static final long COMPLETE_SILENCE_MS = 5_000L;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable listeningTimeout = () -> finishListening(false);
@@ -84,6 +85,14 @@ public class PhoneSpeechRecognitionPlugin extends Plugin implements RecognitionL
                 intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, listeningLocale);
                 intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
                 intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
+                intent.putExtra(
+                    RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
+                    COMPLETE_SILENCE_MS
+                );
+                intent.putExtra(
+                    RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
+                    COMPLETE_SILENCE_MS
+                );
                 recognizer.startListening(intent);
                 mainHandler.postDelayed(listeningTimeout, MAX_LISTENING_MS);
             } catch (RuntimeException error) {
