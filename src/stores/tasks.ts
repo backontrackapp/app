@@ -422,7 +422,8 @@ export const useTaskStore = defineStore('tasks', () => {
     const manuallyCompleted = isSessionDuration && occurrenceComplete && occurrenceSealed
     const manuallyCompletedStep = Boolean(step && occurrenceComplete && occurrenceSealed)
     const isDailyTotal = !step && task.type === 'daily_total'
-    const sealed = (isDailyTotal || isSessionDuration) && occurrenceSealed
+    const isDurationTotal = !step && task.type === 'duration'
+    const sealed = (isDailyTotal || isDurationTotal || isSessionDuration) && occurrenceSealed
     const complete = occurrenceSkipped
       ? false
       : completionItems
@@ -433,6 +434,8 @@ export const useTaskStore = defineStore('tasks', () => {
           ? true
           : isDailyTotal
             ? sealed
+            : isDurationTotal && sealed
+              ? true
             : operator !== 'lte' && targetReached
     return {
       task,
@@ -1185,8 +1188,8 @@ export const useTaskStore = defineStore('tasks', () => {
     }
   }
 
-  async function setDailyTotalSealed(progress: TaskProgress) {
-    if (progress.task.type !== 'daily_total' || progress.programStep) return
+  async function setTotalSealed(progress: TaskProgress) {
+    if (!['daily_total', 'duration'].includes(progress.task.type) || progress.programStep) return
     const sealed = !progress.sealed
     await updateOccurrenceOptimistically(progress, {
       sealed,
@@ -2099,7 +2102,7 @@ export const useTaskStore = defineStore('tasks', () => {
     markProgramStepIncomplete,
     completeAttributedTask,
     applyLocalSessionProgress,
-    setDailyTotalSealed,
+    setTotalSealed,
     addEntry,
     updateEntry,
     deleteEntry,

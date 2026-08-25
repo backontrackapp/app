@@ -414,7 +414,7 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
       })
     }
   }
-  if (!progress.programStep && progress.task.type === 'daily_total') {
+  if (!progress.programStep && ['daily_total', 'duration'].includes(progress.task.type)) {
     items.push({
       id: 'toggle-total-lock',
       title: progress.sealed ? 'Unlock total' : 'Lock in total',
@@ -1025,7 +1025,7 @@ function runTaskMainAction(action: TaskMainActionItem) {
     return
   }
   if (action.id === 'toggle-total-lock') {
-    void runForProgress(progress, () => store.setDailyTotalSealed(progress))
+    void runForProgress(progress, () => store.setTotalSealed(progress))
     return
   }
   if (action.id === 'sync-steps') {
@@ -1232,7 +1232,7 @@ async function lockInDailyTotal() {
   if (!progress || lockInUpdating.value) return
   lockInUpdating.value = true
   try {
-    await store.setDailyTotalSealed(progress)
+    await store.setTotalSealed(progress)
     lockInSheet.value = false
     lockInProgress.value = undefined
   } catch (cause) {
