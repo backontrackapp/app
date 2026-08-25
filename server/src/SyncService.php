@@ -910,6 +910,10 @@ final class SyncService
             }
             $cardId = $this->recordId($row['id'] ?? null);
             $imageUrl = $curated ? $this->curatedFlashcardImageUrl($row['image_url'] ?? '') : '';
+            $tagIds = $this->stringArray($row['tags'] ?? []);
+            foreach ($tagIds as $tagId) {
+                $this->ownedRecord('flashcard_tags', $this->recordId($tagId), $account);
+            }
             $response = $this->createOwnedRecord(
                 'flashcards',
                 $cardConfig,
@@ -920,7 +924,7 @@ final class SyncService
                     'transliteration' => $row['transliteration'] ?? '',
                     'note' => $row['note'] ?? '',
                     'image_url' => $imageUrl,
-                    'tags' => [],
+                    'tags' => array_values(array_unique($tagIds)),
                 ],
                 $fieldClocks,
                 $account,

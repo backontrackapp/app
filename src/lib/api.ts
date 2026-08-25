@@ -531,6 +531,7 @@ class ApiClient {
       transliteration: card.transliteration || '',
       note: card.note || '',
       image_url: 'image' in card && typeof card.image === 'string' ? storedAssetUrl(card.image) : '',
+      tags: 'tags' in card && Array.isArray(card.tags) ? [...new Set(card.tags)] : [],
     }))
     const requestedReviewSetId = input.mode === 'create'
       ? createLocalRecordId()
@@ -565,7 +566,7 @@ class ApiClient {
     const cards = cardDrafts.map(card => ({
       id: card.id,
       owner: accountId,
-      ...localCreateDefaults('flashcards', { ...card, tags: [] }),
+      ...localCreateDefaults('flashcards', card),
     }))
 
     let reviewSet: RecordModel
@@ -649,7 +650,7 @@ class ApiClient {
 
   applyCuratedFlashcards(input: {
     mode: 'create' | 'add'
-    cards: Array<AssistantFlashcardDraft & { image?: string }>
+    cards: Array<AssistantFlashcardDraft & { image?: string; tags: string[] }>
     existingCardIds: string[]
     reviewSetId?: string
     name?: string

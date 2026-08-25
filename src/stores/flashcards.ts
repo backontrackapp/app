@@ -15,6 +15,7 @@ import {
   swapFlashcardColumns,
   updateFlashcardReviewExclusions,
 } from '@/services/flashcards'
+import { normalizeSpeechLanguage } from '@/services/flashcardSpeech'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
 import type {
@@ -858,8 +859,21 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     sourceCards: Flashcard[],
     destination: { type: 'new'; name: string } | { type: 'existing'; reviewSetId: string },
     settings: FlashcardReviewSettings,
+    source: { frontLanguage: string; backLanguage: string; category: string },
   ) {
     if (!sourceCards.length) throw new Error('Select at least one curated card.')
+    const frontLanguage = source.frontLanguage.trim()
+    const backLanguage = source.backLanguage.trim()
+    const category = source.category.trim()
+    if (!frontLanguage || !backLanguage) throw new Error('Choose both curated card languages.')
+    if (!category) throw new Error('The curated Review set category is unavailable.')
+    const languageTagName = normalizeSpeechLanguage(frontLanguage)
+      === normalizeSpeechLanguage(backLanguage)
+      ? frontLanguage
+      : `${frontLanguage}/${backLanguage}`
+    const tagNames = [...new Set([languageTagName, category])]
+    const cardTagIds: string[] = []
+    for (const name of tagNames) cardTagIds.push((await createTag(name)).id)
     const response = await api.applyCuratedFlashcards({
       mode: destination.type === 'new' ? 'create' : 'add',
       cards: sourceCards.map(card => ({
@@ -868,6 +882,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         transliteration: card.transliteration || '',
         note: card.note,
         image: card.image,
+        tags: cardTagIds,
       })),
       existingCardIds: [],
       ...(destination.type === 'new'

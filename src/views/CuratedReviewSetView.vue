@@ -90,7 +90,12 @@ async function cloneCards(
   destination: { type: 'new'; name: string } | { type: 'existing'; reviewSetId: string },
 ) {
   if (!settings.value) throw new Error('Curated Review settings are unavailable.')
-  return store.cloneCuratedCards(selected, destination, settings.value)
+  if (!detail.value) throw new Error('Curated Review set details are unavailable.')
+  return store.cloneCuratedCards(selected, destination, settings.value, {
+    frontLanguage: frontLanguage.value,
+    backLanguage: backLanguage.value,
+    category: detail.value.category,
+  })
 }
 
 async function cloneAll() {
