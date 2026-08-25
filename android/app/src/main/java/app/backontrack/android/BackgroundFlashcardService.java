@@ -59,6 +59,7 @@ public class BackgroundFlashcardService extends Service {
     private String sessionId = "";
     private String sessionName = "Review";
     private String cardSides = "both";
+    private boolean invertFaces = false;
     private String side = "front";
     private String frontLanguage = "";
     private String backLanguage = "";
@@ -194,6 +195,7 @@ public class BackgroundFlashcardService extends Service {
         cardSides = "front".equals(configuredCardSides) || "back".equals(configuredCardSides)
             ? configuredCardSides
             : "both";
+        invertFaces = "both".equals(cardSides) && config.optBoolean("invertFaces", false);
         side = "back".equals(config.optString("side")) ? "back" : "front";
         if (!"both".equals(cardSides)) side = cardSides;
         frontDurationMs = Math.max(1000L, config.optLong("frontSeconds", 5L) * 1000L);
@@ -225,10 +227,11 @@ public class BackgroundFlashcardService extends Service {
 
     private void advance(long now) {
         while (running && now >= deadlineElapsedMs) {
-            if ("front".equals(side) && "both".equals(cardSides)) {
-                side = "back";
-                deadlineElapsedMs += backDurationMs;
-                lastBackSpeechRepeatIndex = 0;
+            String firstSide = invertFaces ? "back" : "front";
+            if (firstSide.equals(side) && "both".equals(cardSides)) {
+                side = "front".equals(side) ? "back" : "front";
+                deadlineElapsedMs += "back".equals(side) ? backDurationMs : frontDurationMs;
+                lastBackSpeechRepeatIndex = "back".equals(side) ? 0 : -1;
                 speakCurrentSide();
             } else {
                 completedCards += 1;
@@ -241,7 +244,9 @@ public class BackgroundFlashcardService extends Service {
                         return;
                     }
                 }
-                side = "back".equals(cardSides) ? "back" : "front";
+                side = "back".equals(cardSides) || ("both".equals(cardSides) && invertFaces)
+                    ? "back"
+                    : "front";
                 lastBackSpeechRepeatIndex = -1;
                 deadlineElapsedMs += "back".equals(side) ? backDurationMs : frontDurationMs;
                 if ("back".equals(side)) lastBackSpeechRepeatIndex = 0;

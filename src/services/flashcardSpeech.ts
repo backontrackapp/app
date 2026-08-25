@@ -54,6 +54,7 @@ interface FlashcardSpeechPlugin {
     indefinite: boolean
     timeLimitSeconds: number
     cardSides: FlashcardReviewCardSides
+    invertFaces: boolean
     side: FlashcardReviewSide
     remainingMs: number
     frontSeconds: number
@@ -529,6 +530,7 @@ export async function syncBackgroundFlashcardReview(
       indefinite: session.indefinite,
       timeLimitSeconds: session.timeLimitSeconds || 0,
       cardSides: session.cardSides,
+      invertFaces: session.cardSides === 'both' && session.invertFaces === true,
       side,
       remainingMs: Math.max(1, Math.round(remainingMs)),
       frontSeconds: session.frontSeconds,

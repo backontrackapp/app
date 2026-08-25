@@ -18,7 +18,7 @@ final class SyncService
     private const SYNC_RETENTION_DAYS = 30;
     private const SYNC_COMPACTION_INTERVAL_SECONDS = 3600;
     private const FLASHCARD_REVIEW_PREFERENCE_FIELDS = [
-        'mode', 'card_sides', 'indefinite', 'time_limit_seconds', 'max_cards', 'front_seconds',
+        'mode', 'card_sides', 'invert_faces', 'indefinite', 'time_limit_seconds', 'max_cards', 'front_seconds',
         'eject_behavior', 'back_seconds', 'back_speech_repeat_count', 'back_display',
         'speech_enabled', 'front_language', 'back_language', 'sort_mode',
         'excluded_cards',
@@ -946,6 +946,7 @@ final class SyncService
                 'excluded_cards' => [],
                 'mode' => 'manual',
                 'card_sides' => 'both',
+                'invert_faces' => false,
                 'indefinite' => false,
                 'time_limit_seconds' => 0,
                 'max_cards' => $maxCards,
@@ -965,7 +966,7 @@ final class SyncService
                 $reviewSetPayload = [
                     ...$reviewSetPayload,
                     ...array_intersect_key($payload['settings'], array_flip([
-                        'mode', 'card_sides', 'indefinite', 'time_limit_seconds', 'max_cards',
+                        'mode', 'card_sides', 'invert_faces', 'indefinite', 'time_limit_seconds', 'max_cards',
                         'eject_behavior', 'front_seconds', 'back_seconds',
                         'back_speech_repeat_count', 'back_display', 'speech_enabled',
                         'front_language', 'back_language', 'sort_mode', 'sort_direction',
@@ -2624,13 +2625,13 @@ final class SyncService
         $settings = $this->reviewSetPreferencesByAccount[$account][(string) $record['id']] ?? null;
         if (is_array($settings)) {
             foreach ([
-                'mode', 'card_sides', 'indefinite', 'time_limit_seconds', 'max_cards', 'front_seconds',
+                'mode', 'card_sides', 'invert_faces', 'indefinite', 'time_limit_seconds', 'max_cards', 'front_seconds',
                 'eject_behavior', 'back_seconds', 'back_speech_repeat_count', 'back_display',
                 'speech_enabled', 'front_language', 'back_language', 'sort_mode',
                 'excluded_cards',
             ] as $field) {
                 $result[$field] = match ($field) {
-                    'indefinite', 'speech_enabled' => (bool) $settings[$field],
+                    'invert_faces', 'indefinite', 'speech_enabled' => (bool) $settings[$field],
                     'excluded_cards' => $this->stringArray($settings[$field] ?? []),
                     default => $settings[$field],
                 };
@@ -2661,15 +2662,16 @@ final class SyncService
         $values['excluded_cards'] = $this->stringArray($values['excluded_cards'] ?? []);
         $statement = $this->database->pdo->prepare(
             'INSERT INTO flashcard_review_set_preferences (
-                review_set, account, mode, card_sides, indefinite, time_limit_seconds, max_cards, eject_behavior,
+                review_set, account, mode, card_sides, invert_faces, indefinite, time_limit_seconds, max_cards, eject_behavior,
                 front_seconds, back_seconds, back_speech_repeat_count, back_display,
                 speech_enabled, front_language, back_language, sort_mode, excluded_cards, updated_at
              ) VALUES (
-                :review_set, :account, :mode, :card_sides, :indefinite, :time_limit_seconds, :max_cards, :eject_behavior,
+                :review_set, :account, :mode, :card_sides, :invert_faces, :indefinite, :time_limit_seconds, :max_cards, :eject_behavior,
                 :front_seconds, :back_seconds, :back_speech_repeat_count, :back_display,
                 :speech_enabled, :front_language, :back_language, :sort_mode, :excluded_cards, :updated_at
              ) ON CONFLICT(review_set, account) DO UPDATE SET
                 mode = excluded.mode, card_sides = excluded.card_sides,
+                invert_faces = excluded.invert_faces,
                 indefinite = excluded.indefinite,
                 time_limit_seconds = excluded.time_limit_seconds,
                 max_cards = excluded.max_cards,

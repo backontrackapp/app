@@ -24,6 +24,9 @@ const recentRunWorking = ref(false)
 const intervalColors = computed(() =>
   new Map(store.templates.map((template) => [template.id, template.color])),
 )
+const archivedTemplateIds = computed(() => new Set(
+  store.templates.filter((template) => template.archived).map((template) => template.id),
+))
 const recentSessionsForWeek = computed(() =>
   store.sessions.filter((session) =>
     (session.status === 'completed' || session.status === 'ended')
@@ -52,6 +55,10 @@ function recentRunColor(session: IntervalSession) {
   return session.template
     ? intervalColors.value.get(session.template) || 'success'
     : 'success'
+}
+
+function recentRunIsArchived(session: IntervalSession) {
+  return Boolean(session.template && archivedTemplateIds.value.has(session.template))
 }
 
 function openRecentRunActions(session: IntervalSession) {
@@ -169,7 +176,6 @@ onBeforeUnmount(() => {
                 v-for="session in group.sessions"
                 :key="session.id"
                 class="recent-run-item"
-                :title="session.name"
                 :aria-label="`Actions for ${session.name}`"
                 @click="openRecentRunActions(session)"
               >
@@ -179,6 +185,10 @@ onBeforeUnmount(() => {
                     :color="recentRunColor(session)"
                   />
                 </template>
+                <div class="d-flex align-center ga-2 flex-wrap">
+                  <span class="text-body-1">{{ session.name }}</span>
+                  <v-chip v-if="recentRunIsArchived(session)" size="x-small" color="warning" variant="tonal">Archived</v-chip>
+                </div>
                 <span class="recent-run-meta">
                   {{ format(new Date(session.startedAt), 'h:mm a') }} · {{ session.source === 'quick' ? 'Quick' : 'Template' }}
                 </span>

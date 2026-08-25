@@ -157,6 +157,7 @@ const selectedCards = computed(() => {
 const selectedCardsHaveTags = computed(() => selectedCards.value.some(card => card.tags.length > 0))
 const customReviewSets = computed(() => (store.reviewSets || []).filter(set => (
   set.accessRole === 'owner'
+  && !set.archived
   && set.selectionMode === 'cards'
   && set.id !== props.sourceReviewSetId
 )))

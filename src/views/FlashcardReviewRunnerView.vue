@@ -43,6 +43,7 @@ import {
   formatReviewDuration,
   INTERVAL_FLASHCARD_QUICK_TAGS,
   normalizeFlashcardBackSpeechRepeatCount,
+  otherFlashcardReviewSide,
   sessionAccuracy,
 } from '@/services/flashcards'
 import { useFlashcardStore } from '@/stores/flashcards'
@@ -93,6 +94,7 @@ const speechOverAmplificationBusy = ref(false)
 const sessionSettingsDraft = reactive<FlashcardReviewSettings>({
   mode: 'manual',
   cardSides: 'both',
+  invertFaces: false,
   indefinite: false,
   timeLimitSeconds: 0,
   maxCards: 20,
@@ -230,9 +232,13 @@ const progress = computed(() => {
     : 0
   return Math.max(cardProgress, timeLimitProgress.value)
 })
-const firstReviewSide = computed(() => firstFlashcardReviewSide(session.value?.cardSides || 'both'))
+const firstReviewSide = computed(() => firstFlashcardReviewSide(
+  session.value?.cardSides || 'both',
+  session.value?.invertFaces,
+))
 const manualShowingBack = computed(() => session.value?.cardSides === 'back'
-  || (session.value?.cardSides === 'both' && revealed.value))
+  || (session.value?.cardSides === 'both'
+    && (revealed.value ? firstReviewSide.value === 'front' : firstReviewSide.value === 'back')))
 const backSpeechRepeatCount = computed(() => session.value?.mode === 'passive'
   && session.value.speechEnabled
   ? normalizeFlashcardBackSpeechRepeatCount(session.value.backSpeechRepeatCount)
@@ -490,7 +496,7 @@ function passiveStorageKey(id: string) {
 }
 
 function restorePassiveState(value: FlashcardReviewSession) {
-  passiveSide.value = firstFlashcardReviewSide(value.cardSides)
+  passiveSide.value = firstFlashcardReviewSide(value.cardSides, value.invertFaces)
   passiveRemainingMs.value = passiveDurationMs.value
   if (value.mode !== 'passive') return
   try {
@@ -572,12 +578,9 @@ function updateProgressFrame() {
 
 async function advancePassive() {
   if (!session.value || session.value.mode !== 'passive' || passiveAdvancing) return
-  if (session.value.cardSides === 'both' && passiveSide.value === 'front') {
-    passiveSide.value = 'back'
-    passiveRemainingMs.value = flashcardBackDurationMs(
-      session.value.backSeconds,
-      backSpeechRepeatCount.value,
-    )
+  if (session.value.cardSides === 'both' && passiveSide.value === firstReviewSide.value) {
+    passiveSide.value = otherFlashcardReviewSide(passiveSide.value)
+    passiveRemainingMs.value = passiveDurationMs.value
     savePassiveState()
     await syncNativeBackground()
     return
@@ -1014,7 +1017,7 @@ function showReviewCardSide(
   reviewCardTransitionDirection.value = transitionDirection
   lastSpokenKey = ''
   if (value.mode === 'manual') {
-    revealed.value = side === 'back'
+    revealed.value = side !== firstReviewSide.value
     return
   }
 
@@ -1136,6 +1139,7 @@ function copySessionSettings(value: FlashcardReviewSession) {
   Object.assign(sessionSettingsDraft, {
     mode: value.mode,
     cardSides: value.cardSides,
+    invertFaces: value.invertFaces === true,
     indefinite: value.indefinite,
     timeLimitSeconds: value.timeLimitSeconds || 0,
     maxCards: value.maxCards,
@@ -1513,6 +1517,7 @@ async function leaveRunner() {
           :side="currentSpeechSide"
           :mode="session.mode"
           :card-sides="session.cardSides"
+          :invert-faces="session.invertFaces"
           :back-display="currentBackDisplay"
           :disabled="busy"
           :revealed="revealed"
@@ -1554,7 +1559,7 @@ async function leaveRunner() {
             :disabled="busy || session.status === 'paused'"
             @click="revealed = true"
           >
-            Show answer
+            {{ session.invertFaces ? 'Show front' : 'Show answer' }}
           </v-btn>
           <template v-else>
             <v-btn

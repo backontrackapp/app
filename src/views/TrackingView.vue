@@ -30,6 +30,7 @@ const pendingStatusTracker = ref<TrackingTracker>()
 const statusDialog = ref(false)
 const updatingStatus = ref(false)
 const reorderingTrackers = ref(false)
+const archiveExpanded = ref(false)
 const sheetOpen = ref(false)
 const sheetTracker = ref<TrackingTracker>()
 const editingEntry = ref<TrackingEntry>()
@@ -61,8 +62,10 @@ const trackingDateMarkers = computed(() => [...new Set(store.entries.map((entry)
   .map((date) => ({ date, color: 'error', label: 'Has tracking entries' })))
 const sortedTrackers = computed(() => [...store.trackers]
   .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)))
-const outcomes = computed(() => sortedTrackers.value.filter((tracker) => tracker.role === 'outcome'))
-const factors = computed(() => sortedTrackers.value.filter((tracker) => tracker.role === 'factor'))
+const visibleTrackers = computed(() => sortedTrackers.value.filter(tracker => !tracker.archived))
+const archivedTrackers = computed(() => sortedTrackers.value.filter(tracker => tracker.archived))
+const outcomes = computed(() => visibleTrackers.value.filter((tracker) => tracker.role === 'outcome'))
+const factors = computed(() => visibleTrackers.value.filter((tracker) => tracker.role === 'factor'))
 const requestedTask = computed(() => {
   const id = typeof route.query.task === 'string' ? route.query.task : ''
   return taskStore.tasks.find(task => task.id === id && task.type === 'tracking')
@@ -71,7 +74,7 @@ const requestedTaskTrackerIds = computed(() => [...new Set(requestedTask.value?.
 const requestedTaskTracker = computed(() => {
   const id = typeof route.query.tracker === 'string' ? route.query.tracker : ''
   if (!requestedTaskTrackerIds.value.includes(id)) return undefined
-  return store.trackers.find(tracker => tracker.id === id)
+  return store.trackers.find(tracker => tracker.id === id && !tracker.archived)
 })
 const requestedTaskProgress = computed(() => {
   const currentTrackerIndex = requestedTaskTrackerIds.value.indexOf(sheetTracker.value?.id || '')
@@ -310,7 +313,7 @@ async function loadVisibleWeekEntries() {
         {{ weeklyChartError }}
       </v-alert>
       <TrackingWeeklyBarChart
-        :trackers="store.trackers"
+      :trackers="visibleTrackers"
         :entries="store.entries"
         :screen-time-values="screenTimeEnabled ? screenTimeValues : undefined"
         :week-start="visibleWeekStart"
@@ -399,6 +402,23 @@ async function loadVisibleWeekEntries() {
           />
         </div>
         <p v-else class="tracker-section-empty muted py-4 text-center">No feelings tracked yet.</p>
+      </section>
+
+      <section v-if="archivedTrackers.length" class="mt-4">
+        <v-btn block variant="text" class="archive-heading" :aria-expanded="archiveExpanded" aria-controls="archived-trackers" @click="archiveExpanded = !archiveExpanded">
+          <v-icon icon="mdi-archive-outline" size="small" />
+          <span>Archive</span>
+          <span class="archive-heading__count">{{ archivedTrackers.length }}</span>
+          <v-icon :icon="archiveExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'" size="small" />
+        </v-btn>
+        <v-expand-transition>
+          <div v-show="archiveExpanded" id="archived-trackers" class="tracker-grid mt-2">
+            <v-card v-for="tracker in archivedTrackers" :key="tracker.id" class="surface-card pa-4 archived-tracker" role="link" tabindex="0" :aria-label="`Edit archived tracker ${tracker.name}`" @click="router.push(`/tracking/${tracker.id}/edit`)" @keydown.enter="router.push(`/tracking/${tracker.id}/edit`)" @keydown.space.prevent="router.push(`/tracking/${tracker.id}/edit`)">
+              <v-icon icon="mdi-archive-outline" :color="tracker.color" />
+              <div class="min-width-0"><strong class="d-block text-truncate">{{ tracker.name }}</strong><span class="text-caption muted">Open to restore</span></div>
+            </v-card>
+          </div>
+        </v-expand-transition>
       </section>
 
       <section class="tracking-log-section">
@@ -539,6 +559,10 @@ async function loadVisibleWeekEntries() {
 .weekly-chart-card { display: grid; gap: 1rem; }
 .tracker-grid { display: grid; gap: .75rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .tracker-grid :deep(.long-press-drag-placeholder) { min-width: 0; }
+.archive-heading { min-height: 2.75rem; }
+.archive-heading :deep(.v-btn__content) { width: 100%; justify-content: flex-start; gap: .5rem; }
+.archive-heading__count { margin-left: auto; color: rgb(var(--v-theme-on-surface) / .54); font-size: .7rem; }
+.archived-tracker { display: flex; min-width: 0; align-items: center; gap: .75rem; cursor: pointer; }
 .tracker-section-empty { font-size: .8rem; }
 .tracking-log-section { margin-bottom: .5rem; }
 .tracking-log { overflow: hidden; }

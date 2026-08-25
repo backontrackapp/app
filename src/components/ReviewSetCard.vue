@@ -24,6 +24,7 @@ interface ReviewCardBuffer {
   card: FlashcardReviewQueueCard
   side: FlashcardReviewSide
   cardSides: FlashcardReviewCardSides
+  invertFaces: boolean
   backDisplay: FlashcardBackDisplay
   revealed: boolean
   speechLanguage: string
@@ -36,6 +37,7 @@ const props = withDefaults(defineProps<{
   side: FlashcardReviewSide
   mode?: FlashcardReviewMode
   cardSides?: FlashcardReviewCardSides
+  invertFaces?: boolean
   backDisplay?: FlashcardBackDisplay
   dense?: boolean
   disabled?: boolean
@@ -62,6 +64,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   mode: 'passive',
   cardSides: 'both',
+  invertFaces: false,
   backDisplay: 'back',
   dense: false,
   disabled: false,
@@ -120,6 +123,7 @@ function snapshotBuffer(): ReviewCardBuffer {
     card: { ...props.card, tags: [...props.card.tags] },
     side: props.side,
     cardSides: props.cardSides,
+    invertFaces: props.invertFaces,
     backDisplay: props.backDisplay,
     revealed: props.revealed,
     speechLanguage: props.speechLanguage,
@@ -269,7 +273,7 @@ const standaloneAriaLabel = computed(() => {
     props.mode === 'manual'
     && displayedBuffer.value.cardSides === 'both'
     && !displayedBuffer.value.revealed
-  ) return 'Show answer'
+  ) return displayedBuffer.value.side === 'back' ? 'Show front' : 'Show answer'
   return `${displayedBuffer.value.side} shown`
 })
 
@@ -517,7 +521,10 @@ defineExpose({ refitContent })
                 :aria-hidden="buffer.side !== 'back'"
               >
                 <span class="review-card__answer">
-                  <span v-if="buffer.cardSides === 'both'" class="review-card__front-reference">
+                  <span
+                    v-if="buffer.cardSides === 'both' && !buffer.invertFaces"
+                    class="review-card__front-reference"
+                  >
                     {{ buffer.card.front }}
                   </span>
                   <FlashcardResponseText
@@ -600,7 +607,10 @@ defineExpose({ refitContent })
                       :spoken-word="buffer.side === 'back' ? buffer.spokenWord : undefined"
                       :colorize-pinyin="bufferColorizesPinyin(buffer)"
                     />
-                    <span v-if="buffer.cardSides === 'both'" class="review-card__front-reference">
+                    <span
+                      v-if="buffer.cardSides === 'both' && !buffer.invertFaces"
+                      class="review-card__front-reference"
+                    >
                       {{ buffer.card.front }}
                     </span>
                   </span>

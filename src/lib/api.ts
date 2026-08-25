@@ -135,6 +135,7 @@ function flashcardReviewSettingsBody(
   return {
     mode: settings.mode,
     card_sides: settings.cardSides,
+    invert_faces: settings.cardSides === 'both' && settings.invertFaces === true,
     indefinite: settings.mode === 'passive' && settings.indefinite,
     time_limit_seconds: settings.timeLimitSeconds || 0,
     max_cards: settings.maxCards,
@@ -173,7 +174,7 @@ function localCreateDefaults(resource: string, body: Record<string, unknown>) {
     return {
       transliteration: '', note: '', image_url: '', image_file: '',
       front_audio_url: '', front_audio_file: '', back_audio_url: '', back_audio_file: '',
-      tags: [], created_at: now, updated_at: now, last_reviewed_at: '',
+      tags: [], archived: false, created_at: now, updated_at: now, last_reviewed_at: '',
       passive_views: 0, success_count: 0, error_count: 0,
       ...body,
     }
@@ -221,10 +222,10 @@ async function mirrorOwnedReviewSetProjection(
     owner_name: authRecord?.name || '',
     owner_avatar: authRecord?.avatar || '',
     tag_details: tags.filter(tag => tagSet.has(tag.id)).map(tag => ({ id: tag.id, name: tag.name })),
-    matching_card_count: cards.filter(card => record.selection_mode === 'cards'
+    matching_card_count: cards.filter(card => card.archived !== true && (record.selection_mode === 'cards'
       ? includedCardIds.includes(card.id)
       : !tagIds.length
-        || (Array.isArray(card.tags) && card.tags.some((tag: string) => tagSet.has(tag)))).length,
+        || (Array.isArray(card.tags) && card.tags.some((tag: string) => tagSet.has(tag))))).length,
   }
   const existing = await getLocalRecord(accountId, 'accessible_flashcard_review_sets', record.id)
   return existing
@@ -1233,9 +1234,9 @@ class ApiClient {
     if (accountId && await hasLocalBootstrap(accountId)) {
       const source = await getLocalRecord(accountId, 'accessible_flashcard_review_sets', reviewSetId)
       if (!source) throw new ApiError(404, 'Review set not found.')
-      const sourceCards = await listLocalRecords(accountId, 'review_set_cards', {
+      const sourceCards = (await listLocalRecords(accountId, 'review_set_cards', {
         filter: `review_set_id = "${reviewSetId}"`,
-      })
+      })).filter(card => card.archived !== true)
       if (!sourceCards.length) throw new ApiError(409, 'No flashcards match this Review set.')
       const existingTags = await listLocalRecords(accountId, 'flashcard_tags')
       const baseName = `${String(source.name || 'Review set').trim()} copy`.slice(0, 160)
@@ -1252,6 +1253,7 @@ class ApiClient {
         tags: [scopeTag.id],
         mode: source.mode,
         card_sides: source.card_sides,
+        invert_faces: Boolean(source.invert_faces),
         indefinite: Boolean(source.indefinite),
         max_cards: Number(source.max_cards || 20),
         front_seconds: Number(source.front_seconds || 5),
@@ -1360,6 +1362,7 @@ class ApiClient {
         passive_views: 0,
         success_count: 0,
         error_count: 0,
+        archived: false,
       })
     }
     return request<RecordModel>(

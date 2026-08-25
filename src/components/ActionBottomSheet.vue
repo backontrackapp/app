@@ -318,6 +318,13 @@ onBeforeUnmount(() => {
 .action-menu--content { width: min(26.875rem, calc(100vw - 2rem)); }
 .action-menu__header { border-bottom: .0625rem solid rgb(var(--v-theme-on-surface) / .08); }
 .action-menu__content + .action-menu__list { border-top: .0625rem solid rgb(var(--v-theme-on-surface) / .08); }
+.action-menu :deep(.v-list-item-subtitle),
+.action-bottom-sheet :deep(.v-list-item-subtitle) {
+  display: block;
+  overflow: visible;
+  text-overflow: clip;
+  -webkit-line-clamp: unset;
+}
 
 .action-bottom-sheet {
   z-index: var(--action-sheet-z-index) !important;

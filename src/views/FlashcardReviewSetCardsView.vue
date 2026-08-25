@@ -11,9 +11,13 @@ const store = useFlashcardStore()
 const loading = ref(true)
 const error = ref('')
 const filteredCardCount = ref(0)
+const archivedFilteredCardCount = ref(0)
+const archiveExpanded = ref(false)
 const reviewSetId = computed(() => String(route.params.id || ''))
 const reviewSet = computed(() => store.reviewSets.find(item => item.id === reviewSetId.value))
-const cards = computed(() => store.reviewSetCards[reviewSetId.value] || [])
+const allCards = computed(() => store.reviewSetCards[reviewSetId.value] || [])
+const cards = computed(() => allCards.value.filter(card => card.archived !== true))
+const archivedCards = computed(() => allCards.value.filter(card => card.archived === true))
 const canEdit = computed(() => (
   reviewSet.value?.accessRole === 'owner' || reviewSet.value?.accessRole === 'editor'
 ))
@@ -115,6 +119,53 @@ function bulkUpdateCards(action: Parameters<typeof store.bulkUpdateReviewSetCard
         @add-card="openNewCard"
         @open-card="openCard"
       />
+
+      <section v-if="canEdit && archivedCards.length" class="mt-4">
+        <v-btn
+          block
+          variant="text"
+          class="archive-heading"
+          :aria-expanded="archiveExpanded"
+          aria-controls="archived-review-set-cards"
+          @click="archiveExpanded = !archiveExpanded"
+        >
+          <v-icon icon="mdi-archive-outline" size="small" />
+          <span>Archive</span>
+          <span class="archive-heading__count">{{ archivedCards.length }}</span>
+          <v-icon :icon="archiveExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'" size="small" />
+        </v-btn>
+        <v-expand-transition>
+          <div v-show="archiveExpanded" id="archived-review-set-cards">
+            <div class="mt-2">
+              <FlashcardCardsManager
+                :cards="archivedCards"
+                :tags="tags"
+                :interactive="false"
+                :can-add="false"
+                empty-title="No archived cards"
+                empty-description="Archived cards will appear here."
+                @update:filtered-count="archivedFilteredCardCount = $event"
+                @open-card="openCard"
+              >
+                <template #action-column-heading><span class="d-sr-only">Restore</span></template>
+                <template #action-column="{ card, cards: visibleCards }">
+                  <v-btn
+                    icon="mdi-archive-arrow-up-outline"
+                    variant="text"
+                    size="small"
+                    color="secondary"
+                    :aria-label="`Open archived card: ${card.front}`"
+                    @click.stop="openCard(card, visibleCards)"
+                  />
+                </template>
+              </FlashcardCardsManager>
+              <p class="text-caption muted mt-2 text-right">
+                {{ archivedFilteredCardCount }} of {{ archivedCards.length }} archived
+              </p>
+            </div>
+          </div>
+        </v-expand-transition>
+      </section>
     </template>
   </main>
 </template>
@@ -122,4 +173,7 @@ function bulkUpdateCards(action: Parameters<typeof store.bulkUpdateReviewSetCard
 <style scoped>
 .cards-loading { display: flex; align-items: center; justify-content: center; gap: .75rem; }
 .cards-heading { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 1rem; }
+.archive-heading { min-height: 2.75rem; }
+.archive-heading :deep(.v-btn__content) { width: 100%; justify-content: flex-start; gap: .5rem; }
+.archive-heading__count { margin-left: auto; color: rgb(var(--v-theme-on-surface) / .54); font-size: .7rem; }
 </style>

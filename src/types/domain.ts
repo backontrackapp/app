@@ -260,6 +260,7 @@ export interface IntervalFlashcardReviewSnapshot {
   ejectBehavior: FlashcardReviewEjectBehavior
   maxCards: number
   cardSides: FlashcardReviewCardSides
+  invertFaces?: boolean
   frontSeconds: number
   backSeconds: number
   backSpeechRepeatCount: number
@@ -283,6 +284,7 @@ export interface IntervalTemplate {
   definition: IntervalDefinition
   cues: IntervalCueSettings
   sortOrder: number
+  archived?: boolean
 }
 
 export interface IntervalTemplateDraft extends Omit<IntervalTemplate, 'id'> {
@@ -436,6 +438,7 @@ export interface Flashcard {
   imageSource: SquareImageSource
   tags: string[]
   tagDetails?: FlashcardTag[]
+  archived?: boolean
   createdAt: string
   updatedAt: string
   lastReviewedAt?: string
@@ -469,6 +472,7 @@ export interface FlashcardCsvParseResult {
 export interface FlashcardReviewSettings {
   mode: FlashcardReviewMode
   cardSides: FlashcardReviewCardSides
+  invertFaces?: boolean
   indefinite: boolean
   timeLimitSeconds?: number
   maxCards: number
@@ -536,6 +540,7 @@ export interface FlashcardReviewSet extends FlashcardReviewSettings {
   shareId?: string
   matchingCardCount: number
   sortOrder: number
+  archived?: boolean
   createdAt: string
   updatedAt: string
 }
@@ -789,6 +794,7 @@ export interface TrackingTracker {
   favorableDirection: FavorableDirection
   dailyAggregation: DailyAggregation
   active: boolean
+  archived?: boolean
   sortOrder: number
   color: string
   icon: string
@@ -828,6 +834,7 @@ export interface JournalEntry {
   timezoneOffset: number
   task?: string
   trackers: string[]
+  archived?: boolean
   taskSnapshot: string
   trackerSnapshots: Record<string, string>
   createdAt: string

@@ -39,6 +39,7 @@ function mapTemplate(record: Record<string, any>): IntervalTemplate {
       vibrationEnabled: record.vibration_enabled !== false,
     },
     sortOrder: Number(record.sort_order || 0),
+    archived: record.archived === true,
   }
 }
 
@@ -52,6 +53,7 @@ function mapSession(record: Record<string, any>): IntervalSession {
       ? {
           ...flashcardSnapshot,
           cardSides: flashcardSnapshot.cardSides || 'both',
+          invertFaces: flashcardSnapshot.invertFaces === true,
           sortDirection: flashcardSnapshot.sortDirection || 'asc',
           ...(flashcardSnapshot.ejectBehavior !== undefined
             ? {
@@ -203,6 +205,7 @@ export const useIntervalStore = defineStore('intervals', () => {
       vibration_enabled: draft.cues.vibrationEnabled,
       sound: 'beep',
       sort_order: draft.sortOrder,
+      archived: draft.archived === true,
     }
     const existing = draft.id ? templates.value.findIndex(item => item.id === draft.id) : -1
     const previous = existing >= 0 ? templates.value[existing] : undefined
@@ -265,6 +268,22 @@ export const useIntervalStore = defineStore('intervals', () => {
     }
   }
 
+  async function setTemplateArchived(templateId: string, archived: boolean) {
+    const template = templates.value.find(item => item.id === templateId)
+    if (!template) throw new Error('Interval template not found.')
+    const previous = template.archived
+    template.archived = archived
+    error.value = ''
+    try {
+      const record = await api.collection('interval_templates').update(templateId, { archived })
+      Object.assign(template, mapTemplate(record))
+    } catch (cause) {
+      template.archived = previous
+      error.value = cause instanceof Error ? cause.message : `Could not ${archived ? 'archive' : 'restore'} the interval.`
+      throw cause
+    }
+  }
+
   async function deleteSession(sessionId: string) {
     error.value = ''
     const index = sessions.value.findIndex(session => session.id === sessionId)
@@ -286,8 +305,12 @@ export const useIntervalStore = defineStore('intervals', () => {
     const previousSortOrders = new Map(
       previousTemplates.map((template) => [template.id, template.sortOrder]),
     )
-    templates.value = ordered
-    templates.value.forEach((template, index) => {
+    const orderedIds = new Set(ordered.map(template => template.id))
+    let orderedIndex = 0
+    templates.value = templates.value.map(template => (
+      orderedIds.has(template.id) ? ordered[orderedIndex++] ?? template : template
+    ))
+    templates.value.filter(template => orderedIds.has(template.id)).forEach((template, index) => {
       template.sortOrder = index
     })
     const changedTemplates = templates.value.filter(
@@ -665,6 +688,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     deleteTemplate,
     deleteSession,
     reorderTemplates,
+    setTemplateArchived,
     startSession,
     updateSession,
     updateSessionFlashcardReview,

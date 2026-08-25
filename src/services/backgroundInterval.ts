@@ -41,6 +41,7 @@ interface BackgroundIntervalPlugin {
         backAudio: string
       }>
       cardSides: 'both' | 'front' | 'back'
+      invertFaces: boolean
       frontSeconds: number
       backSeconds: number
       backSpeechRepeatCount: number
@@ -115,6 +116,8 @@ export async function syncBackgroundInterval(session: IntervalSession) {
                 backAudio: resolveFlashcardAudioPlaybackUrl(card.backAudio || ''),
               })),
               cardSides: session.flashcardReview.cardSides,
+              invertFaces: session.flashcardReview.cardSides === 'both'
+                && session.flashcardReview.invertFaces === true,
               frontSeconds: session.flashcardReview.frontSeconds,
               backSeconds: session.flashcardReview.backSeconds,
               backSpeechRepeatCount: session.flashcardReview.backSpeechRepeatCount,

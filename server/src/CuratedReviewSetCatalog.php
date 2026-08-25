@@ -302,6 +302,7 @@ final class CuratedReviewSetCatalog
         return [
             'mode' => $mode,
             'cardSides' => in_array($row['card_sides'] ?? '', ['both', 'front', 'back'], true) ? $row['card_sides'] : 'both',
+            'invertFaces' => $boolean('invert_faces', false),
             'indefinite' => $mode === 'passive' && $boolean('indefinite', false),
             'timeLimitSeconds' => $mode === 'passive' ? $timeLimitSeconds : 0,
             'maxCards' => max(1, min(100, $integer('max_cards', 20))),

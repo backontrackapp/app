@@ -59,6 +59,22 @@ const duplicateTaskId = computed(() => typeof route.query.duplicate === 'string'
   : '')
 const typeLocked = computed(() => Boolean(route.params.id || duplicateTaskId.value))
 const isEditing = computed(() => Boolean(route.params.id))
+const completionStyleIntervals = computed(() => intervalStore.templates.filter(interval => (
+  !interval.archived
+  || draft.intervalTemplate === interval.id
+  || draft.steps.some(step => (
+    step.intervalTemplate === interval.id
+    || step.completions?.some(item => item.intervalTemplate === interval.id)
+  ))
+)))
+const completionStyleReviewSets = computed(() => flashcardStore.reviewSets.filter(reviewSet => (
+  !reviewSet.archived
+  || draft.flashcardReviewSet === reviewSet.id
+  || draft.steps.some(step => (
+    step.flashcardReviewSet === reviewSet.id
+    || step.completions?.some(item => item.flashcardReviewSet === reviewSet.id)
+  ))
+)))
 const completionStyleItems = computed<ProgramStepCompletionStyleItem[]>(() => [
   { type: 'subheader', title: 'Basic' },
   {
@@ -80,8 +96,8 @@ const completionStyleItems = computed<ProgramStepCompletionStyleItem[]>(() => [
     props: { subtitle: 'Reach a numeric target' },
   },
   { type: 'subheader', title: 'Intervals' },
-  ...(intervalStore.templates.length
-    ? intervalStore.templates.map(interval => ({
+  ...(completionStyleIntervals.value.length
+    ? completionStyleIntervals.value.map(interval => ({
         type: 'item' as const,
         title: interval.name,
         value: `interval:${interval.id}`,
@@ -102,8 +118,8 @@ const completionStyleItems = computed<ProgramStepCompletionStyleItem[]>(() => [
         props: { subtitle: 'Create an interval first', disabled: true },
       }]),
   { type: 'subheader', title: 'Review sets' },
-  ...(flashcardStore.reviewSets.length
-    ? flashcardStore.reviewSets.map(reviewSet => ({
+  ...(completionStyleReviewSets.value.length
+    ? completionStyleReviewSets.value.map(reviewSet => ({
         type: 'item' as const,
         title: reviewSet.name,
         value: `flashcards:${reviewSet.id}`,
@@ -194,7 +210,9 @@ const showImageLogSettings = computed(() =>
 )
 const showQuickLogSettings = computed(() => taskSupportsQuickLog(draft.type))
 const selectedInterval = computed(() => intervalStore.templates.find((item) => item.id === draft.intervalTemplate))
-const intervalItems = computed(() => intervalStore.templates.map((item) => ({
+const intervalItems = computed(() => intervalStore.templates
+  .filter(item => !item.archived || item.id === draft.intervalTemplate)
+  .map((item) => ({
   title: item.name,
   value: item.id,
   props: {
@@ -214,7 +232,9 @@ const sessionCountItems = computed(() => [
     value: 'linked',
   },
 ])
-const reviewSetItems = computed(() => flashcardStore.reviewSets.map(item => ({
+const reviewSetItems = computed(() => flashcardStore.reviewSets
+  .filter(item => !item.archived || item.id === draft.flashcardReviewSet)
+  .map(item => ({
   title: item.name,
   value: item.id,
   props: {
@@ -222,7 +242,7 @@ const reviewSetItems = computed(() => flashcardStore.reviewSets.map(item => ({
   },
 })))
 const trackingTrackerItems = computed(() => trackingStore.trackers
-  .filter(tracker => tracker.active || draft.trackingTrackers?.includes(tracker.id))
+  .filter(tracker => (!tracker.archived && tracker.active) || draft.trackingTrackers?.includes(tracker.id))
   .sort((a, b) => Number(b.active) - Number(a.active) || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
   .map(tracker => ({
     title: tracker.name,
@@ -230,7 +250,7 @@ const trackingTrackerItems = computed(() => trackingStore.trackers
     icon: tracker.icon,
     color: tracker.color,
     props: {
-      subtitle: `${tracker.role === 'factor' ? 'Factor' : 'Outcome'} · ${tracker.category}${tracker.active ? '' : ' · Archived'}`,
+      subtitle: `${tracker.role === 'factor' ? 'Factor' : 'Outcome'} · ${tracker.category}${tracker.archived ? ' · Archived' : tracker.active ? '' : ' · Paused'}`,
     },
   })))
 
@@ -787,7 +807,7 @@ async function deleteTaskPermanently() {
       </v-card>
 
       <v-card v-if="draft.type === 'interval'" class="surface-card field-stack pa-5 mb-4">
-        <template v-if="intervalStore.templates.length">
+        <template v-if="intervalItems.length">
           <v-select
             v-model="draft.intervalTemplate"
             label="Attached interval"
@@ -816,7 +836,7 @@ async function deleteTaskPermanently() {
       </v-card>
 
       <v-card v-if="draft.type === 'flashcards'" class="surface-card field-stack pa-5 mb-4">
-        <template v-if="flashcardStore.reviewSets.length">
+        <template v-if="reviewSetItems.length">
           <v-select
             v-model="draft.flashcardReviewSet"
             label="Review set"

@@ -161,6 +161,7 @@ const spokenFlashcardWord = ref<FlashcardSpeechWord>()
 const flashcardSettingsDraft = reactive<FlashcardReviewSettings>({
   mode: 'passive',
   cardSides: 'both',
+  invertFaces: false,
   indefinite: true,
   maxCards: 1,
   ejectBehavior: 'remove',
@@ -1826,6 +1827,7 @@ async function openFlashcardSettings() {
   Object.assign(flashcardSettingsDraft, {
     mode: 'passive',
     cardSides: review.cardSides,
+    invertFaces: review.invertFaces === true,
     indefinite: true,
     maxCards: review.maxCards || review.cards.length,
     ejectBehavior: review.ejectBehavior || 'remove',
@@ -1876,6 +1878,7 @@ async function saveFlashcardSettings(target: FlashcardSettingsApplyTarget = 'ses
       const settings = {
         ...context.reviewSet,
         cardSides: flashcardSettingsDraft.cardSides,
+        invertFaces: flashcardSettingsDraft.invertFaces === true,
         maxCards: flashcardSettingsDraft.maxCards,
         ejectBehavior: flashcardSettingsDraft.ejectBehavior,
         frontSeconds: flashcardSettingsDraft.frontSeconds,
@@ -2263,6 +2266,7 @@ async function runAgain(repetitions?: number) {
             :card="displayedIntervalFlashcard || flashcardPhase.card"
             :side="flashcardPhase.side"
             :card-sides="session.flashcardReview.cardSides"
+            :invert-faces="session.flashcardReview.invertFaces"
             :back-display="flashcardBackDisplay"
             :disabled="flashcardContextDisabled"
             :transition-direction="intervalFlashcardTransitionDirection"

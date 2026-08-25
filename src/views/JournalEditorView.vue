@@ -4,11 +4,13 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { format, isToday, isValid, parseISO } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
 import AppForm from '@/components/AppForm.vue'
+import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import DateTimePickerField from '@/components/DateTimePickerField.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
 import JournalImageField from '@/components/JournalImageField.vue'
+import { contentRetirementActions, type ContentRetirementActionId } from '@/services/contentRetirementActions'
 import { squareImageSourceSignature } from '@/services/avatarImage'
 import { mobileKeyboardVisible } from '@/services/mobileKeyboardViewport'
 import { useJournalStore } from '@/stores/journal'
@@ -40,34 +42,46 @@ const task = ref<string>()
 const trackers = ref<string[]>([])
 const loading = ref(isEditing.value)
 const saving = ref(false)
+const archiving = ref(false)
 const deleting = ref(false)
+const archived = ref(false)
+const archiveDialog = ref(false)
+const archiveActions = ref(false)
 const deleteDialog = ref(false)
 const error = ref('')
 const original = ref('')
+const retirementActions = contentRetirementActions(
+  'reflection',
+  'Hide it from your journal timeline while preserving its content and connections.',
+  'Permanently remove the reflection. Its linked task and trackers are not affected.',
+)
 let reflectionAnimationFrame: number | undefined
 let reflectionTransitionTimer: number | undefined
 
 const taskItems = computed(() => [...taskStore.tasks]
+  .filter(item => !item.archived || (isEditing.value && item.id === task.value))
   .sort((left, right) => Number(right.active) - Number(left.active) || left.name.localeCompare(right.name))
   .map(item => ({
     title: item.name,
     value: item.id,
     props: {
       subtitle: [
+        item.archived ? 'Archived task' : '',
         item.type === 'journal' ? 'Writing completes this task' : '',
-        item.active ? '' : 'Paused task',
+        item.active || item.archived ? '' : 'Paused task',
       ].filter(Boolean).join(' · ') || undefined,
     },
   })))
 const selectedTask = computed(() => taskStore.tasks.find(item => item.id === task.value))
 const completesJournalTask = computed(() => selectedTask.value?.type === 'journal')
 const trackerItems = computed(() => [...trackingStore.trackers]
+  .filter(item => !item.archived || (isEditing.value && trackers.value.includes(item.id)))
   .sort((left, right) => Number(right.active) - Number(left.active) || left.name.localeCompare(right.name))
   .map(item => ({
     title: item.name,
     value: item.id,
     props: {
-      subtitle: item.active ? undefined : 'Archived tracker',
+      subtitle: item.archived ? 'Archived tracker' : item.active ? undefined : 'Paused tracker',
       prependIcon: item.icon,
     },
   })))
@@ -127,6 +141,7 @@ function applyEntry(entry: JournalEntry) {
   occurredLocal.value = format(new Date(entry.occurredAt), "yyyy-MM-dd'T'HH:mm")
   task.value = entry.task
   trackers.value = [...entry.trackers]
+  archived.value = entry.archived === true
   original.value = signature.value
 }
 
@@ -155,6 +170,15 @@ function loadContextOptions() {
   ])
 }
 
+function removeArchivedNewConnections() {
+  if (isEditing.value) return
+  if (taskStore.tasks.find(item => item.id === task.value)?.archived) task.value = undefined
+  const archivedTrackerIds = new Set(
+    trackingStore.trackers.filter(item => item.archived).map(item => item.id),
+  )
+  trackers.value = trackers.value.filter(id => !archivedTrackerIds.has(id))
+}
+
 if (isEditing.value) {
   const cachedEntry = journalStore.entries.find(entry => entry.id === entryId.value)
   if (cachedEntry) {
@@ -166,7 +190,7 @@ if (isEditing.value) {
 }
 
 onMounted(() => {
-  void loadContextOptions()
+  void loadContextOptions().then(removeArchivedNewConnections)
   if (isEditing.value && loading.value) void loadEntry()
 })
 
@@ -298,6 +322,34 @@ async function removeEntry() {
     deleting.value = false
   }
 }
+
+async function setArchived() {
+  if (!entryId.value) return
+  archiving.value = true
+  error.value = ''
+  try {
+    await journalStore.setEntryArchived(entryId.value, !archived.value)
+    archiveDialog.value = false
+    archiveActions.value = false
+    await router.replace(destinationRoute())
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : `Could not ${archived.value ? 'restore' : 'archive'} this reflection.`
+    archiveDialog.value = false
+  } finally {
+    archiving.value = false
+  }
+}
+
+function openRetirementActions() {
+  if (archived.value) archiveDialog.value = true
+  else archiveActions.value = true
+}
+
+function runRetirementAction(action: ContentRetirementActionId) {
+  archiveActions.value = false
+  if (action === 'archive') void setArchived()
+  else deleteDialog.value = true
+}
 </script>
 
 <template>
@@ -402,20 +454,44 @@ async function removeEntry() {
       :loading="saving"
       :primary-disabled="!canSave"
       :has-changes="changed"
-      :show-delete="isEditing"
-      delete-label="Delete reflection"
-      :delete-disabled="deleting"
+      :show-archive="isEditing"
+      :archived="archived"
+      :archive-label="archived ? 'Restore reflection' : 'Archive reflection'"
+      :archive-disabled="archiving || deleting"
       @submit="save"
       @cancel="router.back()"
-      @delete="deleteDialog = true"
+      @archive="openRetirementActions"
+    />
+
+    <ActionBottomSheet
+      v-model="archiveActions"
+      title="Archive or delete?"
+      :description="`Choose what to do with ${title || 'this reflection'}.`"
+      aria-label="Archive or permanently delete reflection"
+    >
+      <template v-for="action in retirementActions" :key="action.id">
+        <v-divider v-if="'divider' in action && action.divider" class="my-1" />
+        <v-list-item :prepend-icon="action.icon" :title="action.title" :subtitle="action.subtitle" :base-color="action.color" rounded="lg" :disabled="archiving || deleting" @click="runRetirementAction(action.id)" />
+      </template>
+    </ActionBottomSheet>
+
+    <ConfirmDialog
+      v-model="archiveDialog"
+      title="Restore this reflection?"
+      message="This reflection will return to its original place in your journal timeline."
+      confirm-text="Restore reflection"
+      confirm-color="secondary"
+      icon="mdi-archive-arrow-up-outline"
+      :loading="archiving"
+      @confirm="setArchived"
     />
 
     <ConfirmDialog
       v-model="deleteDialog"
-      title="Delete this reflection?"
-      message="This permanently removes the journal entry. Its linked task and trackers are not affected."
-      confirm-text="Delete reflection"
-      icon="mdi-delete-outline"
+      title="Delete this reflection permanently?"
+      message="This permanently removes the journal entry. Its linked task and trackers are not affected. This cannot be undone."
+      confirm-text="Delete permanently"
+      icon="mdi-delete-forever-outline"
       :loading="deleting"
       @confirm="removeEntry"
     />

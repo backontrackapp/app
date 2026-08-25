@@ -91,6 +91,7 @@ function reviewSetDraft(reviewSet: FlashcardReviewSet): FlashcardReviewSetDraft 
     excludedCards: [...(reviewSet.excludedCards || [])],
     mode: reviewSet.mode,
     cardSides: reviewSet.cardSides,
+    invertFaces: reviewSet.invertFaces === true,
     indefinite: reviewSet.indefinite,
     timeLimitSeconds: reviewSet.timeLimitSeconds || 0,
     maxCards: reviewSet.maxCards,
@@ -123,6 +124,7 @@ function reviewSetChanges(
   add('Name', current.name, draft.name)
   add('Mode', current.mode, draft.mode)
   add('Faces', current.cardSides, draft.cardSides)
+  add('Invert faces', current.invertFaces === true, draft.invertFaces === true)
   add('Run indefinitely', current.indefinite, draft.indefinite)
   add('Time limit', `${(current.timeLimitSeconds || 0) / 60} min`, `${(draft.timeLimitSeconds || 0) / 60} min`)
   add('Max cards', current.maxCards, draft.maxCards)
@@ -185,6 +187,7 @@ export function assistantReadToolResult(
             settings: {
               mode: set.mode,
               card_sides: set.cardSides,
+              invert_faces: set.invertFaces === true,
               run_indefinitely: set.indefinite,
               time_limit_minutes: (set.timeLimitSeconds || 0) / 60,
               max_cards: set.maxCards,
@@ -273,6 +276,8 @@ export function assistantWritePlan(
     draft.mode = nullableChoice(call.arguments.mode, ['manual', 'passive'], 'review mode') ?? draft.mode
     draft.cardSides = nullableChoice(call.arguments.card_sides, ['both', 'front', 'back'], 'card faces')
       ?? draft.cardSides
+    draft.invertFaces = nullableBoolean(call.arguments.invert_faces, 'Invert faces')
+      ?? draft.invertFaces
     draft.indefinite = nullableBoolean(call.arguments.run_indefinitely, 'Run indefinitely')
       ?? draft.indefinite
     const timeLimitMinutes = nullableInteger(

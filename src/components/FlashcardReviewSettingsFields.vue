@@ -102,6 +102,11 @@ const customMaxCardsVisible = computed(() => (
 ))
 const selectedCardSides = computed(() => FLASHCARD_REVIEW_CARD_SIDE_OPTIONS
   .find(option => option.value === settings.value.cardSides)!)
+const selectedCardSidesHint = computed(() => (
+  settings.value.cardSides === 'both' && settings.value.invertFaces
+    ? 'Show the back first, then the front.'
+    : selectedCardSides.value.hint
+))
 const timeLimitEnabled = computed({
   get: () => (settings.value.timeLimitSeconds || 0) > 0,
   set: (enabled: boolean) => {
@@ -172,7 +177,7 @@ function updateSpeechEnabled(enabled: boolean | null) {
         <p class="mode-hint mt-3" aria-live="polite">
           <v-icon icon="mdi-information-outline" size="18" />
           <span v-if="settings.mode === 'manual' && settings.cardSides === 'both'">
-            Reveal the back when you're ready, then mark the card as a success or error.
+            Reveal the {{ settings.invertFaces ? 'front' : 'back' }} when you're ready, then mark the card as a success or error.
           </span>
           <span v-else-if="settings.mode === 'manual'">
             Grade each card immediately after viewing its selected face.
@@ -254,8 +259,26 @@ function updateSpeechEnabled(enabled: boolean | null) {
       </v-btn-toggle>
       <p class="mode-hint mt-3" aria-live="polite">
         <v-icon icon="mdi-information-outline" size="18" />
-        {{ selectedCardSides.hint }}
+        {{ selectedCardSidesHint }}
       </p>
+
+      <v-expand-transition>
+        <div v-if="settings.cardSides === 'both'">
+          <div class="setting-row mt-5">
+            <div>
+              <strong>Invert front and back</strong>
+              <p>Start each card on the back, then show the front</p>
+            </div>
+            <v-switch
+              v-model="settings.invertFaces"
+              color="secondary"
+              hide-details="auto"
+              inset
+              aria-label="Invert front and back faces"
+            />
+          </div>
+        </div>
+      </v-expand-transition>
 
       <v-expand-transition>
         <div v-if="settings.cardSides !== 'front' && !interval">

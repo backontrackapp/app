@@ -27,6 +27,7 @@ export function mapTrackingTracker(record: Record<string, any>): TrackingTracker
     favorableDirection: record.favorable_direction,
     dailyAggregation: record.daily_aggregation,
     active: record.active !== false,
+    archived: record.archived === true,
     sortOrder: Number(record.sort_order || 0),
     color: record.color || '#C7F464',
     icon: trackingCategoryIcon(record.category),
@@ -55,7 +56,7 @@ export const useTrackingStore = defineStore('tracking', () => {
   const insightOutcomeId = ref('')
 
   const activeTrackers = computed(() => trackers.value
-    .filter((tracker) => tracker.active)
+    .filter((tracker) => tracker.active && !tracker.archived)
     .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)))
 
   async function load() {
@@ -119,6 +120,7 @@ export const useTrackingStore = defineStore('tracking', () => {
       favorable_direction: draft.favorableDirection,
       daily_aggregation: draft.dailyAggregation,
       active: draft.active,
+      archived: draft.archived === true,
       sort_order: draft.sortOrder,
       color: draft.color,
       icon: trackingCategoryIcon(draft.category),
@@ -281,6 +283,21 @@ export const useTrackingStore = defineStore('tracking', () => {
     }
   }
 
+  async function setTrackerArchived(id: string, archived: boolean) {
+    const tracker = trackers.value.find(item => item.id === id)
+    if (!tracker) throw new Error('Tracker not found.')
+    const previous = tracker.archived
+    tracker.archived = archived
+    try {
+      const record = await api.collection('tracking_trackers').update(id, { archived })
+      Object.assign(tracker, mapTrackingTracker(record))
+      void useTaskStore().syncTaskReminders()
+    } catch (cause) {
+      tracker.archived = previous
+      throw cause
+    }
+  }
+
   async function deleteTracker(id: string) {
     const previousTrackers = trackers.value
     const previousEntries = entries.value
@@ -317,6 +334,7 @@ export const useTrackingStore = defineStore('tracking', () => {
     deleteEntry,
     setTrackerActive,
     reorderTrackers,
+    setTrackerArchived,
     deleteTracker,
   }
 })

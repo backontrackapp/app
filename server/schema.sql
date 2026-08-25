@@ -52,6 +52,7 @@ CREATE TABLE flashcards (
     back_audio_url VARCHAR(2048) NOT NULL DEFAULT '',
     back_audio_file VARCHAR(64) NOT NULL DEFAULT '',
     tags JSON NOT NULL DEFAULT '[]',
+    archived BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT '',
     last_reviewed_at TEXT NOT NULL DEFAULT '',
@@ -62,6 +63,8 @@ CREATE TABLE flashcards (
 
 CREATE INDEX idx_flashcards_owner_created
     ON flashcards (owner, created_at DESC);
+CREATE INDEX idx_flashcards_owner_archived_created
+    ON flashcards (owner, archived, created_at DESC);
 CREATE INDEX idx_flashcards_owner_reviewed
     ON flashcards (owner, last_reviewed_at);
 
@@ -75,6 +78,7 @@ CREATE TABLE flashcard_review_sets (
     included_cards JSON NOT NULL DEFAULT '[]',
     mode TEXT NOT NULL DEFAULT 'manual',
     card_sides TEXT NOT NULL DEFAULT 'both',
+    invert_faces BOOLEAN NOT NULL DEFAULT FALSE,
     indefinite BOOLEAN NOT NULL DEFAULT FALSE,
     time_limit_seconds INTEGER NOT NULL DEFAULT 0,
     max_cards INTEGER NOT NULL DEFAULT 20,
@@ -89,12 +93,15 @@ CREATE TABLE flashcard_review_sets (
     sort_mode TEXT NOT NULL DEFAULT 'difficult',
     sort_direction TEXT NOT NULL DEFAULT 'asc',
     sort_order INTEGER NOT NULL DEFAULT 0,
+    archived BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX idx_flashcard_review_sets_owner_order
     ON flashcard_review_sets (owner, sort_order, name);
+CREATE INDEX idx_flashcard_review_sets_owner_archived_order
+    ON flashcard_review_sets (owner, archived, sort_order, name);
 
 CREATE TABLE flashcard_review_set_shares (
     id TEXT PRIMARY KEY NOT NULL,
@@ -119,6 +126,7 @@ CREATE TABLE flashcard_review_set_preferences (
     account TEXT NOT NULL,
     mode TEXT NOT NULL DEFAULT 'manual',
     card_sides TEXT NOT NULL DEFAULT 'both',
+    invert_faces BOOLEAN NOT NULL DEFAULT FALSE,
     indefinite BOOLEAN NOT NULL DEFAULT FALSE,
     time_limit_seconds INTEGER NOT NULL DEFAULT 0,
     max_cards INTEGER NOT NULL DEFAULT 20,
@@ -311,11 +319,14 @@ CREATE TABLE interval_templates (
     vibration_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     sound TEXT NOT NULL DEFAULT '',
     sort_order NUMERIC NOT NULL DEFAULT 0,
+    archived BOOLEAN NOT NULL DEFAULT FALSE,
     flashcard_review_set TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX idx_interval_templates_owner_order
     ON interval_templates (owner, sort_order);
+CREATE INDEX idx_interval_templates_owner_archived_order
+    ON interval_templates (owner, archived, sort_order);
 CREATE INDEX idx_interval_templates_owner_flashcard_review_set
     ON interval_templates (owner, flashcard_review_set);
 
@@ -365,6 +376,7 @@ CREATE TABLE flashcard_review_sessions (
     snapshot_name VARCHAR(160) NOT NULL DEFAULT '',
     mode_snapshot TEXT NOT NULL DEFAULT 'manual',
     card_sides_snapshot TEXT NOT NULL DEFAULT 'both',
+    invert_faces_snapshot BOOLEAN NOT NULL DEFAULT FALSE,
     indefinite_snapshot BOOLEAN NOT NULL DEFAULT FALSE,
     time_limit_seconds_snapshot INTEGER NOT NULL DEFAULT 0,
     max_cards_snapshot INTEGER NOT NULL DEFAULT 20,
@@ -441,6 +453,7 @@ CREATE TABLE tracking_trackers (
     favorable_direction TEXT NOT NULL DEFAULT 'neutral',
     daily_aggregation TEXT NOT NULL DEFAULT 'last',
     active BOOLEAN NOT NULL DEFAULT TRUE,
+    archived BOOLEAN NOT NULL DEFAULT FALSE,
     sort_order NUMERIC NOT NULL DEFAULT 0,
     color TEXT NOT NULL DEFAULT '#C7F464',
     icon TEXT NOT NULL DEFAULT 'mdi-checkbox-marked-circle-outline'
@@ -448,6 +461,8 @@ CREATE TABLE tracking_trackers (
 
 CREATE INDEX idx_tracking_trackers_owner_active_order
     ON tracking_trackers (owner, active, sort_order);
+CREATE INDEX idx_tracking_trackers_owner_archived_order
+    ON tracking_trackers (owner, archived, sort_order);
 
 CREATE TABLE tracking_entries (
     id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),
@@ -478,12 +493,15 @@ CREATE TABLE journal_entries (
     tracker TEXT NOT NULL DEFAULT '',
     task_snapshot VARCHAR(160) NOT NULL DEFAULT '',
     tracker_snapshot VARCHAR(160) NOT NULL DEFAULT '',
+    archived BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX idx_journal_entries_owner_date
     ON journal_entries (owner, local_date, occurred_at DESC);
+CREATE INDEX idx_journal_entries_owner_archived_date
+    ON journal_entries (owner, archived, local_date, occurred_at DESC);
 CREATE INDEX idx_journal_entries_task_date
     ON journal_entries (task, local_date, occurred_at DESC);
 CREATE INDEX idx_journal_entries_tracker_date

@@ -236,6 +236,7 @@ final class AssistantService
                 'name' => ['type' => ['string', 'null']],
                 'mode' => ['type' => ['string', 'null'], 'enum' => ['manual', 'passive', null]],
                 'card_sides' => ['type' => ['string', 'null'], 'enum' => ['both', 'front', 'back', null]],
+                'invert_faces' => ['type' => ['boolean', 'null']],
                 'run_indefinitely' => ['type' => ['boolean', 'null']],
                 'time_limit_minutes' => ['type' => ['integer', 'null'], 'minimum' => 0, 'maximum' => 1439],
                 'max_cards' => ['type' => ['integer', 'null'], 'minimum' => 1, 'maximum' => 100],
@@ -254,7 +255,7 @@ final class AssistantService
                 ],
                 'sort_direction' => ['type' => ['string', 'null'], 'enum' => ['asc', 'desc', null]],
             ], [
-                'review_set_id', 'name', 'mode', 'card_sides', 'run_indefinitely',
+                'review_set_id', 'name', 'mode', 'card_sides', 'invert_faces', 'run_indefinitely',
                 'time_limit_minutes', 'max_cards', 'load_next_on_eject', 'exclude_on_eject',
                 'front_seconds', 'back_seconds', 'back_speech_repeat_count',
                 'back_display', 'speech_enabled', 'front_language', 'back_language',

@@ -311,6 +311,7 @@ export function cloneIntervalTemplateDraft(template: IntervalTemplate): Interval
     },
     cues: { ...template.cues },
     sortOrder: template.sortOrder,
+    archived: template.archived === true,
   }
 }
 
@@ -324,6 +325,7 @@ export function duplicateIntervalTemplateDraft(
     id: undefined,
     name: `${draft.name} copy`,
     sortOrder,
+    archived: false,
   }
 }
 

@@ -199,6 +199,7 @@ export function flashcardReviewSettingsSignature(settings: FlashcardReviewSettin
   return JSON.stringify({
     mode: settings.mode,
     cardSides: settings.cardSides,
+    invertFaces: settings.cardSides === 'both' && settings.invertFaces === true,
     indefinite: settings.indefinite,
     timeLimitSeconds: settings.mode === 'passive' ? settings.timeLimitSeconds || 0 : 0,
     maxCards: settings.maxCards,
@@ -426,17 +427,18 @@ export function sessionAccuracy(
   return attempts ? Math.round(session.successCount / attempts * 100) : undefined
 }
 
-export function cardMatchesTags(card: Pick<Flashcard, 'tags'>, selectedTags: string[]) {
-  return !selectedTags.length || card.tags.some(tag => selectedTags.includes(tag))
+export function cardMatchesTags(card: Pick<Flashcard, 'tags' | 'archived'>, selectedTags: string[]) {
+  return card.archived !== true
+    && (!selectedTags.length || card.tags.some(tag => selectedTags.includes(tag)))
 }
 
 export function cardMatchesReviewSet(
-  card: Pick<Flashcard, 'id' | 'tags'>,
+  card: Pick<Flashcard, 'id' | 'tags' | 'archived'>,
   reviewSet: Pick<FlashcardReviewSet, 'selectionMode' | 'includedCards' | 'tags'>,
 ) {
-  return reviewSet.selectionMode === 'cards'
+  return card.archived !== true && (reviewSet.selectionMode === 'cards'
     ? (reviewSet.includedCards || []).includes(card.id)
-    : cardMatchesTags(card, reviewSet.tags)
+    : cardMatchesTags(card, reviewSet.tags))
 }
 
 export function cardMatchesSearch(
@@ -581,6 +583,7 @@ export function createFlashcardReviewPreviewSession(
     name: reviewSet.name,
     mode: reviewSet.mode,
     cardSides: reviewSet.cardSides,
+    invertFaces: reviewSet.cardSides === 'both' && reviewSet.invertFaces === true,
     indefinite: reviewSet.mode === 'passive' && reviewSet.indefinite,
     timeLimitSeconds: reviewSet.mode === 'passive' ? reviewSet.timeLimitSeconds || 0 : 0,
     maxCards: reviewSet.maxCards,
@@ -631,6 +634,7 @@ export function createIntervalFlashcardReviewSnapshot(
     ejectBehavior: reviewSet.ejectBehavior || 'remove',
     maxCards: reviewSet.maxCards,
     cardSides: reviewSet.cardSides,
+    invertFaces: reviewSet.cardSides === 'both' && reviewSet.invertFaces === true,
     frontSeconds: effectiveSeconds.front,
     backSeconds: effectiveSeconds.back,
     backSpeechRepeatCount: reviewSet.mode === 'passive' && reviewSet.speechEnabled
@@ -675,8 +679,16 @@ export function flashcardReviewShowsSide(
   return cardSides === 'both' || cardSides === side
 }
 
-export function firstFlashcardReviewSide(cardSides: FlashcardReviewCardSides): FlashcardReviewSide {
-  return cardSides === 'back' ? 'back' : 'front'
+export function firstFlashcardReviewSide(
+  cardSides: FlashcardReviewCardSides,
+  invertFaces = false,
+): FlashcardReviewSide {
+  if (cardSides === 'back' || (cardSides === 'both' && invertFaces)) return 'back'
+  return 'front'
+}
+
+export function otherFlashcardReviewSide(side: FlashcardReviewSide): FlashcardReviewSide {
+  return side === 'front' ? 'back' : 'front'
 }
 
 function intervalFlashcardCardDurationMs(review: IntervalFlashcardReviewSnapshot) {
@@ -745,9 +757,11 @@ export function intervalFlashcardSideOffsetMs(
   const cardDurationMs = intervalFlashcardCardDurationMs(review)
   const playbackElapsedMs = intervalFlashcardPlaybackElapsedMs(review, elapsedMs)
   const currentAbsoluteCardIndex = Math.floor(playbackElapsedMs / cardDurationMs)
-  const sideOffsetMs = side === 'back' && flashcardReviewShowsSide(review.cardSides, 'front')
+  const firstSide = firstFlashcardReviewSide(review.cardSides, review.invertFaces)
+  const firstSideDurationMs = firstSide === 'front'
     ? Math.max(1000, review.frontSeconds * 1000)
-    : 0
+    : flashcardBackDurationMs(review.backSeconds, review.backSpeechRepeatCount)
+  const sideOffsetMs = side === firstSide ? 0 : firstSideDurationMs
 
   return currentAbsoluteCardIndex * cardDurationMs + sideOffsetMs - elapsedMs
 }
@@ -757,8 +771,6 @@ export function intervalFlashcardPhase(
   elapsedMs: number,
 ): IntervalFlashcardPhase | undefined {
   if (!review.cards.length) return undefined
-  const showsFront = flashcardReviewShowsSide(review.cardSides, 'front')
-  const showsBack = flashcardReviewShowsSide(review.cardSides, 'back')
   const frontMs = Math.max(1000, review.frontSeconds * 1000)
   const baseBackMs = Math.max(1000, review.backSeconds * 1000)
   const backMs = flashcardBackDurationMs(review.backSeconds, review.backSpeechRepeatCount)
@@ -767,10 +779,12 @@ export function intervalFlashcardPhase(
   const absoluteCardIndex = Math.floor(safeElapsedMs / cardDurationMs)
   const cardIndex = absoluteCardIndex % review.cards.length
   const elapsedInCard = safeElapsedMs % cardDurationMs
-  const side: FlashcardReviewSide = showsFront && elapsedInCard < frontMs ? 'front' : 'back'
-  const sideElapsedMs = side === 'front'
-    ? elapsedInCard
-    : elapsedInCard - (showsFront ? frontMs : 0)
+  const firstSide = firstFlashcardReviewSide(review.cardSides, review.invertFaces)
+  const firstSideDurationMs = firstSide === 'front' ? frontMs : backMs
+  const side = elapsedInCard < firstSideDurationMs
+    ? firstSide
+    : otherFlashcardReviewSide(firstSide)
+  const sideElapsedMs = side === firstSide ? elapsedInCard : elapsedInCard - firstSideDurationMs
   const sideDurationMs = side === 'front' ? frontMs : backMs
   const backSpeechRepeatIndex = side === 'back'
     ? Math.min(

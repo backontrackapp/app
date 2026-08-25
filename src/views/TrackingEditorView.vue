@@ -2,9 +2,11 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppForm from '@/components/AppForm.vue'
+import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
+import { contentRetirementActions, type ContentRetirementActionId } from '@/services/contentRetirementActions'
 import { defaultAggregation, TRACKING_PRESETS, trackerDraftFromPreset } from '@/services/tracking'
 import { useTrackingStore } from '@/stores/tracking'
 import type { TrackerKind, TrackingTrackerDraft } from '@/types/domain'
@@ -14,11 +16,19 @@ const router = useRouter()
 const store = useTrackingStore()
 const form = ref()
 const saving = ref(false)
+const archiving = ref(false)
 const deleting = ref(false)
+const archiveDialog = ref(false)
+const archiveActions = ref(false)
 const deleteDialog = ref(false)
 const error = ref('')
 const ready = ref(false)
 const original = ref('')
+const retirementActions = contentRetirementActions(
+  'tracker',
+  'Hide it from tracking while preserving its settings and every log.',
+  'Permanently remove the tracker and every one of its logs.',
+)
 
 const kindOptions: Array<{ value: TrackerKind; title: string; subtitle: string; icon: string }> = [
   { value: 'yes_no', title: 'Yes / no', subtitle: 'One explicit answer per log', icon: 'mdi-check-circle-outline' },
@@ -51,6 +61,7 @@ const draft = reactive<TrackingTrackerDraft>({
   favorableDirection: 'neutral',
   dailyAggregation: 'last',
   active: true,
+  archived: false,
   sortOrder: 0,
   color: '#C7F464',
   icon: 'mdi-checkbox-marked-circle-outline',
@@ -151,6 +162,34 @@ async function remove() {
     deleteDialog.value = false
   }
 }
+
+async function setArchived() {
+  if (!draft.id) return
+  archiving.value = true
+  error.value = ''
+  try {
+    await store.setTrackerArchived(draft.id, !draft.archived)
+    archiveDialog.value = false
+    archiveActions.value = false
+    await router.replace('/tracking')
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : `Could not ${draft.archived ? 'restore' : 'archive'} this tracker.`
+    archiveDialog.value = false
+  } finally {
+    archiving.value = false
+  }
+}
+
+function openRetirementActions() {
+  if (draft.archived) archiveDialog.value = true
+  else archiveActions.value = true
+}
+
+function runRetirementAction(action: ContentRetirementActionId) {
+  archiveActions.value = false
+  if (action === 'archive') void setArchived()
+  else deleteDialog.value = true
+}
 </script>
 
 <template>
@@ -236,15 +275,29 @@ async function remove() {
       :primary-text="isEditing ? 'Save' : 'Create'"
       :loading="saving"
       :has-changes="changed"
-      :show-delete="isEditing"
-      delete-label="Delete tracker"
-      :delete-disabled="deleting"
+      :show-archive="isEditing"
+      :archived="draft.archived"
+      :archive-label="draft.archived ? 'Restore tracker' : 'Archive tracker'"
+      :archive-disabled="archiving || deleting"
       @submit="save"
       @cancel="router.back()"
-      @delete="deleteDialog = true"
+      @archive="openRetirementActions"
     />
 
-    <ConfirmDialog v-model="deleteDialog" title="Delete tracker permanently?" message="This also deletes every log for this tracker. This cannot be undone." confirm-text="Delete" icon="mdi-delete-outline" :loading="deleting" @confirm="remove" />
+    <ActionBottomSheet
+      v-model="archiveActions"
+      title="Archive or delete?"
+      :description="`Choose what to do with ${draft.name || 'this tracker'}.`"
+      aria-label="Archive or permanently delete tracker"
+    >
+      <template v-for="action in retirementActions" :key="action.id">
+        <v-divider v-if="'divider' in action && action.divider" class="my-1" />
+        <v-list-item :prepend-icon="action.icon" :title="action.title" :subtitle="action.subtitle" :base-color="action.color" rounded="lg" :disabled="archiving || deleting" @click="runRetirementAction(action.id)" />
+      </template>
+    </ActionBottomSheet>
+
+    <ConfirmDialog v-model="archiveDialog" title="Restore this tracker?" message="This tracker will return to tracking with its previous active or paused state and all of its logs." confirm-text="Restore tracker" confirm-color="secondary" icon="mdi-archive-arrow-up-outline" :loading="archiving" @confirm="setArchived" />
+    <ConfirmDialog v-model="deleteDialog" title="Delete tracker permanently?" message="This permanently deletes the tracker and every one of its logs. This cannot be undone." confirm-text="Delete permanently" icon="mdi-delete-forever-outline" :loading="deleting" @confirm="remove" />
   </main>
 </template>
 

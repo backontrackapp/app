@@ -29,6 +29,7 @@ const hasMoreEntries = ref(true)
 const searchQuery = ref('')
 const selectedColor = ref('')
 const colorFilterOpen = ref(false)
+const archiveExpanded = ref(false)
 const timelineEnd = format(endOfMonth(timelineDate.value), 'yyyy-MM-dd')
 const infiniteScrollOptions = { rootMargin: '0px 0px 256px 0px' }
 const vIntersect = Intersect
@@ -36,12 +37,23 @@ const vRipple = Ripple
 
 const taskId = computed(() => typeof route.query.task === 'string' ? route.query.task : '')
 const trackerId = computed(() => typeof route.query.tracker === 'string' ? route.query.tracker : '')
-const availableColors = computed(() => journalEntryColors(timelineReady.value ? journalStore.entries : []))
+const availableColors = computed(() => journalEntryColors(
+  timelineReady.value ? journalStore.entries.filter(entry => !entry.archived) : [],
+))
 const allColorsGradient = computed(() => availableColors.value.length > 1
   ? `conic-gradient(${[...availableColors.value, availableColors.value[0]].join(', ')})`
   : 'conic-gradient(rgb(var(--v-theme-secondary)), rgb(var(--v-theme-info)), rgb(var(--v-theme-error)), rgb(var(--v-theme-secondary)))')
 const filteredTimelineEntries = computed(() => filterJournalEntries(
-  timelineReady.value ? journalStore.entries : [],
+  timelineReady.value ? journalStore.entries.filter(entry => !entry.archived) : [],
+  'all',
+  taskId.value,
+  trackerId.value,
+  searchQuery.value,
+  selectedColor.value,
+  entrySearchTags,
+))
+const archivedEntries = computed(() => filterJournalEntries(
+  timelineReady.value ? journalStore.entries.filter(entry => entry.archived) : [],
   'all',
   taskId.value,
   trackerId.value,
@@ -54,7 +66,8 @@ const showInitialLoading = computed(() => loadingTimelinePage.value && !timeline
 const showEmptyState = computed(() => timelineReady.value
   && !loadingTimelinePage.value
   && !hasMoreEntries.value
-  && groups.value.length === 0)
+  && groups.value.length === 0
+  && archivedEntries.value.length === 0)
 const filteredTask = computed(() => taskStore.tasks.find((task) => task.id === taskId.value))
 const filteredTracker = computed(() => trackingStore.trackers.find((tracker) => tracker.id === trackerId.value))
 const hasActiveFilter = computed(() => Boolean(
@@ -309,6 +322,22 @@ onMounted(async () => {
         </section>
       </div>
 
+      <section v-if="archivedEntries.length" class="mt-5">
+        <v-btn block variant="text" class="archive-heading" :aria-expanded="archiveExpanded" aria-controls="archived-reflections" @click="archiveExpanded = !archiveExpanded">
+          <v-icon icon="mdi-archive-outline" size="small" />
+          <span>Archive</span>
+          <span class="archive-heading__count">{{ archivedEntries.length }}</span>
+          <v-icon :icon="archiveExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'" size="small" />
+        </v-btn>
+        <v-expand-transition>
+          <div v-show="archiveExpanded" id="archived-reflections" class="journal-entry-list mt-2">
+            <v-card v-for="entry in archivedEntries" :key="entry.id" class="journal-entry surface-card pa-4" :style="{ '--journal-entry-color': entry.color }" role="link" tabindex="0" :aria-label="`Edit archived ${journalEntryHeading(entry)}`" @click="router.push({ name: 'journal-edit', params: { id: entry.id } })" @keydown.enter="router.push({ name: 'journal-edit', params: { id: entry.id } })" @keydown.space.prevent="router.push({ name: 'journal-edit', params: { id: entry.id } })">
+              <div class="d-flex align-center ga-3"><v-icon icon="mdi-archive-outline" color="warning" /><div class="min-width-0"><h3 class="text-body-1 font-weight-black text-truncate">{{ journalEntryHeading(entry) }}</h3><p class="text-caption muted mt-1">{{ format(parseISO(entry.localDate), 'MMM d') }} · Open to restore</p></div></div>
+            </v-card>
+          </div>
+        </v-expand-transition>
+      </section>
+
       <div
         v-if="timelineReady && (hasMoreEntries || loadingTimelinePage)"
         :key="timelinePage"
@@ -372,6 +401,9 @@ onMounted(async () => {
 .journal-color-filter__swatch--active::after { display: none; }
 .journal-color-filter--active { background: rgb(var(--v-theme-on-surface) / .06); }
 .journal-loading { display: flex; align-items: center; justify-content: center; gap: .75rem; }
+.archive-heading { min-height: 2.75rem; }
+.archive-heading :deep(.v-btn__content) { width: 100%; justify-content: flex-start; gap: .5rem; }
+.archive-heading__count { margin-left: auto; color: rgb(var(--v-theme-on-surface) / .54); font-size: .7rem; }
 .journal-load-more { display: flex; min-height: 4rem; align-items: center; justify-content: center; gap: .625rem; }
 .journal-groups,
 .journal-entry-list { display: grid; gap: .75rem; }

@@ -1,5 +1,7 @@
 # Flashcards
 
+Owned Review set editors use one archive/restore action in place of direct deletion. For an active set, the action asks whether to archive it or delete it permanently. Archiving removes the set from normal Review choices while preserving its setup, cards, shares, and completed history. Archived sets appear in the collapsible Archive section and can be opened to restore or permanently delete. Permanent deletion may optionally remove the set's matching cards and keeps completed review snapshots.
+
 ## Curated Review sets
 
 The lime **+ Curated** button opens a searchable catalog of Review sets prepared by the BackOnTrack team. The catalog uses a three-column desktop grid (two columns on tablets and one on phones). A catalog thumbnail replaces the tile slideshow when provided; otherwise, available card images cycle with the front text overlaid. Opening a set shows its cards in the shared flashcard table.
@@ -30,6 +32,8 @@ The PHP server owns the OpenAI credential and calls the Responses API with respo
 
 The shared card table used by Manage cards, Review set forms, and curated-set previews includes a dedicated Image column, keeping thumbnails visible even when the action column contains an Edit control. The Manage cards page opens directly on **Your cards** without a separate tag-management section. Its bulk menu exposes one **Inject into Review set** action for creating a Review set or injecting the selected cards into an existing owned custom Review set. Review set cards show their total matching card count at the top-right. Selecting an owned or shared Review set card opens its action menu. **Review** is the first action, followed by the management actions available for that set's access level.
 
+Individual flashcard editors use an archive/restore action in place of direct deletion. Active cards ask whether to archive or delete permanently. Archiving removes a card from the active library, matching Review sets, and future or in-progress Review queues while preserving its saved statistics and completed history. Archived cards appear in the collapsible Archive section on **Your cards**, where opening one allows it to be restored or permanently deleted.
+
 Opening a card editor from a card list preserves that list’s visible order and current position. Below a divider under the delete, cancel, and save actions, arrow buttons update the mounted editor directly from its offline card list without running route navigation or changing its scroll position, while the centered position reports the current card as **X of Y**; navigation asks for confirmation before discarding unsaved changes.
 
 Deleting an owned Review set asks whether its currently matching cards should also be deleted. Card deletion is off by default; when selected, those cards are removed from the Card library and every other Review set after the Review set itself is successfully deleted.
@@ -37,6 +41,8 @@ Deleting an owned Review set asks whether its currently matching cards should al
 ## Recent session history
 
 Recent reviews are grouped by day, with every group collapsed by default.
+
+Reviews connected to a Review set or Interval that has since been archived remain in recent history and show an **Archived** tag.
 
 Selecting a recent Review opens its action menu. **See details** reopens the saved completion summary; **Delete** asks for confirmation and removes the history item immediately. Reviews recorded inside an Interval open that Interval's details, and deleting one removes the shared Interval run from both histories. Deleting session history does not reverse task progress already recorded by the completed session.
 
@@ -96,7 +102,7 @@ On desktop, standalone and dense Interval Review set keyboard controls remain av
 
 Background images crossfade and move in the same direction as the card content when the standalone reviewer changes cards. They remain stationary when alternating between the front and back of the same card. Reduced-motion preferences replace them immediately.
 
-Standalone and mini Interval Review cards keep two isolated render buffers mounted. Before a card or face transition starts, the inactive buffer receives the incoming card, side, image, language, and response values and completes its text-fitting pass while transparent. The prepared buffer then transitions over the unchanged outgoing snapshot. After motion completes, it is promoted to current and copied into the background buffer. This prevents the outgoing card's front or back values from changing to the incoming card before the handoff; reduced-motion mode performs the same prepared promotion without directional movement.
+Standalone and mini Interval Review cards keep two isolated render buffers mounted. Before a card or face transition starts, the inactive buffer receives the incoming card, side, image, language, and response values and completes its text-fitting pass while transparent. The prepared buffer then transitions over the unchanged outgoing snapshot. After motion completes, it is promoted to current and copied into the background buffer. This prevents the outgoing card's front or back values from changing to the incoming card before the handoff; reduced-motion mode performs the same prepared promotion without directional movement. When both faces are enabled, Review set settings can invert the sequence so the back appears before the front in manual, passive, standalone, and Interval reviews.
 
 Standalone Review set sessions show the current card position centered above the card, between the review mode and elapsed time. Finite sessions advance from 1 through the session total, while indefinite sessions wrap the position at the start of each loop.
 

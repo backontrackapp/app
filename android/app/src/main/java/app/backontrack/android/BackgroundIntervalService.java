@@ -79,6 +79,7 @@ public class BackgroundIntervalService extends Service {
     private long reviewBackDurationMs = 5000L;
     private int reviewBackSpeechRepeatCount = 1;
     private String reviewCardSides = "both";
+    private boolean reviewInvertFaces;
     private String reviewFrontLanguage = "";
     private String reviewBackLanguage = "";
     private String lastReviewSpeechKey = "";
@@ -304,6 +305,8 @@ public class BackgroundIntervalService extends Service {
         reviewCardSides = "front".equals(configuredCardSides) || "back".equals(configuredCardSides)
             ? configuredCardSides
             : "both";
+        reviewInvertFaces = "both".equals(reviewCardSides)
+            && review.optBoolean("invertFaces", false);
         reviewFrontLanguage = review.optString("frontLanguage", "").trim();
         reviewBackLanguage = review.optString("backLanguage", "").trim();
         reviewSpeechOverAmplified = review.optBoolean("overAmplified", false);
@@ -416,8 +419,16 @@ public class BackgroundIntervalService extends Service {
         long absoluteCardIndex = elapsedMs / cardDurationMs;
         int cardIndex = (int) (absoluteCardIndex % reviewCards.size());
         long elapsedInCard = elapsedMs % cardDurationMs;
-        String side = showsFront && elapsedInCard < reviewFrontDurationMs ? "front" : "back";
-        long elapsedInBack = elapsedInCard - (showsFront ? reviewFrontDurationMs : 0L);
+        String firstSide = showsBack && (!showsFront || reviewInvertFaces) ? "back" : "front";
+        long firstSideDurationMs = "front".equals(firstSide)
+            ? reviewFrontDurationMs
+            : reviewBackDurationMs;
+        String side = elapsedInCard < firstSideDurationMs
+            ? firstSide
+            : ("front".equals(firstSide) ? "back" : "front");
+        long elapsedInBack = "back".equals(side)
+            ? ("back".equals(firstSide) ? elapsedInCard : elapsedInCard - firstSideDurationMs)
+            : 0L;
         int backSpeechRepeatIndex = "back".equals(side)
             ? Math.min(
                 reviewBackSpeechRepeatCount - 1,

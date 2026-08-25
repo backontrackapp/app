@@ -9,7 +9,7 @@ use PDOException;
 
 final class Database
 {
-    public const EXPECTED_SCHEMA_VERSION = '202608230003';
+    public const EXPECTED_SCHEMA_VERSION = '202608250002';
 
     public readonly PDO $pdo;
 
@@ -69,7 +69,7 @@ final class Database
                 'id', 'owner', 'front', 'back', 'transliteration', 'note',
                 'image_url', 'image_file',
                 'front_audio_url', 'front_audio_file', 'back_audio_url', 'back_audio_file',
-                'tags', 'created_at', 'updated_at', 'last_reviewed_at',
+                'tags', 'archived', 'created_at', 'updated_at', 'last_reviewed_at',
                 'passive_views', 'success_count', 'error_count',
             ],
             'tasks' => [
@@ -111,7 +111,7 @@ final class Database
             'interval_templates' => [
                 'id', 'owner', 'name', 'description', 'color', 'definition',
                 'sound_enabled', 'vibration_enabled', 'sound', 'sort_order',
-                'flashcard_review_set',
+                'flashcard_review_set', 'archived',
             ],
             'interval_sessions' => [
                 'id', 'owner', 'template', 'source', 'status', 'snapshot_name',
@@ -123,7 +123,7 @@ final class Database
             'tracking_trackers' => [
                 'id', 'owner', 'name', 'description', 'role', 'kind', 'category',
                 'unit', 'scale_min', 'scale_max', 'favorable_direction',
-                'daily_aggregation', 'active', 'sort_order', 'color', 'icon',
+                'daily_aggregation', 'active', 'archived', 'sort_order', 'color', 'icon',
             ],
             'tracking_entries' => [
                 'id', 'owner', 'tracker', 'occurred_at', 'local_date',
@@ -132,7 +132,7 @@ final class Database
             'journal_entries' => [
                 'id', 'owner', 'title', 'body', 'color', 'occurred_at', 'local_date',
                 'timezone_offset', 'task', 'tracker', 'task_snapshot',
-                'tracker_snapshot', 'image_url', 'image_file', 'created_at', 'updated_at',
+                'tracker_snapshot', 'archived', 'image_url', 'image_file', 'created_at', 'updated_at',
             ],
             'flashcard_review_events' => [
                 'id', 'owner', 'session', 'card', 'outcome', 'view_count', 'reviewed_at',

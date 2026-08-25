@@ -3,11 +3,13 @@ import { Capacitor } from '@capacitor/core'
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppForm from '@/components/AppForm.vue'
+import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FlashcardAudioSection from '@/components/FlashcardAudioSection.vue'
 import FlashcardImageField from '@/components/FlashcardImageField.vue'
 import FlashcardTagCombobox from '@/components/FlashcardTagCombobox.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
+import { contentRetirementActions, type ContentRetirementActionId } from '@/services/contentRetirementActions'
 import { useFlashcardStore } from '@/stores/flashcards'
 import type { FlashcardAudioValue, FlashcardDraft, SquareImageSourceValue } from '@/types/domain'
 
@@ -20,12 +22,16 @@ const frontField = ref()
 const loading = ref(true)
 const ready = ref(false)
 const saving = ref(false)
+const archiving = ref(false)
 const deleting = ref(false)
+const archiveActions = ref(false)
+const archiveDialog = ref(false)
 const deleteDialog = ref(false)
 const navigationDialog = ref(false)
 const pendingNavigationId = ref('')
 const navigating = ref(false)
 const error = ref('')
+const archived = ref(false)
 const original = ref('')
 const draft = reactive<FlashcardDraft>({ front: '', back: '', transliteration: '', note: '', tags: [] })
 const frontAudio = ref<FlashcardAudioValue>(emptyAudio())
@@ -76,6 +82,11 @@ const canSave = computed(() => (
   && Boolean(draft.front.trim())
   && Boolean(draft.back.trim())
 ))
+const retirementActions = contentRetirementActions(
+  'flashcard',
+  'Hide it from your card library and future reviews while keeping its history.',
+  'Permanently remove it from the library and every Review set it matches.',
+)
 
 function focusFrontWithoutScrolling() {
   if (!allowAutomaticFocus) return
@@ -137,6 +148,7 @@ async function loadEditor() {
       frontAudio.value = emptyAudio()
       backAudio.value = emptyAudio()
       image.value = emptyImage()
+      archived.value = false
     }
     original.value = signature.value
     ready.value = true
@@ -178,6 +190,7 @@ function applyCard(card: typeof store.cards[number]) {
     existingUrl: card.image,
     existingSource: card.imageSource,
   }
+  archived.value = card.archived === true
 }
 
 function setAudioRecording(side: 'front' | 'back', recording: boolean) {
@@ -299,6 +312,38 @@ async function remove() {
     deleting.value = false
   }
 }
+
+async function setArchived() {
+  if (!cardId.value) return
+  archiving.value = true
+  error.value = ''
+  try {
+    await store.setCardArchived(cardId.value, !archived.value, reviewSetId.value)
+    archiveDialog.value = false
+    archiveActions.value = false
+    await router.replace(returnTo.value || (isReviewSetCard.value
+      ? { name: 'flashcard-review-set-cards', params: { id: reviewSetId.value } }
+      : { name: 'flashcard-cards' }))
+  } catch (cause) {
+    error.value = cause instanceof Error
+      ? cause.message
+      : `Could not ${archived.value ? 'restore' : 'archive'} this flashcard.`
+    archiveDialog.value = false
+  } finally {
+    archiving.value = false
+  }
+}
+
+function openRetirementActions() {
+  if (archived.value) archiveDialog.value = true
+  else archiveActions.value = true
+}
+
+function runRetirementAction(action: ContentRetirementActionId) {
+  archiveActions.value = false
+  if (action === 'archive') void setArchived()
+  else deleteDialog.value = true
+}
 </script>
 
 <template>
@@ -380,12 +425,13 @@ async function remove() {
       :loading="saving"
       :primary-disabled="!canSave"
       :has-changes="changed"
-      :show-delete="isEditing"
-      delete-label="Delete flashcard"
-      :delete-disabled="deleting"
+      :show-archive="isEditing"
+      :archived="archived"
+      :archive-label="archived ? 'Restore flashcard' : 'Archive flashcard'"
+      :archive-disabled="archiving || deleting"
       @submit="save"
       @cancel="router.back()"
-      @delete="deleteDialog = true"
+      @archive="openRetirementActions"
     >
       <template v-if="showNavigator" #below>
         <nav class="flashcard-editor-navigator" aria-label="Card editor navigation">
@@ -420,13 +466,44 @@ async function remove() {
     />
 
     <ConfirmDialog
+      v-model="archiveDialog"
+      title="Restore this flashcard?"
+      message="This card will return to your card library and matching Review sets, and can be used in future reviews."
+      confirm-text="Restore flashcard"
+      confirm-color="secondary"
+      icon="mdi-archive-arrow-up-outline"
+      :loading="archiving"
+      @confirm="setArchived"
+    />
+
+    <ActionBottomSheet
+      v-model="archiveActions"
+      title="Archive or delete?"
+      :description="`Choose what to do with ${draft.front || 'this flashcard'}.`"
+      aria-label="Archive or permanently delete flashcard"
+    >
+      <template v-for="action in retirementActions" :key="action.id">
+        <v-divider v-if="'divider' in action && action.divider" class="my-1" />
+        <v-list-item
+          :prepend-icon="action.icon"
+          :title="action.title"
+          :subtitle="action.subtitle"
+          :base-color="action.color"
+          rounded="lg"
+          :disabled="archiving || deleting"
+          @click="runRetirementAction(action.id)"
+        />
+      </template>
+    </ActionBottomSheet>
+
+    <ConfirmDialog
       v-model="deleteDialog"
-      title="Delete this flashcard?"
+      title="Delete this flashcard permanently?"
       :message="isReviewSetCard
         ? 'This removes the owner’s source card from their library and every Review set it matches. Existing review history keeps its saved front and back.'
         : 'The card will be removed from future reviews. Existing review history keeps its saved front and back.'"
-      confirm-text="Delete flashcard"
-      icon="mdi-delete-outline"
+      confirm-text="Delete permanently"
+      icon="mdi-delete-forever-outline"
       :loading="deleting"
       @confirm="remove"
     />

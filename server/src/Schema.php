@@ -49,6 +49,7 @@ final class Schema
                     'back_audio_url' => self::text(2048),
                     'back_audio_file' => self::text(64),
                     'tags' => self::jsonArray(5000),
+                    'archived' => self::boolean(),
                     'created_at' => self::timestamp(false, true),
                     'updated_at' => self::timestamp(false, true),
                     'last_reviewed_at' => self::timestamp(false, true),
@@ -61,7 +62,7 @@ final class Schema
                     'front', 'created_at', 'updated_at', 'last_reviewed_at',
                     'passive_views', 'success_count', 'error_count',
                 ],
-                'filter' => ['created_at', 'last_reviewed_at'],
+                'filter' => ['archived', 'created_at', 'last_reviewed_at'],
             ],
             'flashcard_review_sets' => [
                 'fields' => [
@@ -72,6 +73,7 @@ final class Schema
                     'excluded_cards' => self::jsonArray(200000),
                     'mode' => self::choice(['manual', 'passive'], true),
                     'card_sides' => self::choice(['both', 'front', 'back'], true),
+                    'invert_faces' => self::boolean(),
                     'indefinite' => self::boolean(),
                     'time_limit_seconds' => self::integer(0, 86340),
                     'max_cards' => self::integer(1, 100),
@@ -88,12 +90,13 @@ final class Schema
                     ], true),
                     'sort_direction' => self::choice(['asc', 'desc'], true),
                     'sort_order' => self::integer(0),
+                    'archived' => self::boolean(),
                     'created_at' => self::timestamp(false, true),
                     'updated_at' => self::timestamp(false, true),
                 ],
                 'required' => ['name', 'mode', 'sort_mode'],
                 'sort' => ['name', 'sort_order', 'created_at', 'updated_at'],
-                'filter' => ['mode', 'sort_mode'],
+                'filter' => ['archived', 'mode', 'sort_mode'],
             ],
             'tasks' => [
                 'fields' => [
@@ -240,11 +243,12 @@ final class Schema
                     'vibration_enabled' => self::boolean(),
                     'sound' => self::choice(['beep', 'bell', 'soft'], true),
                     'sort_order' => self::integer(0),
+                    'archived' => self::boolean(),
                     'flashcard_review_set' => self::relation(false, true),
                 ],
                 'required' => ['name', 'color', 'definition', 'sound'],
                 'sort' => ['name', 'sort_order'],
-                'filter' => ['name'],
+                'filter' => ['archived', 'name'],
             ],
             'interval_sessions' => [
                 'fields' => [
@@ -288,6 +292,7 @@ final class Schema
                     'snapshot_name' => self::text(160, true),
                     'mode_snapshot' => self::choice(['manual', 'passive'], true),
                     'card_sides_snapshot' => self::choice(['both', 'front', 'back'], true),
+                    'invert_faces_snapshot' => self::boolean(),
                     'indefinite_snapshot' => self::boolean(),
                     'time_limit_seconds_snapshot' => self::integer(0, 86340),
                     'max_cards_snapshot' => self::integer(1, 100),
@@ -363,6 +368,7 @@ final class Schema
                     'favorable_direction' => self::choice(['higher', 'lower', 'neutral'], true),
                     'daily_aggregation' => self::choice(['last', 'average', 'sum', 'count'], true),
                     'active' => self::boolean(),
+                    'archived' => self::boolean(),
                     'sort_order' => self::integer(0),
                     'color' => self::text(20),
                     'icon' => self::text(50),
@@ -372,7 +378,7 @@ final class Schema
                     'daily_aggregation',
                 ],
                 'sort' => ['name', 'sort_order'],
-                'filter' => ['active', 'role', 'kind', 'category'],
+                'filter' => ['active', 'archived', 'role', 'kind', 'category'],
             ],
             'tracking_entries' => [
                 'fields' => [
@@ -399,10 +405,11 @@ final class Schema
                     'timezone_offset' => self::integer(-840, 840),
                     'task' => self::relation(false, true),
                     'tracker' => self::jsonArray(5000),
+                    'archived' => self::boolean(),
                 ],
                 'required' => ['body', 'occurred_at', 'local_date', 'timezone_offset'],
                 'sort' => ['occurred_at', 'local_date', 'created_at', 'updated_at'],
-                'filter' => ['task', 'occurred_at', 'local_date'],
+                'filter' => ['archived', 'task', 'occurred_at', 'local_date'],
             ],
         ];
 
