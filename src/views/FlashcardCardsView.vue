@@ -16,8 +16,12 @@ function openNewCard() {
   void router.push({ name: 'flashcard-new' })
 }
 
-function openCard(card: Flashcard) {
-  void router.push({ name: 'flashcard-edit', params: { id: card.id } })
+function openCard(card: Flashcard, cards: Flashcard[]) {
+  void router.push({
+    name: 'flashcard-edit',
+    params: { id: card.id },
+    state: { flashcardNavigationIds: cards.map(item => item.id) },
+  })
 }
 
 </script>
@@ -53,7 +57,7 @@ function openCard(card: Flashcard) {
           @open-card="openCard"
         >
           <template #action-column-heading><span class="d-sr-only">Edit</span></template>
-          <template #action-column="{ card }">
+          <template #action-column="{ card, cards }">
             <div
               class="flashcard-card-edit"
               @pointerdown.stop
@@ -66,7 +70,7 @@ function openCard(card: Flashcard) {
                 variant="text"
                 size="small"
                 :aria-label="`Edit card: ${card.front}`"
-                @click.stop="openCard(card)"
+                @click.stop="openCard(card, cards)"
               />
             </div>
           </template>

@@ -30,6 +30,8 @@ The PHP server owns the OpenAI credential and calls the Responses API with respo
 
 The shared card table used by Manage cards, Review set forms, and curated-set previews includes a dedicated Image column, keeping thumbnails visible even when the action column contains an Edit control. The Manage cards page opens directly on **Your cards** without a separate tag-management section. Its bulk menu exposes one **Inject into Review set** action for creating a Review set or injecting the selected cards into an existing owned custom Review set. Review set cards show their total matching card count at the top-right. Selecting an owned or shared Review set card opens its action menu. **Review** is the first action, followed by the management actions available for that set's access level.
 
+Opening a card editor from a card list preserves that list’s visible order and current position. Below a divider under the delete, cancel, and save actions, arrow buttons update the mounted editor directly from its offline card list without running route navigation or changing its scroll position, while the centered position reports the current card as **X of Y**; navigation asks for confirmation before discarding unsaved changes.
+
 Deleting an owned Review set asks whether its currently matching cards should also be deleted. Card deletion is off by default; when selected, those cards are removed from the Card library and every other Review set after the Review set itself is successfully deleted.
 
 ## Recent session history
