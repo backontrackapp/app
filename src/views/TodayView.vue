@@ -1517,7 +1517,12 @@ async function saveTaskLogEntry() {
 </script>
 
 <template>
-  <main ref="todayPage" v-date-swipe="taskDateSwipe" class="app-page today-page">
+  <main
+    ref="todayPage"
+    v-date-swipe="taskDateSwipe"
+    class="app-page today-page"
+    :class="{ 'today-page--with-review-banner': reviewItems.length }"
+  >
     <DateSwipeFeedback ref="dateSwipeFeedback" />
 
     <WeekDateNavigator
@@ -2313,6 +2318,9 @@ async function saveTaskLogEntry() {
 .task-all-day-stack { min-width: 0; }
 .task-hour-stack { min-width: 0; }
 .empty-card { margin-top: 0; }
+.today-page--with-review-banner {
+  padding-bottom: calc(7rem + var(--page-safe-area-bottom));
+}
 .empty-icon { display: grid; width: 4rem; height: 4rem; place-items: center; border-radius: 1.25rem; background: #c7f464; color: #17200f; }
 .not-scheduled-section__heading { min-height: 2.75rem; }
 .not-scheduled-section__heading :deep(.v-btn__content) { width: 100%; justify-content: flex-start; gap: .5rem; }
