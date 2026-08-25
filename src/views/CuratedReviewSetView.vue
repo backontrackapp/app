@@ -2,12 +2,14 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import FlashcardCardsManager from '@/components/FlashcardCardsManager.vue'
+import FlashcardDuplicateDialog from '@/components/FlashcardDuplicateDialog.vue'
 import { api } from '@/lib/api'
 import {
   curatedCards,
   curatedReviewSettings,
   preferredCuratedContentLanguage,
 } from '@/services/curatedReviewSets'
+import { countFlashcardImportDuplicates } from '@/services/flashcardDuplicates'
 import {
   loadFlashcardSpeechSupport,
   normalizeSpeechLanguage,
@@ -18,8 +20,21 @@ import type {
   CuratedLanguageOption,
   CuratedReviewSetDetail,
   Flashcard,
+  FlashcardDuplicateResolution,
+  FlashcardReviewSet,
   FlashcardSpeechLanguage,
 } from '@/types/domain'
+
+type CloneDestination =
+  | { type: 'new'; name: string }
+  | { type: 'existing'; reviewSetId: string }
+
+interface PendingCuratedClone {
+  cards: Flashcard[]
+  destination: CloneDestination
+  resolve: (reviewSet: FlashcardReviewSet) => void
+  reject: (cause: unknown) => void
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -30,7 +45,10 @@ const backLanguage = ref('')
 const speechLanguages = ref<FlashcardSpeechLanguage[]>([])
 const loading = ref(true)
 const cloning = ref(false)
+const duplicateDialog = ref(false)
+const duplicateCount = ref(0)
 const error = ref('')
+let pendingClone: PendingCuratedClone | undefined
 const cards = computed(() => detail.value
   ? curatedCards(detail.value, frontLanguage.value, backLanguage.value)
   : [])
@@ -87,28 +105,72 @@ async function load() {
 
 async function cloneCards(
   selected: Flashcard[],
-  destination: { type: 'new'; name: string } | { type: 'existing'; reviewSetId: string },
+  destination: CloneDestination,
 ) {
   if (!settings.value) throw new Error('Curated Review settings are unavailable.')
   if (!detail.value) throw new Error('Curated Review set details are unavailable.')
-  return store.cloneCuratedCards(selected, destination, settings.value, {
-    frontLanguage: frontLanguage.value,
-    backLanguage: backLanguage.value,
-    category: detail.value.category,
+  const conflicts = countFlashcardImportDuplicates(selected, store.cards)
+  if (!conflicts) {
+    return performCloneCards(selected, destination, { action: 'duplicate', columns: [] })
+  }
+  duplicateCount.value = conflicts
+  duplicateDialog.value = true
+  return new Promise<FlashcardReviewSet>((resolve, reject) => {
+    pendingClone = { cards: selected, destination, resolve, reject }
   })
 }
 
-async function cloneAll() {
-  if (!detail.value || !settings.value || cloning.value) return
+async function performCloneCards(
+  selected: Flashcard[],
+  destination: CloneDestination,
+  resolution: FlashcardDuplicateResolution,
+) {
+  if (!settings.value || !detail.value) {
+    throw new Error('Curated Review set details are unavailable.')
+  }
   cloning.value = true
+  try {
+    return await store.cloneCuratedCards(selected, destination, settings.value, {
+      frontLanguage: frontLanguage.value,
+      backLanguage: backLanguage.value,
+      category: detail.value.category,
+    }, resolution)
+  } finally {
+    cloning.value = false
+  }
+}
+
+async function resolveDuplicateClone(resolution: FlashcardDuplicateResolution) {
+  const pending = pendingClone
+  if (!pending) return
+  duplicateDialog.value = false
+  try {
+    pending.resolve(await performCloneCards(pending.cards, pending.destination, resolution))
+  } catch (cause) {
+    pending.reject(cause)
+  } finally {
+    pendingClone = undefined
+  }
+}
+
+function setDuplicateDialog(open: boolean) {
+  duplicateDialog.value = open
+  if (open || !pendingClone || cloning.value) return
+  const canceled = new Error('Curated clone canceled.')
+  canceled.name = 'AbortError'
+  pendingClone.reject(canceled)
+  pendingClone = undefined
+}
+
+async function cloneAll() {
+  if (!detail.value || !settings.value || cloning.value || duplicateDialog.value) return
   error.value = ''
   try {
     const reviewSet = await cloneCards(cards.value, { type: 'new', name: detail.value.name })
     await router.push({ name: 'flashcard-review-set-edit', params: { id: reviewSet.id } })
   } catch (cause) {
+    if (cause instanceof Error && cause.name === 'AbortError') return
     error.value = cause instanceof Error ? cause.message : 'Could not clone this curated Review set.'
-  } finally {
-    cloning.value = false
   }
 }
 </script>
@@ -130,7 +192,7 @@ async function cloneAll() {
           <h1>{{ detail.name }}</h1>
           <p>{{ detail.description }}</p>
         </div>
-        <v-btn color="secondary" size="large" prepend-icon="mdi-content-copy" :loading="cloning" @click="cloneAll">
+        <v-btn color="secondary" size="large" prepend-icon="mdi-content-copy" :loading="cloning" :disabled="duplicateDialog" @click="cloneAll">
           Clone Review set
         </v-btn>
       </section>
@@ -181,6 +243,15 @@ async function cloneAll() {
           empty-description="The source CSV is empty."
         />
       </section>
+
+      <FlashcardDuplicateDialog
+        v-if="duplicateDialog"
+        :model-value="duplicateDialog"
+        :duplicate-count="duplicateCount"
+        :loading="cloning"
+        @update:model-value="setDuplicateDialog"
+        @resolve="resolveDuplicateClone"
+      />
     </template>
   </main>
 </template>

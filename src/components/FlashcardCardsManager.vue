@@ -384,7 +384,9 @@ async function injectSelectedCardsIntoReviewSet() {
       })
     }
   } catch (cause) {
-    bulkError.value = cause instanceof Error
+    bulkError.value = cause instanceof Error && cause.name === 'AbortError'
+      ? ''
+      : cause instanceof Error
       ? cause.message
       : 'Could not save the selected cards to a Review set.'
   } finally {

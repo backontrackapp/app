@@ -3303,7 +3303,7 @@ final class Api
             }
             $unknown = array_values(array_diff(
                 array_keys($row),
-                ['front', 'back', 'transliteration', 'note', 'tags'],
+                ['front', 'back', 'transliteration', 'note', 'image', 'tags'],
             ));
             if ($unknown !== []) {
                 throw new ApiException(422, "Flashcard row {$rowNumber} contains unknown fields.", [
@@ -3318,6 +3318,7 @@ final class Api
                 5000,
             );
             $note = $this->validateText($row['note'] ?? '', 'note', 2000);
+            $imageUrl = $this->validateFlashcardImageUrl($row['image'] ?? '');
             $rowTags = $row['tags'] ?? [];
             if (!is_array($rowTags) || !array_is_list($rowTags) || count($rowTags) > 50) {
                 throw new ApiException(422, "Flashcard row {$rowNumber} has invalid tags.");
@@ -3335,6 +3336,7 @@ final class Api
                 'back' => $back,
                 'transliteration' => $transliteration,
                 'note' => $note,
+                'image_url' => $imageUrl,
                 'tag_keys' => array_keys($normalizedTags),
             ];
         }
@@ -3373,13 +3375,15 @@ final class Api
             }
 
             $insertCard = $pdo->prepare(
-                'INSERT INTO flashcards (
-                    id, owner, front, back, transliteration, note, tags, created_at, updated_at,
+                "INSERT INTO flashcards (
+                    id, owner, front, back, transliteration, note, image_url, image_file,
+                    tags, created_at, updated_at,
                     last_reviewed_at, passive_views, success_count, error_count
                  ) VALUES (
-                    :id, :owner, :front, :back, :transliteration, :note, :tags, :created_at, :updated_at,
+                    :id, :owner, :front, :back, :transliteration, :note, :image_url, '',
+                    :tags, :created_at, :updated_at,
                     :last_reviewed_at, :passive_views, :success_count, :error_count
-                 )',
+                 )",
             );
             $now = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
             foreach ($validatedRows as $row) {
@@ -3394,6 +3398,7 @@ final class Api
                     'back' => $row['back'],
                     'transliteration' => $row['transliteration'],
                     'note' => $row['note'],
+                    'image_url' => $row['image_url'],
                     'tags' => json_encode($tagIds, JSON_THROW_ON_ERROR),
                     'created_at' => $now,
                     'updated_at' => $now,
@@ -4086,7 +4091,7 @@ final class Api
             }
             $unknown = array_values(array_diff(
                 array_keys($row),
-                ['front', 'back', 'transliteration', 'note', 'tags'],
+                ['front', 'back', 'transliteration', 'note', 'image', 'tags'],
             ));
             if ($unknown !== []) {
                 throw new ApiException(422, "Flashcard row {$rowNumber} contains unknown fields.", [
@@ -4109,6 +4114,7 @@ final class Api
                     5000,
                 ),
                 'note' => $this->validateText($row['note'] ?? '', 'note', 2000),
+                'image_url' => $this->validateFlashcardImageUrl($row['image'] ?? ''),
             ];
         }
 
@@ -4118,11 +4124,11 @@ final class Api
         $createdCards = [];
         $statement = $this->database->pdo->prepare(
             "INSERT INTO flashcards (
-                id, owner, front, back, transliteration, note,
+                id, owner, front, back, transliteration, note, image_url, image_file,
                 tags, created_at, updated_at,
                 last_reviewed_at, passive_views, success_count, error_count
              ) VALUES (
-                :id, :owner, :front, :back, :transliteration, :note,
+                :id, :owner, :front, :back, :transliteration, :note, :image_url, '',
                 :tags, :created_at, :updated_at, '', 0, 0, 0
              )",
         );
@@ -4138,6 +4144,7 @@ final class Api
                     'back' => $row['back'],
                     'transliteration' => $row['transliteration'],
                     'note' => $row['note'],
+                    'image_url' => $row['image_url'],
                     'tags' => $tags,
                     'created_at' => $now,
                     'updated_at' => $now,

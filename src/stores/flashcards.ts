@@ -15,6 +15,7 @@ import {
   swapFlashcardColumns,
   updateFlashcardReviewExclusions,
 } from '@/services/flashcards'
+import { findDuplicateFlashcard, normalizeFlashcardFront } from '@/services/flashcardDuplicates'
 import { normalizeSpeechLanguage } from '@/services/flashcardSpeech'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
@@ -24,6 +25,7 @@ import type {
   FlashcardBulkRecordAction,
   FlashcardBulkSwapColumn,
   FlashcardDraft,
+  FlashcardDuplicateResolution,
   FlashcardImportRow,
   FlashcardReviewAction,
   FlashcardReviewEjectBehavior,
@@ -610,7 +612,82 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     }
   }
 
-  async function importCards(rows: FlashcardImportRow[]) {
+  function groupedImportRows(rows: FlashcardImportRow[]) {
+    const groups = new Map<string, FlashcardImportRow[]>()
+    rows.forEach((row) => {
+      const key = normalizeFlashcardFront(row.front)
+      groups.set(key, [...(groups.get(key) || []), row])
+    })
+    return [...groups.values()]
+  }
+
+  function mergedNewImportRow(
+    group: FlashcardImportRow[],
+    resolution: FlashcardDuplicateResolution,
+  ) {
+    if (resolution.action === 'replace') return group.at(-1)!
+    const merged = { ...group[0]!, tags: [...group[0]!.tags] }
+    group.slice(1).forEach((row) => {
+      if (resolution.columns.includes('back')) merged.back = row.back
+      if (resolution.columns.includes('transliteration')) merged.transliteration = row.transliteration || ''
+      if (resolution.columns.includes('note')) merged.note = row.note
+      if (resolution.columns.includes('tags')) merged.tags = [...row.tags]
+      if (resolution.columns.includes('image')) merged.image = row.image || ''
+    })
+    return merged
+  }
+
+  function importImageValue(row: FlashcardImportRow, existing: Flashcard): SquareImageSourceValue {
+    return {
+      source: row.image ? 'url' : 'none',
+      url: row.image || '',
+      existingUrl: existing.image,
+      existingSource: existing.imageSource,
+    }
+  }
+
+  async function importTagIds(row: FlashcardImportRow) {
+    const ids: string[] = []
+    for (const name of row.tags) ids.push((await createTag(name)).id)
+    return [...new Set(ids)]
+  }
+
+  async function importCards(
+    rows: FlashcardImportRow[],
+    resolution: FlashcardDuplicateResolution = { action: 'duplicate', columns: [] },
+  ) {
+    if (resolution.action !== 'duplicate') {
+      const rowsToCreate: FlashcardImportRow[] = []
+      const updatedCards: Flashcard[] = []
+      for (const group of groupedImportRows(rows)) {
+        const existing = findDuplicateFlashcard(cards.value, group[0]!.front)
+        if (!existing) {
+          rowsToCreate.push(mergedNewImportRow(group, resolution))
+          continue
+        }
+        if (resolution.action === 'skip') continue
+        const incoming = group.at(-1)!
+        const replace = resolution.action === 'replace'
+        const card = await saveCard({
+          id: existing.id,
+          front: replace ? incoming.front : existing.front,
+          back: replace || resolution.columns.includes('back') ? incoming.back : existing.back,
+          transliteration: replace || resolution.columns.includes('transliteration')
+            ? incoming.transliteration || ''
+            : existing.transliteration || '',
+          note: replace || resolution.columns.includes('note') ? incoming.note : existing.note,
+          tags: replace || resolution.columns.includes('tags')
+            ? await importTagIds(incoming)
+            : [...existing.tags],
+        }, (replace && 'image' in incoming) || resolution.columns.includes('image')
+          ? importImageValue(incoming, existing)
+          : undefined)
+        updatedCards.push(card)
+      }
+      if (!rowsToCreate.length) return updatedCards
+      return [...updatedCards, ...await importCards(rowsToCreate)]
+    }
+
     const response = await api.importFlashcards(rows)
     const importedTags = response.tags.map(mapTag)
     const importedCards = response.cards.map(mapCard)
@@ -860,6 +937,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     destination: { type: 'new'; name: string } | { type: 'existing'; reviewSetId: string },
     settings: FlashcardReviewSettings,
     source: { frontLanguage: string; backLanguage: string; category: string },
+    resolution: FlashcardDuplicateResolution = { action: 'duplicate', columns: [] },
   ) {
     if (!sourceCards.length) throw new Error('Select at least one curated card.')
     const frontLanguage = source.frontLanguage.trim()
@@ -871,20 +949,78 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       === normalizeSpeechLanguage(backLanguage)
       ? frontLanguage
       : `${frontLanguage}/${backLanguage}`
+    const groupedCards = groupedImportRows(sourceCards.map(card => ({
+      front: card.front,
+      back: card.back,
+      transliteration: card.transliteration || '',
+      note: card.note,
+      image: card.image,
+      tags: [],
+    })))
+    const cardsToCreate: FlashcardImportRow[] = []
+    const existingCardIds: string[] = []
+    const duplicateUpdates: Array<{ existing: Flashcard; incoming: FlashcardImportRow }> = []
+    for (const group of groupedCards) {
+      const existing = resolution.action === 'duplicate'
+        ? undefined
+        : findDuplicateFlashcard(cards.value, group[0]!.front)
+      if (!existing) {
+        cardsToCreate.push(resolution.action === 'duplicate'
+          ? group[0]!
+          : mergedNewImportRow(group, resolution))
+        if (resolution.action === 'duplicate') cardsToCreate.push(...group.slice(1))
+        continue
+      }
+      existingCardIds.push(existing.id)
+      if (resolution.action !== 'skip') {
+        duplicateUpdates.push({ existing, incoming: group.at(-1)! })
+      }
+    }
+
     const tagNames = [...new Set([languageTagName, category])]
     const cardTagIds: string[] = []
-    for (const name of tagNames) cardTagIds.push((await createTag(name)).id)
+    if (
+      cardsToCreate.length
+      || resolution.action === 'replace'
+      || resolution.columns.includes('tags')
+    ) {
+      for (const name of tagNames) cardTagIds.push((await createTag(name)).id)
+    }
+    for (const { existing, incoming } of duplicateUpdates) {
+      const replace = resolution.action === 'replace'
+      const imageUrl = incoming.image || ''
+      const marker = '/curated-review-sets/'
+      const markerIndex = imageUrl.indexOf(marker)
+      const storedImageUrl = imageUrl.startsWith('/') && markerIndex >= 0
+        ? imageUrl.slice(markerIndex)
+        : imageUrl
+      await saveCard({
+        id: existing.id,
+        front: replace ? incoming.front : existing.front,
+        back: replace || resolution.columns.includes('back') ? incoming.back : existing.back,
+        transliteration: replace || resolution.columns.includes('transliteration')
+          ? incoming.transliteration || ''
+          : existing.transliteration || '',
+        note: replace || resolution.columns.includes('note') ? incoming.note : existing.note,
+        tags: replace || resolution.columns.includes('tags') ? cardTagIds : [...existing.tags],
+      }, replace || resolution.columns.includes('image') ? {
+        source: storedImageUrl ? 'url' : 'none',
+        url: storedImageUrl,
+        existingUrl: existing.image,
+        existingSource: existing.imageSource,
+      } : undefined)
+    }
     const response = await api.applyCuratedFlashcards({
       mode: destination.type === 'new' ? 'create' : 'add',
-      cards: sourceCards.map(card => ({
+      cards: cardsToCreate.map(card => ({
         front: card.front,
         back: card.back,
         transliteration: card.transliteration || '',
         note: card.note,
-        image: card.image,
+        image: card.image || '',
         tags: cardTagIds,
       })),
-      existingCardIds: [],
+      existingCardIds,
       ...(destination.type === 'new'
         ? { name: destination.name }
         : { reviewSetId: destination.reviewSetId }),
@@ -978,7 +1114,45 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     return mapped
   }
 
-  async function importReviewSetCards(reviewSetId: string, rows: FlashcardImportRow[]) {
+  async function importReviewSetCards(
+    reviewSetId: string,
+    rows: FlashcardImportRow[],
+    resolution: FlashcardDuplicateResolution = { action: 'duplicate', columns: [] },
+  ) {
+    if (resolution.action !== 'duplicate') {
+      const sourceCards = reviewSetCards.value[reviewSetId] || []
+      const rowsToCreate: FlashcardImportRow[] = []
+      const updatedCards: Flashcard[] = []
+      for (const group of groupedImportRows(rows)) {
+        const existing = findDuplicateFlashcard(sourceCards, group[0]!.front)
+        if (!existing) {
+          rowsToCreate.push(mergedNewImportRow(group, resolution))
+          continue
+        }
+        if (resolution.action === 'skip') continue
+        const incoming = group.at(-1)!
+        const replace = resolution.action === 'replace'
+        const card = await saveReviewSetCard(reviewSetId, {
+          id: existing.id,
+          front: replace ? incoming.front : existing.front,
+          back: replace || resolution.columns.includes('back') ? incoming.back : existing.back,
+          transliteration: replace || resolution.columns.includes('transliteration')
+            ? incoming.transliteration || ''
+            : existing.transliteration || '',
+          note: replace || resolution.columns.includes('note') ? incoming.note : existing.note,
+          tags: [...existing.tags],
+        }, (replace && 'image' in incoming) || resolution.columns.includes('image')
+          ? importImageValue(incoming, existing)
+          : undefined)
+        updatedCards.push(card)
+      }
+      if (!rowsToCreate.length) return updatedCards
+      return [
+        ...updatedCards,
+        ...await importReviewSetCards(reviewSetId, rowsToCreate),
+      ]
+    }
+
     const response = await api.importFlashcardReviewSetCards(reviewSetId, rows)
     const importedCards = response.cards.map(mapCard)
     const current = reviewSetCards.value[reviewSetId] || []

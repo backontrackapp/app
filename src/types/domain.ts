@@ -461,7 +461,16 @@ export interface FlashcardImportRow {
   back: string
   transliteration?: string
   note: string
+  image?: string
   tags: string[]
+}
+
+export type FlashcardDuplicateAction = 'skip' | 'replace' | 'duplicate' | 'update'
+export type FlashcardDuplicateColumn = 'back' | 'transliteration' | 'note' | 'tags' | 'image'
+
+export interface FlashcardDuplicateResolution {
+  action: FlashcardDuplicateAction
+  columns: FlashcardDuplicateColumn[]
 }
 
 export interface FlashcardCsvParseResult {

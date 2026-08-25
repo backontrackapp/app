@@ -1065,6 +1065,7 @@ class ApiClient {
           back: row.back,
           transliteration: row.transliteration || '',
           note: row.note,
+          image_url: row.image || '',
           tags: [...new Set(tagIds)],
         })) as RecordModel)
       }
@@ -1383,6 +1384,7 @@ class ApiClient {
           back: row.back,
           transliteration: row.transliteration || '',
           note: row.note,
+          image_url: row.image || '',
         }))
       }
       return { cards, tags: [] }
