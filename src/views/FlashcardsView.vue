@@ -229,6 +229,32 @@ async function reorderReviewSets(result: LongPressDragResult) {
     </v-alert>
 
     <div class="flashcards-action-stack page-action-area page-action-area--route-slide">
+      <v-card
+        v-if="store.activeSession"
+        class="active-review pa-5"
+        color="secondary"
+      >
+        <div class="active-review__inner">
+          <div class="min-width-0">
+            <span class="active-review__label">{{ store.activeSession.status === 'paused' ? 'Paused' : 'In progress' }}</span>
+            <strong class="active-review__name text-truncate">{{ store.activeSession.name }}</strong>
+          </div>
+          <v-btn
+            class="mobile-large-action"
+            color="primary"
+            size="large"
+            append-icon="mdi-arrow-right"
+            :to="{
+              name: 'flashcard-review-runner',
+              params: { sessionId: store.activeSession.id },
+              query: { autoplay: '1' },
+            }"
+          >
+            Resume
+          </v-btn>
+        </div>
+      </v-card>
+
       <section class="card-library-action-bar">
         <div
           class="card-library-summary"
@@ -264,32 +290,6 @@ async function reorderReviewSets(result: LongPressDragResult) {
           </div>
         </div>
       </section>
-
-      <v-card
-        v-if="store.activeSession"
-        class="active-review pa-5"
-        color="secondary"
-      >
-        <div class="active-review__inner">
-          <div class="min-width-0">
-            <span class="active-review__label">{{ store.activeSession.status === 'paused' ? 'Paused' : 'In progress' }}</span>
-            <strong class="active-review__name text-truncate">{{ store.activeSession.name }}</strong>
-          </div>
-          <v-btn
-            class="mobile-large-action"
-            color="primary"
-            size="large"
-            append-icon="mdi-arrow-right"
-            :to="{
-              name: 'flashcard-review-runner',
-              params: { sessionId: store.activeSession.id },
-              query: { autoplay: '1' },
-            }"
-          >
-            Resume
-          </v-btn>
-        </div>
-      </v-card>
     </div>
 
     <section>
