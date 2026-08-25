@@ -304,7 +304,13 @@ onBeforeUnmount(() => {
           </div>
         </header>
 
-        <div ref="messagesElement" class="assistant-panel__messages px-4 py-4" aria-live="polite">
+        <div
+          ref="messagesElement"
+          class="assistant-panel__messages px-4 py-4"
+          aria-live="polite"
+          aria-label="AI assistant conversation"
+          tabindex="0"
+        >
           <div v-if="!messages.length" class="assistant-panel__welcome">
             <v-icon icon="mdi-microphone-message" color="secondary" size="42" />
             <h2 class="text-h6">What should I build?</h2>
@@ -363,7 +369,7 @@ onBeforeUnmount(() => {
           <v-card v-if="pendingPlan" class="surface-card assistant-plan pa-4" rounded="xl">
             <div class="d-flex align-start ga-3">
               <v-avatar color="secondary" variant="tonal" size="36">
-                <v-icon :icon="pendingPlan.updatedReviewSet ? 'mdi-card-edit-outline' : 'mdi-card-multiple-outline'" />
+                <v-icon :icon="pendingPlan.updatedReviewSet || pendingPlan.updatedCards ? 'mdi-card-edit-outline' : 'mdi-card-multiple-outline'" />
               </v-avatar>
               <div class="min-width-0">
                 <strong>{{ pendingPlan.title }}</strong>
@@ -386,6 +392,19 @@ onBeforeUnmount(() => {
                 :title="change.label"
                 :subtitle="`${change.before} → ${change.after}`"
               />
+            </v-list>
+            <v-list v-if="pendingPlan.updatedCards?.length" bg-color="transparent" density="compact" class="mt-2 pa-0">
+              <v-list-group v-for="card in pendingPlan.updatedCards" :key="card.id">
+                <template #activator="{ props }">
+                  <v-list-item v-bind="props" :title="card.label" />
+                </template>
+                <v-list-item
+                  v-for="change in card.changes"
+                  :key="`${card.id}-${change.label}`"
+                  :title="change.label"
+                  :subtitle="`${change.before} → ${change.after}`"
+                />
+              </v-list-group>
             </v-list>
             <v-list v-if="pendingPlan.newCards.length" bg-color="transparent" density="compact" class="mt-2 pa-0">
               <v-list-item
@@ -474,10 +493,36 @@ onBeforeUnmount(() => {
 :global(html.assistant-mobile-open),
 :global(html.assistant-mobile-open body) { overflow: hidden !important; }
 
-.assistant-panel :deep(.v-navigation-drawer__content) { overflow: hidden; }
-.assistant-panel__layout { display: grid; height: 100%; grid-template-rows: auto minmax(0, 1fr) auto; }
+.assistant-panel :deep(.v-navigation-drawer__content) {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.assistant-panel__layout {
+  display: grid;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
 .assistant-panel__header { display: flex; min-height: 4.25rem; align-items: center; justify-content: space-between; border-bottom: .0625rem solid rgb(var(--v-theme-on-surface) / .08); padding-top: max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem)); }
-.assistant-panel__messages { display: flex; min-height: 0; overflow-y: auto; flex-direction: column; gap: 1rem; }
+.assistant-panel__messages {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  flex-direction: column;
+  gap: 1rem;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+.assistant-panel__messages > * { flex: 0 0 auto; }
 .assistant-panel__welcome { margin: auto 0; text-align: center; }
 .assistant-panel__suggestion {
   width: 100%;
@@ -515,7 +560,11 @@ onBeforeUnmount(() => {
   white-space: normal;
 }
 .assistant-choice__button--selected:disabled { opacity: 1; }
-.assistant-plan { background: rgb(var(--v-theme-surface)); }
+.assistant-plan {
+  min-height: min-content;
+  flex: 0 0 auto;
+  background: rgb(var(--v-theme-surface));
+}
 .assistant-panel__thinking,
 .assistant-panel__listening { display: flex; align-items: center; gap: .5rem; }
 .assistant-panel__composer { padding-bottom: calc(1rem + max(env(safe-area-inset-bottom, 0rem), var(--safe-area-inset-bottom, 0rem))) !important; border-top: .0625rem solid rgb(var(--v-theme-on-surface) / .08); background: rgb(var(--v-theme-surface)); }

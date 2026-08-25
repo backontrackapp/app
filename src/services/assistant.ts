@@ -7,6 +7,7 @@ import {
   flashcardReviewSettingsAreValid,
 } from '@/services/flashcards'
 import type {
+  AssistantCardUpdate,
   AssistantChoice,
   AssistantConversationItem,
   AssistantFlashcardDraft,
@@ -41,6 +42,12 @@ function normalizedCard(value: unknown): AssistantFlashcardDraft | undefined {
     transliteration: normalizedText(record.transliteration, 4000),
     note: normalizedText(record.note, 2000),
   }
+}
+
+function nullableText(value: unknown, maximum: number, field: string) {
+  if (value === null || value === undefined) return undefined
+  if (typeof value !== 'string') throw new Error(`${field} must be text.`)
+  return value.trim().slice(0, maximum)
 }
 
 function cardKey(front: string, back: string) {
@@ -142,6 +149,22 @@ function reviewSetChanges(
   return changes
 }
 
+function cardChanges(
+  current: { front: string; back: string; transliteration?: string; note: string },
+  draft: { front: string; back: string; transliteration?: string; note: string },
+) {
+  const changes: AssistantReviewSetChange[] = []
+  const add = (label: string, before: string, after: string) => {
+    if (before === after) return
+    changes.push({ label, before: before || 'None', after: after || 'None' })
+  }
+  add('Front', current.front, draft.front)
+  add('Back', current.back, draft.back)
+  add('Transliteration', current.transliteration || '', draft.transliteration || '')
+  add('Note', current.note, draft.note)
+  return changes
+}
+
 export function assistantChoice(call: AssistantToolCallItem): AssistantChoice | undefined {
   if (call.name !== 'present_choices') return undefined
   const prompt = normalizedText(call.arguments.prompt, 500)
@@ -208,6 +231,32 @@ export function assistantReadToolResult(
     }
   }
 
+  if (call.name === 'list_owned_flashcards') {
+    const query = normalizedText(call.arguments.query, 160).toLocaleLowerCase()
+    const limit = Math.min(100, Math.max(1, integer(call.arguments.limit, 20)))
+    const cards = store.cards
+      .filter(card => !query || [card.front, card.back, card.transliteration || '', card.note]
+        .some(value => value.toLocaleLowerCase().includes(query)))
+      .sort((left, right) => left.front.localeCompare(right.front) || left.id.localeCompare(right.id))
+      .slice(0, limit)
+    return {
+      type: 'function_call_output',
+      callId: call.callId,
+      output: {
+        cards: cards.map(card => ({
+          id: card.id,
+          front: card.front,
+          back: card.back,
+          transliteration: card.transliteration || '',
+          note: card.note,
+          success_count: card.successCount,
+          error_count: card.errorCount,
+          last_reviewed_at: card.lastReviewedAt || '',
+        })),
+      },
+    }
+  }
+
   if (call.name !== 'get_owned_review_set_cards') return undefined
   const reviewSetId = normalizedText(call.arguments.review_set_id, 64)
   const reviewSet = ownedSets.find(set => set.id === reviewSetId)
@@ -255,6 +304,7 @@ export function assistantWritePlan(
     call.name !== 'create_flashcard_review_set'
     && call.name !== 'add_flashcards_to_review_set'
     && call.name !== 'update_flashcard_review_set'
+    && call.name !== 'update_flashcards'
   ) {
     return undefined
   }
@@ -262,6 +312,68 @@ export function assistantWritePlan(
   const ownedSets = store.reviewSets.filter(set => (
     set.owner === accountId && set.accessRole === 'owner'
   ))
+
+  if (call.name === 'update_flashcards') {
+    const reviewSetId = call.arguments.review_set_id === null
+      || call.arguments.review_set_id === undefined
+      ? ''
+      : normalizedText(call.arguments.review_set_id, 64)
+    const reviewSet = reviewSetId ? ownedSets.find(set => set.id === reviewSetId) : undefined
+    if (reviewSetId && !reviewSet) throw new Error('Choose one of your Review sets.')
+    if (!Array.isArray(call.arguments.cards) || !call.arguments.cards.length) {
+      throw new Error('Choose at least one card to update.')
+    }
+    if (call.arguments.cards.length > MAX_ASSISTANT_CARDS) {
+      throw new Error('An assistant action cannot update more than 100 cards.')
+    }
+    const cardsById = new Map(store.cards
+      .filter(card => !reviewSet || cardMatchesReviewSet(card, reviewSet))
+      .map(card => [card.id, card]))
+    const updates: AssistantCardUpdate[] = []
+    const seen = new Set<string>()
+    for (const value of call.arguments.cards) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error('The assistant returned an invalid card update.')
+      }
+      const record = value as Record<string, unknown>
+      const cardId = normalizedText(record.card_id, 64)
+      if (!cardId || seen.has(cardId)) throw new Error('Each card can only be updated once.')
+      seen.add(cardId)
+      const current = cardsById.get(cardId)
+      if (!current) throw new Error(reviewSet
+        ? 'Choose cards from the selected owned Review set.'
+        : 'Choose cards from your Card library.')
+      const front = nullableText(record.front, 4000, 'Front') ?? current.front
+      const back = nullableText(record.back, 4000, 'Back') ?? current.back
+      const transliteration = nullableText(record.transliteration, 4000, 'Transliteration')
+        ?? current.transliteration ?? ''
+      const note = nullableText(record.note, 2000, 'Note') ?? current.note
+      if (!front || !back) throw new Error('Card fronts and backs cannot be empty.')
+      const draft = {
+        id: current.id,
+        front,
+        back,
+        transliteration,
+        note,
+        tags: [...current.tags],
+      }
+      const changes = cardChanges(current, draft)
+      if (changes.length) updates.push({ id: current.id, label: current.front, draft, changes })
+    }
+    if (!updates.length) throw new Error('The requested content already matches these cards.')
+    return {
+      call,
+      title: reviewSet ? `Update cards in ${reviewSet.name}?` : 'Update existing cards?',
+      description: `${updates.length} card${updates.length === 1 ? '' : 's'} will change.`,
+      destinationName: reviewSet?.name || 'Card library',
+      newCards: [],
+      existingCardIds: [],
+      reusedCardIds: [],
+      convertsTagSelection: false,
+      maxCards: reviewSet?.maxCards || MAX_ASSISTANT_CARDS,
+      updatedCards: updates,
+    }
+  }
 
   if (call.name === 'update_flashcard_review_set') {
     const reviewSetId = normalizedText(call.arguments.review_set_id, 64)
@@ -397,6 +509,27 @@ export function assistantWritePlan(
 }
 
 export async function executeAssistantWritePlan(plan: AssistantWritePlan, store: FlashcardStore) {
+  if (plan.updatedCards) {
+    for (const update of plan.updatedCards) await store.saveCard(update.draft)
+    return {
+      type: 'function_call_output' as const,
+      callId: plan.call.callId,
+      output: {
+        status: 'completed',
+        scope: {
+          type: plan.call.arguments.review_set_id ? 'review_set' : 'card_library',
+          ...(plan.call.arguments.review_set_id ? {
+            id: String(plan.call.arguments.review_set_id),
+            name: plan.destinationName,
+          } : {}),
+        },
+        updated_cards: plan.updatedCards.map(update => ({
+          id: update.id,
+          updated_fields: update.changes.map(change => change.label),
+        })),
+      },
+    }
+  }
   if (plan.updatedReviewSet) {
     const reviewSet = await store.saveReviewSet(plan.updatedReviewSet)
     return {

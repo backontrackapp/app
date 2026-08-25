@@ -696,10 +696,12 @@ export interface FlashcardReviewEvent {
 export type AssistantMessageRole = 'user' | 'assistant'
 export type AssistantToolName =
   | 'list_owned_review_sets'
+  | 'list_owned_flashcards'
   | 'get_owned_review_set_cards'
   | 'create_flashcard_review_set'
   | 'add_flashcards_to_review_set'
   | 'update_flashcard_review_set'
+  | 'update_flashcards'
   | 'present_choices'
 
 export interface AssistantMessageItem {
@@ -754,7 +756,15 @@ export interface AssistantWritePlan {
   convertsTagSelection: boolean
   maxCards: number
   updatedReviewSet?: FlashcardReviewSetDraft
+  updatedCards?: AssistantCardUpdate[]
   changes?: AssistantReviewSetChange[]
+}
+
+export interface AssistantCardUpdate {
+  id: string
+  label: string
+  draft: FlashcardDraft
+  changes: AssistantReviewSetChange[]
 }
 
 export interface AssistantReviewSetChange {
