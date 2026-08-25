@@ -20,6 +20,7 @@ const router = createRouter({
         seo: {
           title: 'BackOnTrack — Build your way forward',
           description: 'Turn tasks, intervals, flashcards, tracking, and reflection into one flexible personal system built around the way you move forward.',
+          structuredData: 'software-application',
         },
       },
     },
@@ -32,6 +33,7 @@ const router = createRouter({
         seo: {
           title: 'Privacy policy | BackOnTrack',
           description: 'Learn how BackOnTrack collects, uses, stores, shares, and protects account, app, Health Connect, and device data.',
+          structuredData: 'web-page',
         },
       },
     },
@@ -44,6 +46,7 @@ const router = createRouter({
         seo: {
           title: 'Terms and conditions | BackOnTrack',
           description: 'Review the terms that govern access to and use of the BackOnTrack website, web app, and mobile apps.',
+          structuredData: 'web-page',
         },
       },
     },

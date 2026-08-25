@@ -4,17 +4,54 @@ import vue from '@vitejs/plugin-vue'
 import vuetify from 'vite-plugin-vuetify'
 import { VitePWA } from 'vite-plugin-pwa'
 
-function developmentRobotsPlugin(mode: string): Plugin {
+const SITE_ORIGIN = 'https://backontrack.app'
+const INDEXABLE_PATHS = ['/', '/privacy', '/terms']
+
+function crawlerIndexingPlugin(mode: string): Plugin {
   return {
-    name: 'development-robots',
-    apply: 'build',
+    name: 'crawler-indexing',
+    transformIndexHtml(html) {
+      if (mode === 'prod') return html
+
+      return html.replace(/\n\s*<script type="application\/ld\+json" data-seo-structured-data>[\s\S]*?<\/script>/, '')
+    },
     generateBundle() {
-      if (mode !== 'dev') return
+      if (mode === 'dev') {
+        this.emitFile({
+          type: 'asset',
+          fileName: 'robots.txt',
+          source: 'User-agent: *\nDisallow: /\n',
+        })
+        return
+      }
+
+      if (mode !== 'prod') return
 
       this.emitFile({
         type: 'asset',
         fileName: 'robots.txt',
-        source: 'User-agent: *\nDisallow: /\n',
+        source: [
+          'User-agent: OAI-SearchBot',
+          'Allow: /',
+          '',
+          'User-agent: *',
+          'Allow: /',
+          '',
+          `Sitemap: ${SITE_ORIGIN}/sitemap.xml`,
+          '',
+        ].join('\n'),
+      })
+
+      this.emitFile({
+        type: 'asset',
+        fileName: 'sitemap.xml',
+        source: [
+          '<?xml version="1.0" encoding="UTF-8"?>',
+          '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+          ...INDEXABLE_PATHS.map((path) => `  <url><loc>${new URL(path, SITE_ORIGIN).href}</loc></url>`),
+          '</urlset>',
+          '',
+        ].join('\n'),
       })
     },
   }
@@ -24,7 +61,7 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     vue(),
     vuetify({ autoImport: true }),
-    developmentRobotsPlugin(mode),
+    crawlerIndexingPlugin(mode),
     VitePWA({
       strategies: 'injectManifest',
       srcDir: 'src',
