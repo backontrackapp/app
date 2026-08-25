@@ -61,9 +61,16 @@ jobs:
         run: composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader
 
       - name: Build project
-        run: pnpm build:prod
         env:
           VITE_API_URL: /server
+          BACKONTRACK_REQUIRE_IPS: ${{ github.ref == 'refs/heads/dev' && vars.BACKONTRACK_REQUIRE_IPS || '' }}
+          IS_DEV_DEPLOYMENT: ${{ github.ref == 'refs/heads/dev' }}
+        run: |
+          if [[ "$IS_DEV_DEPLOYMENT" == "true" ]]; then
+            pnpm build:dev
+          else
+            pnpm build:prod
+          fi
 
       - name: Normalize FTP path
         id: ftp_path

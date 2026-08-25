@@ -11,6 +11,7 @@
     "db:cleanup": "bash scripts/cleanup-database.sh",
     "audio:normalize": "node scripts/normalize-mp3.mjs",
     "build": "vue-tsc --noEmit && vite build",
+    "build:dev": "vue-tsc --noEmit && vite build --mode dev && node scripts/configure-dev-htaccess.mjs",
     "build:prod": "vue-tsc --noEmit && vite build --mode prod",
     "build:tag": "bash scripts/release-android.sh",
     "android:push": "bash scripts/build-install-android-release.sh",
