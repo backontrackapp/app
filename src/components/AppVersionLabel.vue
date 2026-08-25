@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import packageMetadata from '../../package.json'
 
-const appVersion = packageMetadata.version
+const appVersion = `${packageMetadata.version}${import.meta.env.MODE === 'dev' ? '-dev' : ''}`
 </script>
 
 <template>

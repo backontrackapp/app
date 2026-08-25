@@ -2,12 +2,10 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { isIP } from 'node:net'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { loadEnv } from 'vite'
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const htaccessPath = resolve(projectRoot, 'dist/.htaccess')
-const env = loadEnv('dev', projectRoot, 'BACKONTRACK_REQUIRE_IPS')
-const configuredIps = env.BACKONTRACK_REQUIRE_IPS?.trim() ?? ''
+const configuredIps = process.env.BACKONTRACK_REQUIRE_IPS?.trim() ?? ''
 
 if (!configuredIps) {
   throw new Error(

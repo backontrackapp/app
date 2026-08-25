@@ -78,7 +78,7 @@ composer install --no-dev --optimize-autoloader
 pnpm build:prod
 ```
 
-Development web deployments use `pnpm build:dev`. Set `BACKONTRACK_REQUIRE_IPS` in `.env.dev` to a comma-separated list of IPv4, IPv6, or CIDR entries. The build validates the list and adds a LiteSpeed-compatible IP allowlist to `dist/.htaccess`. Production builds do not add this restriction. The GitHub `Dev` environment must define the same key as an environment variable because ignored local environment files are not available to Actions.
+Development web deployments use `pnpm build:dev`. The GitHub `Dev` environment must define `BACKONTRACK_REQUIRE_IPS` as a comma-separated list of IPv4, IPv6, or CIDR entries. The workflow passes that variable directly to the build, which validates the list and adds a LiteSpeed-compatible IP allowlist to `dist/.htaccess`. Production builds do not add this restriction.
 
 For the prepared `backontrack.app` deployment, this loads `.env.prod` and embeds `https://backontrack.app/server` as the browser API URL. Upload the contents of `dist` as the web application, then upload the `server` and Composer-generated `vendor` directories. Back up the database before releasing. The GitHub release workflow calls the authenticated migration endpoint after its upload job succeeds. The generated `dist/.htaccess` routes `/server/*` to the protected PHP front controller without exposing `/public` in the URL.
 
@@ -94,7 +94,7 @@ On the host, place a copy of `.env.prod` named `.env` at the project root becaus
 - `pnpm test` — run unit tests
 - `pnpm test:api` — exercise the PHP API against a temporary database copy
 - `pnpm build` — type-check and create a production build
-- `pnpm build:dev` — build with `.env.dev`, block crawlers, and restrict LiteSpeed access to `BACKONTRACK_REQUIRE_IPS`
+- `pnpm build:dev` — build with `.env.dev`, block crawlers, and restrict LiteSpeed access using the `BACKONTRACK_REQUIRE_IPS` process variable supplied by the deployment workflow
 - `pnpm build:prod` — build using the private `.env.prod` hosting configuration
 - `pnpm android:sync` — build with `.env.prod` and sync the web app into Android
 - `pnpm android:assets` — regenerate launcher and splash assets
