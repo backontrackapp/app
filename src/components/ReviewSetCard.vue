@@ -255,8 +255,7 @@ function bufferIsHidden(index: number) {
 }
 
 function bufferColorizesPinyin(buffer: ReviewCardBuffer) {
-  return props.speechEnabled
-    && buffer.side === 'back'
+  return buffer.side === 'back'
     && speechLanguageUsesPinyin(buffer.speechLanguage)
 }
 
