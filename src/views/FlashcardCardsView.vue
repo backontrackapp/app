@@ -39,20 +39,6 @@ function openCard(card: Flashcard) {
     <template v-else>
       <section>
         <div class="section-heading mt-0">
-          <h2>Tags</h2>
-        </div>
-        <v-btn
-          size="large"
-          variant="tonal"
-          prepend-icon="mdi-tag-multiple-outline"
-          :to="{ name: 'flashcard-tags' }"
-        >
-          Manage tags
-        </v-btn>
-      </section>
-
-      <section>
-        <div class="section-heading">
           <h2>Your cards</h2>
           <span class="text-caption muted">{{ filteredCardCount }} of {{ store.cards.length }}</span>
         </div>
