@@ -703,6 +703,7 @@ function releaseLeavingPage(element: Element) {
             :class="{ 'bottom-nav__link--active': selectedMainNavigationPath === item.to }"
             :aria-current="current === item.to ? 'page' : undefined"
             :aria-label="menuItemLabel(item)"
+            data-post-gesture-click-recovery="off"
             @pointerdown="beginMainNavigationPress(item.to, $event)"
             @pointerup="finishMainNavigationPress(item.to, $event)"
             @pointercancel="cancelMainNavigationPress(item.to, $event)"

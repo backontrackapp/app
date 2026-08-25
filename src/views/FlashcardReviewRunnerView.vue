@@ -1094,17 +1094,6 @@ function handleReviewCardTap() {
   else handlePassiveCardTap()
 }
 
-function suppressTagClickAfterSwipe(event: MouseEvent) {
-  if (!suppressManualCardTap) return
-  suppressManualCardTap = false
-  if (manualCardTapResetTimer) {
-    window.clearTimeout(manualCardTapResetTimer)
-    manualCardTapResetTimer = undefined
-  }
-  event.preventDefault()
-  event.stopPropagation()
-}
-
 function finishReviewCardTransition() {
   reviewCardTransitionDirection.value = undefined
 }
@@ -1628,7 +1617,6 @@ async function leaveRunner() {
           @activate="handleReviewCardTap"
           @replay="replayCurrentSide"
           @after-enter="finishReviewCardTransition"
-          @tag-click-capture="suppressTagClickAfterSwipe"
           @toggle-tag="toggleCurrentCardTag({ name: $event })"
           @eject="ejectCurrentCard"
           @previous="navigateLeft"

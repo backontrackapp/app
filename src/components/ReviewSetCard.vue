@@ -99,7 +99,6 @@ const emit = defineEmits<{
   pointerCancel: [event: PointerEvent]
   lostPointerCapture: [event: PointerEvent]
   afterEnter: []
-  tagClickCapture: [event: MouseEvent]
   toggleTag: [name: string]
   openTags: []
   eject: []
@@ -638,7 +637,6 @@ defineExpose({ refitContent })
       v-if="showTagActions || ejectable"
       class="review-card__tag-actions"
       aria-label="Flashcard actions"
-      @click.capture="emit('tagClickCapture', $event)"
       @click.stop
     >
       <v-btn

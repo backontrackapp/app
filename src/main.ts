@@ -11,6 +11,7 @@ import { vuetify } from './plugins/vuetify'
 import { preloadIntervalCueAudio } from './services/intervalCues'
 import { installFlashcardNotificationRouting } from './services/flashcardNotificationRouting'
 import { installIntervalNotificationRouting } from './services/intervalNotificationRouting'
+import { installPostGestureClickRecovery } from './services/postGestureClickRecovery'
 import { installMobileKeyboardViewport } from './services/mobileKeyboardViewport'
 import { closeTopOverlay } from './services/overlayStack'
 import { installSeoMetadata } from './services/seo'
@@ -78,6 +79,9 @@ if (nativePlatform === 'android' || nativePlatform === 'ios') {
     if (!isActive) void flushClientErrors()
   })
 }
+
+const removePostGestureClickRecovery = installPostGestureClickRecovery()
+window.addEventListener('pagehide', removePostGestureClickRecovery, { once: true })
 
 if (nativePlatform === 'android') {
   void router.isReady().then(() => {
