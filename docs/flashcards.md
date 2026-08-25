@@ -90,7 +90,9 @@ The standalone review header reports the current card's position within the live
 
 Automatic and manual standalone Review set changes use the same directional model: previous and next cards move down and up, while front and back faces move right and left. An incoming card resets to its configured first face before its content is rendered, so advancing from a back does not expose the next card's back during the handoff. Motion is limited to the card value, answer, and note; the face label, replay or reveal hint, card surface, and passive progress remain stationary. Reduced-motion preferences replace the content without directional movement.
 
-Background images crossfade and move in the same direction as the card content when the standalone reviewer changes cards. Reduced-motion preferences replace them immediately.
+Background images crossfade and move in the same direction as the card content when the standalone reviewer changes cards. They remain stationary when alternating between the front and back of the same card. Reduced-motion preferences replace them immediately.
+
+Standalone and mini Interval Review cards keep two isolated render buffers mounted. Before a card or face transition starts, the inactive buffer receives the incoming card, side, image, language, and response values and completes its text-fitting pass while transparent. The prepared buffer then transitions over the unchanged outgoing snapshot. After motion completes, it is promoted to current and copied into the background buffer. This prevents the outgoing card's front or back values from changing to the incoming card before the handoff; reduced-motion mode performs the same prepared promotion without directional movement.
 
 Standalone Review set sessions show the current card position centered above the card, between the review mode and elapsed time. Finite sessions advance from 1 through the session total, while indefinite sessions wrap the position at the start of each loop.
 

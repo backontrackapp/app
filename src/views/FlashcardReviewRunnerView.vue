@@ -1050,7 +1050,6 @@ function suppressTagClickAfterSwipe(event: MouseEvent) {
 
 function finishReviewCardTransition() {
   reviewCardTransitionDirection.value = undefined
-  scheduleReviewContentFit()
 }
 
 async function syncNativeBackground() {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import FlashcardResponseText from '@/components/FlashcardResponseText.vue'
 import FitReviewContent from '@/components/FitReviewContent.vue'
 import SpokenText from '@/components/SpokenText.vue'
@@ -18,6 +18,18 @@ import type {
 } from '@/types/domain'
 
 type ReviewCardTransitionDirection = 'previous' | 'next' | 'front' | 'back'
+type ReviewCardBufferPhase = 'idle' | 'preparing' | 'moving'
+
+interface ReviewCardBuffer {
+  card: FlashcardReviewQueueCard
+  side: FlashcardReviewSide
+  cardSides: FlashcardReviewCardSides
+  backDisplay: FlashcardBackDisplay
+  revealed: boolean
+  speechLanguage: string
+  spokenWord?: FlashcardSpeechWord
+  cardPosition: number
+}
 
 const props = withDefaults(defineProps<{
   card: FlashcardReviewQueueCard
@@ -91,20 +103,171 @@ const emit = defineEmits<{
 }>()
 
 const root = ref<HTMLElement>()
-const contentTransitionName = computed(() => props.transitionDirection
-  ? `${props.dense ? 'interval-flashcard' : 'standalone-review-content'}-${props.transitionDirection}`
-  : undefined)
-const imageTransitionName = computed(() => props.transitionDirection
-  ? `${props.dense ? 'interval-flashcard' : 'review-card-image'}-${props.transitionDirection}`
-  : props.dense ? undefined : 'review-card-image')
-const denseTransitionKey = computed(() => `${props.card.id}:${props.side}`)
-const colorizePinyin = computed(() => props.speechEnabled
-  && props.side === 'back'
-  && speechLanguageUsesPinyin(props.speechLanguage))
+const activeBufferIndex = ref<0 | 1>(0)
+const incomingBufferIndex = ref<0 | 1>()
+const bufferPhase = ref<ReviewCardBufferPhase>('idle')
+const bufferedTransitionDirection = ref<ReviewCardTransitionDirection>()
+const bufferedCardIsChanging = ref(false)
+let bufferTransitionFrame: number | undefined
+let bufferTransitionTimer: number | undefined
+
+function snapshotBuffer(): ReviewCardBuffer {
+  return {
+    card: { ...props.card, tags: [...props.card.tags] },
+    side: props.side,
+    cardSides: props.cardSides,
+    backDisplay: props.backDisplay,
+    revealed: props.revealed,
+    speechLanguage: props.speechLanguage,
+    spokenWord: props.spokenWord ? { ...props.spokenWord } : undefined,
+    cardPosition: props.cardPosition,
+  }
+}
+
+const initialBuffer = snapshotBuffer()
+const cardBuffers = shallowRef<[ReviewCardBuffer, ReviewCardBuffer]>([
+  initialBuffer,
+  snapshotBuffer(),
+])
+const displayedBuffer = computed(() => cardBuffers.value[activeBufferIndex.value])
+const bufferTarget = computed(snapshotBuffer)
+
+function bufferKey(buffer: ReviewCardBuffer) {
+  return `${buffer.card.id}:${buffer.side}`
+}
+
+function replaceBuffer(index: 0 | 1, buffer: ReviewCardBuffer) {
+  const next: [ReviewCardBuffer, ReviewCardBuffer] = [...cardBuffers.value]
+  next[index] = buffer
+  cardBuffers.value = next
+}
+
+function cloneBuffer(buffer: ReviewCardBuffer): ReviewCardBuffer {
+  return {
+    ...buffer,
+    card: { ...buffer.card, tags: [...buffer.card.tags] },
+    spokenWord: buffer.spokenWord ? { ...buffer.spokenWord } : undefined,
+  }
+}
+
+function copyBufferToBoth(buffer: ReviewCardBuffer, active = activeBufferIndex.value) {
+  const background = active === 0 ? 1 : 0
+  const next: [ReviewCardBuffer, ReviewCardBuffer] = [...cardBuffers.value]
+  next[active] = buffer
+  next[background] = cloneBuffer(buffer)
+  cardBuffers.value = next
+  activeBufferIndex.value = active
+  incomingBufferIndex.value = undefined
+}
+
+function clearBufferTransitionSchedule() {
+  if (bufferTransitionFrame !== undefined) window.cancelAnimationFrame(bufferTransitionFrame)
+  if (bufferTransitionTimer !== undefined) window.clearTimeout(bufferTransitionTimer)
+  bufferTransitionFrame = undefined
+  bufferTransitionTimer = undefined
+}
+
+function finishBufferTransition(notify = true) {
+  const incoming = incomingBufferIndex.value
+  if (incoming === undefined || bufferPhase.value === 'idle') return
+  clearBufferTransitionSchedule()
+  const promoted = cardBuffers.value[incoming]
+  bufferPhase.value = 'idle'
+  bufferedTransitionDirection.value = undefined
+  bufferedCardIsChanging.value = false
+  copyBufferToBoth(promoted, incoming)
+  if (notify) emit('afterEnter')
+}
+
+function movePreparedBuffer() {
+  if (bufferPhase.value !== 'preparing') return
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    finishBufferTransition()
+    return
+  }
+  bufferPhase.value = 'moving'
+  bufferTransitionTimer = window.setTimeout(() => finishBufferTransition(), 260)
+}
+
+function prepareBufferTransition(buffer: ReviewCardBuffer) {
+  clearBufferTransitionSchedule()
+  const incoming = activeBufferIndex.value === 0 ? 1 : 0
+  bufferedCardIsChanging.value = buffer.card.id !== displayedBuffer.value.card.id
+  replaceBuffer(incoming, buffer)
+  incomingBufferIndex.value = incoming
+  bufferedTransitionDirection.value = props.transitionDirection
+  bufferPhase.value = 'preparing'
+
+  void nextTick(() => {
+    refitContent()
+    bufferTransitionFrame = window.requestAnimationFrame(() => {
+      bufferTransitionFrame = window.requestAnimationFrame(movePreparedBuffer)
+    })
+  })
+}
+
+watch(bufferTarget, (target) => {
+  const incoming = incomingBufferIndex.value
+  if (bufferPhase.value !== 'idle' && incoming !== undefined) {
+    if (bufferKey(cardBuffers.value[incoming]) === bufferKey(target)) {
+      replaceBuffer(incoming, target)
+      return
+    }
+    finishBufferTransition(false)
+  }
+
+  if (bufferKey(displayedBuffer.value) === bufferKey(target)) {
+    copyBufferToBoth(target)
+    return
+  }
+  if (!props.transitionDirection) {
+    copyBufferToBoth(target)
+    return
+  }
+  prepareBufferTransition(target)
+}, { deep: true, flush: 'post' })
+
+function bufferClasses(index: number) {
+  const active = activeBufferIndex.value
+  const incoming = incomingBufferIndex.value
+  return {
+    'review-card-buffer--current': bufferPhase.value === 'idle' && index === active,
+    'review-card-buffer--background': bufferPhase.value === 'idle' && index !== active,
+    'review-card-buffer--preparing': bufferPhase.value === 'preparing' && index === incoming,
+    'review-card-buffer--incoming': bufferPhase.value === 'moving' && index === incoming,
+    'review-card-buffer--outgoing': bufferPhase.value === 'moving' && index === active,
+    [`review-card-buffer--${bufferedTransitionDirection.value}`]: Boolean(
+      bufferedTransitionDirection.value && bufferPhase.value !== 'idle',
+    ),
+  }
+}
+
+function imageBufferClasses(index: number) {
+  if (bufferPhase.value === 'idle' || bufferedCardIsChanging.value) return bufferClasses(index)
+  return {
+    'review-card-buffer--current': index === activeBufferIndex.value,
+    'review-card-buffer--background': index !== activeBufferIndex.value,
+  }
+}
+
+function bufferIsHidden(index: number) {
+  return index !== activeBufferIndex.value
+}
+
+function bufferColorizesPinyin(buffer: ReviewCardBuffer) {
+  return props.speechEnabled
+    && buffer.side === 'back'
+    && speechLanguageUsesPinyin(buffer.speechLanguage)
+}
+
 const standaloneAriaLabel = computed(() => {
-  if (props.speechEnabled) return `Replay ${props.side} speech`
-  if (props.mode === 'manual' && props.cardSides === 'both' && !props.revealed) return 'Show answer'
-  return `${props.side} shown`
+  if (props.speechEnabled) return `Replay ${displayedBuffer.value.side} speech`
+  if (
+    props.mode === 'manual'
+    && displayedBuffer.value.cardSides === 'both'
+    && !displayedBuffer.value.revealed
+  ) return 'Show answer'
+  return `${displayedBuffer.value.side} shown`
 })
 
 function refitContent() {
@@ -112,6 +275,8 @@ function refitContent() {
     ?.querySelectorAll<HTMLElement>('.fit-review-content, .fit-response-part')
     .forEach(element => element.dispatchEvent(new Event(REFIT_TEXT_CONTENT_EVENT)))
 }
+
+onBeforeUnmount(clearBufferTransitionSchedule)
 
 defineExpose({ refitContent })
 </script>
@@ -130,8 +295,8 @@ defineExpose({ refitContent })
     :tabindex="disabled ? -1 : 0"
     :aria-disabled="disabled"
     :aria-label="paused
-      ? `${setName} paused for this step, card ${cardPosition} of ${cardCount}`
-      : `${setName}, ${side}, card ${cardPosition} of ${cardCount}`"
+      ? `${setName} paused for this step, card ${displayedBuffer.cardPosition} of ${cardCount}`
+      : `${setName}, ${displayedBuffer.side}, card ${displayedBuffer.cardPosition} of ${cardCount}`"
     @pointerdown.capture="emit('pointerDown', $event)"
     @pointermove.capture="emit('pointerMove', $event)"
     @pointerup.capture="emit('pointerUp', $event)"
@@ -141,58 +306,62 @@ defineExpose({ refitContent })
     @keydown.enter.self="emit('activate', $event)"
     @keydown.space.self.prevent="emit('activate', $event)"
   >
-    <transition :name="imageTransitionName">
-      <img
-        v-if="card.image"
-        :key="card.id"
-        :src="card.image"
-        alt=""
-        class="interval-review-card__image"
-      />
-    </transition>
+    <span
+      v-for="(buffer, index) in cardBuffers"
+      :key="`dense-image-${index}`"
+      class="review-card-buffer review-card__image-buffer"
+      :class="imageBufferClasses(index)"
+      :aria-hidden="bufferIsHidden(index)"
+    >
+      <img v-if="buffer.card.image" :src="buffer.card.image" alt="" class="interval-review-card__image" />
+    </span>
     <div class="interval-review-card__main">
       <div class="interval-review-card__content">
         <div class="interval-review-card__heading">
           <span class="interval-review-card__set">
             <v-icon icon="mdi-cards-outline" size="1.0625rem" />
             <span class="text-truncate">{{ setName }}</span>
-            <span class="interval-review-card__count">({{ cardPosition }} of {{ cardCount }})</span>
+            <span class="interval-review-card__count">({{ displayedBuffer.cardPosition }} of {{ cardCount }})</span>
           </span>
           <div class="interval-review-card__meta">
             <small>
               <v-icon v-if="paused" icon="mdi-pause-circle-outline" size=".875rem" />
-              {{ paused ? 'Paused' : side === 'front' ? 'Front' : 'Back' }}
+              {{ paused ? 'Paused' : displayedBuffer.side === 'front' ? 'Front' : 'Back' }}
             </small>
           </div>
         </div>
         <div class="interval-review-card__face-window">
-          <transition :name="contentTransitionName" @after-enter="emit('afterEnter')">
-            <div :key="denseTransitionKey" class="interval-review-card__faces">
+          <div
+            v-for="(buffer, index) in cardBuffers"
+            :key="`dense-content-${index}`"
+            class="review-card-buffer interval-review-card__faces"
+            :class="bufferClasses(index)"
+            :aria-hidden="bufferIsHidden(index)"
+          >
               <strong
-                :class="{ 'interval-review-card__face--hidden': side !== 'front' }"
-                :aria-hidden="side !== 'front' ? 'true' : undefined"
-                :style="{ fontSize: flashcardTextFontSize(card.front, 'face', 'compact') }"
+                :class="{ 'interval-review-card__face--hidden': buffer.side !== 'front' }"
+                :aria-hidden="buffer.side !== 'front' ? 'true' : undefined"
+                :style="{ fontSize: flashcardTextFontSize(buffer.card.front, 'face', 'compact') }"
               >
                 <SpokenText
-                  :text="card.front"
-                  :language="speechLanguage"
+                  :text="buffer.card.front"
+                  :language="buffer.speechLanguage"
                 />
               </strong>
               <FlashcardResponseText
-                :class="{ 'interval-review-card__face--hidden': side !== 'back' }"
-                :aria-hidden="side !== 'back' ? 'true' : undefined"
-                :back="card.back"
-                :transliteration="card.transliteration"
-                :note="card.note"
-                :back-display="backDisplay"
+                :class="{ 'interval-review-card__face--hidden': buffer.side !== 'back' }"
+                :aria-hidden="buffer.side !== 'back' ? 'true' : undefined"
+                :back="buffer.card.back"
+                :transliteration="buffer.card.transliteration"
+                :note="buffer.card.note"
+                :back-display="buffer.backDisplay"
                 show-transliteration
                 density="compact"
-                :speech-language="speechLanguage"
-                :spoken-word="side === 'back' ? spokenWord : undefined"
-                :colorize-pinyin="colorizePinyin"
+                :speech-language="buffer.speechLanguage"
+                :spoken-word="buffer.side === 'back' ? buffer.spokenWord : undefined"
+                :colorize-pinyin="bufferColorizesPinyin(buffer)"
               />
-            </div>
-          </transition>
+          </div>
         </div>
       </div>
     </div>
@@ -272,54 +441,65 @@ defineExpose({ refitContent })
           v-ripple
           type="button"
           class="review-card"
-          :class="{ 'review-card--back': side === 'back' }"
+          :class="{ 'review-card--back': displayedBuffer.side === 'back' }"
           :aria-label="standaloneAriaLabel"
           :disabled="disabled"
         >
-          <transition :name="imageTransitionName">
-            <img v-if="card.image" :key="card.id" :src="card.image" alt="" class="review-card__image" />
-          </transition>
-          <small>{{ side === 'back' ? 'Back' : 'Front' }}</small>
+          <span
+            v-for="(buffer, index) in cardBuffers"
+            :key="`manual-image-${index}`"
+            class="review-card-buffer review-card__image-buffer"
+            :class="imageBufferClasses(index)"
+            :aria-hidden="bufferIsHidden(index)"
+          >
+            <img v-if="buffer.card.image" :src="buffer.card.image" alt="" class="review-card__image" />
+          </span>
+          <small>{{ displayedBuffer.side === 'back' ? 'Back' : 'Front' }}</small>
           <span class="review-card__content-window">
-            <transition :name="contentTransitionName" @after-enter="emit('afterEnter')">
+            <span
+              v-for="(buffer, index) in cardBuffers"
+              :key="`manual-content-${index}`"
+              class="review-card-buffer review-card__value-buffer"
+              :class="bufferClasses(index)"
+              :aria-hidden="bufferIsHidden(index)"
+            >
               <FitReviewContent
-                :key="`manual-front-${card.id}`"
-                v-show="side === 'front'"
-                :text="card.front"
-                :language="speechLanguage"
-                :aria-hidden="side !== 'front'"
+                :class="{ 'review-card-buffer__face--hidden': buffer.side !== 'front' }"
+                :text="buffer.card.front"
+                :language="buffer.speechLanguage"
+                :aria-hidden="buffer.side !== 'front'"
               />
-            </transition>
-            <transition :name="contentTransitionName" @after-enter="emit('afterEnter')">
               <span
-                :key="`manual-back-${card.id}`"
-                v-show="side === 'back'"
                 class="review-card__content"
-                :aria-hidden="side !== 'back'"
+                :class="{ 'review-card-buffer__face--hidden': buffer.side !== 'back' }"
+                :aria-hidden="buffer.side !== 'back'"
               >
                 <span class="review-card__answer">
-                  <span v-if="cardSides === 'both'" class="review-card__front-reference">
-                    {{ card.front }}
+                  <span v-if="buffer.cardSides === 'both'" class="review-card__front-reference">
+                    {{ buffer.card.front }}
                   </span>
                   <FlashcardResponseText
-                    :back="card.back"
-                    :transliteration="card.transliteration"
-                    :note="card.note"
-                    :back-display="backDisplay"
+                    :back="buffer.card.back"
+                    :transliteration="buffer.card.transliteration"
+                    :note="buffer.card.note"
+                    :back-display="buffer.backDisplay"
                     show-transliteration
                     fit-largest-word
-                    :speech-language="speechLanguage"
-                    :spoken-word="side === 'back' ? spokenWord : undefined"
-                    :colorize-pinyin="colorizePinyin"
+                    :speech-language="buffer.speechLanguage"
+                    :spoken-word="buffer.side === 'back' ? buffer.spokenWord : undefined"
+                    :colorize-pinyin="bufferColorizesPinyin(buffer)"
                   />
                 </span>
               </span>
-            </transition>
+            </span>
           </span>
           <span v-if="speechEnabled" class="review-card__hint">
             <v-icon icon="mdi-volume-high" size="1.125rem" /> Tap to replay
           </span>
-          <span v-else-if="cardSides === 'both' && !revealed" class="review-card__hint">
+          <span
+            v-else-if="displayedBuffer.cardSides === 'both' && !displayedBuffer.revealed"
+            class="review-card__hint"
+          >
             <v-icon icon="mdi-gesture-tap" size="1.125rem" /> Tap to reveal
           </span>
         </button>
@@ -331,51 +511,59 @@ defineExpose({ refitContent })
           :class="{ 'passive-card--interactive': canReplay }"
           :role="speechEnabled ? 'button' : undefined"
           :tabindex="canReplay ? 0 : undefined"
-          :aria-label="speechEnabled ? `Replay ${side} speech` : undefined"
+          :aria-label="speechEnabled ? `Replay ${displayedBuffer.side} speech` : undefined"
           :aria-disabled="speechEnabled ? !canReplay : undefined"
           @keydown.enter="emit('replay')"
           @keydown.space.prevent="emit('replay')"
         >
-          <transition :name="imageTransitionName">
-            <img v-if="card.image" :key="card.id" :src="card.image" alt="" class="review-card__image" />
-          </transition>
+          <span
+            v-for="(buffer, index) in cardBuffers"
+            :key="`passive-image-${index}`"
+            class="review-card-buffer review-card__image-buffer"
+            :class="imageBufferClasses(index)"
+            :aria-hidden="bufferIsHidden(index)"
+          >
+            <img v-if="buffer.card.image" :src="buffer.card.image" alt="" class="review-card__image" />
+          </span>
           <div class="passive-card__content">
-            <small>{{ side === 'front' ? 'Front' : 'Back' }}</small>
+            <small>{{ displayedBuffer.side === 'front' ? 'Front' : 'Back' }}</small>
             <span class="review-card__content-window">
-              <transition :name="contentTransitionName" @after-enter="emit('afterEnter')">
+              <span
+                v-for="(buffer, index) in cardBuffers"
+                :key="`passive-content-${index}`"
+                class="review-card-buffer review-card__value-buffer"
+                :class="bufferClasses(index)"
+                :aria-hidden="bufferIsHidden(index)"
+              >
                 <FitReviewContent
-                  :key="`passive-front-${card.id}`"
-                  v-show="side === 'front'"
-                  :text="card.front"
-                  :language="speechLanguage"
-                  :aria-hidden="side !== 'front'"
+                  :class="{ 'review-card-buffer__face--hidden': buffer.side !== 'front' }"
+                  :text="buffer.card.front"
+                  :language="buffer.speechLanguage"
+                  :aria-hidden="buffer.side !== 'front'"
                 />
-              </transition>
-              <transition :name="contentTransitionName" @after-enter="emit('afterEnter')">
                 <span
-                  :key="`passive-back-${card.id}`"
-                  v-show="side === 'back'"
                   class="review-card__content"
-                  :aria-hidden="side !== 'back'"
+                  :class="{ 'review-card-buffer__face--hidden': buffer.side !== 'back' }"
+                  :aria-hidden="buffer.side !== 'back'"
                 >
                   <span class="review-card__answer">
                     <FlashcardResponseText
-                      :back="card.back"
-                      :transliteration="card.transliteration"
-                      :note="card.note"
-                      :back-display="backDisplay"
+                      :back="buffer.card.back"
+                      :transliteration="buffer.card.transliteration"
+                      :note="buffer.card.note"
+                      :back-display="buffer.backDisplay"
                       show-transliteration
                       fit-largest-word
-                      :speech-language="speechLanguage"
-                      :spoken-word="side === 'back' ? spokenWord : undefined"
-                      :colorize-pinyin="colorizePinyin"
+                      :speech-language="buffer.speechLanguage"
+                      :spoken-word="buffer.side === 'back' ? buffer.spokenWord : undefined"
+                      :colorize-pinyin="bufferColorizesPinyin(buffer)"
                     />
-                    <span v-if="cardSides === 'both'" class="review-card__front-reference">
-                      {{ card.front }}
+                    <span v-if="buffer.cardSides === 'both'" class="review-card__front-reference">
+                      {{ buffer.card.front }}
                     </span>
                   </span>
                 </span>
-              </transition>
+              </span>
             </span>
             <span v-if="speechEnabled" class="review-card__hint">
               <v-icon icon="mdi-volume-high" size="1.125rem" /> Tap to replay
@@ -447,8 +635,9 @@ defineExpose({ refitContent })
 .review-card-window :deep(.flashcard-response-text) { pointer-events: auto; }
 .review-card-window > * { width: 100%; min-height: inherit; grid-area: 1 / 1; }
 .review-card { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); padding: 2rem 2rem 5.5rem; border: .0625rem solid rgba(var(--v-theme-on-surface), .1); border-radius: 1.5rem; align-items: center; flex: 1 1 auto; flex-direction: column; gap: 1.5rem; overflow: hidden; background: rgb(var(--v-theme-surface)); color: inherit; cursor: pointer; font: inherit; text-align: center; touch-action: none; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); }
-.review-card > :not(.review-card__image), .passive-card > :not(.review-card__image) { position: relative; z-index: 1; }
-.review-card__image { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .58; pointer-events: none; filter: brightness(.42) saturate(.82); }
+.review-card > :not(.review-card__image-buffer), .passive-card > :not(.review-card__image-buffer) { position: relative; z-index: 1; }
+.review-card__image-buffer { position: absolute; z-index: 0; inset: 0; overflow: hidden; pointer-events: none; }
+.review-card__image { width: 100%; height: 100%; object-fit: cover; opacity: .58; pointer-events: none; filter: brightness(.42) saturate(.82); }
 .review-card--back { border-color: rgba(var(--v-theme-secondary), .34); }
 .review-card :deep(.v-ripple__container),
 .passive-card :deep(.v-ripple__container) { position: absolute; z-index: 2; inset: 0; width: 100%; height: 100%; flex: none; }
@@ -458,6 +647,9 @@ defineExpose({ refitContent })
 .review-card strong,
 .passive-card strong { max-width: 34rem; overflow-wrap: anywhere; font-size: clamp(1.3rem, 5vw, 2.1rem); font-weight: 850; line-height: 1.35; white-space: pre-wrap; }
 .review-card__content-window { position: relative; width: 100%; height: 0; min-height: 0; flex: 1 1 0; overflow: hidden; }
+.review-card__value-buffer { position: absolute; display: grid; inset: 0; width: 100%; height: 100%; min-height: 0; }
+.review-card__value-buffer > * { grid-area: 1 / 1; }
+.review-card-buffer__face--hidden { visibility: hidden; }
 .review-card__content { position: absolute; display: flex; inset: 0; width: 100%; height: 100%; min-height: 0; max-height: 100%; align-items: center; align-self: stretch; justify-content: center; flex-direction: column; overflow: hidden; font-size: var(--fit-review-content-size, 3.6rem); }
 .review-card__answer { position: absolute; display: flex; inset: 0; width: 100%; height: 100%; min-width: 0; min-height: 0; max-height: 100%; align-items: center; justify-content: center; flex-direction: column; gap: .45rem; overflow: hidden; }
 .review-card__front-reference { max-width: 30rem; overflow-wrap: anywhere; color: rgba(var(--v-theme-on-surface), .48); font-size: clamp(.72rem, 2.2vw, .88rem); line-height: 1.4; white-space: pre-wrap; }
@@ -477,7 +669,7 @@ defineExpose({ refitContent })
 .interval-review-card { position: relative; width: min(100%, 34rem); overflow: hidden; border: .0625rem solid rgba(var(--v-theme-on-surface), .08); border-radius: .75rem; background: rgba(var(--v-theme-on-surface), .055); box-shadow: none; color: inherit; cursor: pointer; font: inherit; text-align: left; touch-action: none; }
 .interval-review-card:focus-visible { outline: .1875rem solid rgba(var(--v-theme-secondary), .72); outline-offset: -.1875rem; }
 .interval-review-card--disabled { cursor: default; }
-.interval-review-card__image { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .52; pointer-events: none; filter: brightness(.38) saturate(.8); }
+.interval-review-card__image { width: 100%; height: 100%; object-fit: cover; opacity: .52; pointer-events: none; filter: brightness(.38) saturate(.8); }
 .interval-review-card__main { display: block; width: 100%; color: inherit; font: inherit; text-align: left; touch-action: none; }
 .interval-review-card--playback-paused { border-style: dashed; background: rgba(var(--v-theme-on-surface), .025); opacity: .72; }
 .interval-review-card :deep(.v-ripple__container) { z-index: 2; }
@@ -507,59 +699,29 @@ defineExpose({ refitContent })
 .interval-review-card__progress { width: 100%; }
 .interval-review-card__progress :deep(.v-progress-linear__determinate) { opacity: .3; transition: none; }
 
-.review-card-image-enter-active,
-.review-card-image-leave-active,
-.review-card-image-next-enter-active,
-.review-card-image-next-leave-active,
-.review-card-image-previous-enter-active,
-.review-card-image-previous-leave-active,
-.review-card-image-front-enter-active,
-.review-card-image-front-leave-active,
-.review-card-image-back-enter-active,
-.review-card-image-back-leave-active { transition: opacity 200ms ease, transform 220ms cubic-bezier(.22, 1, .36, 1); }
-.review-card-image-enter-from,
-.review-card-image-leave-to { opacity: 0; }
-.review-card-image-next-enter-from,
-.review-card-image-previous-leave-to { opacity: 0; transform: translateX(1.5rem); }
-.review-card-image-next-leave-to,
-.review-card-image-previous-enter-from { opacity: 0; transform: translateX(-1.5rem); }
-.review-card-image-back-enter-from,
-.review-card-image-front-leave-to { opacity: 0; transform: translateY(1.5rem); }
-.review-card-image-back-leave-to,
-.review-card-image-front-enter-from { opacity: 0; transform: translateY(-1.5rem); }
-
-.standalone-review-content-next-enter-active,
-.standalone-review-content-next-leave-active,
-.standalone-review-content-previous-enter-active,
-.standalone-review-content-previous-leave-active,
-.standalone-review-content-front-enter-active,
-.standalone-review-content-front-leave-active,
-.standalone-review-content-back-enter-active,
-.standalone-review-content-back-leave-active,
-.interval-flashcard-next-enter-active,
-.interval-flashcard-next-leave-active,
-.interval-flashcard-previous-enter-active,
-.interval-flashcard-previous-leave-active,
-.interval-flashcard-front-enter-active,
-.interval-flashcard-front-leave-active,
-.interval-flashcard-back-enter-active,
-.interval-flashcard-back-leave-active { transition: opacity 160ms ease, transform 180ms cubic-bezier(.22, 1, .36, 1); }
-.standalone-review-content-next-enter-from,
-.standalone-review-content-previous-leave-to,
-.interval-flashcard-next-enter-from,
-.interval-flashcard-previous-leave-to { opacity: 0; transform: translateX(1.5rem); }
-.standalone-review-content-next-leave-to,
-.standalone-review-content-previous-enter-from,
-.interval-flashcard-next-leave-to,
-.interval-flashcard-previous-enter-from { opacity: 0; transform: translateX(-1.5rem); }
-.standalone-review-content-back-enter-from,
-.standalone-review-content-front-leave-to,
-.interval-flashcard-back-enter-from,
-.interval-flashcard-front-leave-to { opacity: 0; transform: translateY(1.5rem); }
-.standalone-review-content-back-leave-to,
-.standalone-review-content-front-enter-from,
-.interval-flashcard-back-leave-to,
-.interval-flashcard-front-enter-from { opacity: 0; transform: translateY(-1.5rem); }
+.review-card-buffer { opacity: 1; transform: none; }
+.review-card-buffer--background { visibility: hidden; opacity: 0; }
+.review-card-buffer--preparing { visibility: visible; opacity: 0; }
+.review-card-buffer--background,
+.review-card-buffer--preparing,
+.review-card-buffer--incoming,
+.review-card-buffer--outgoing,
+.review-card-buffer--background :deep(*),
+.review-card-buffer--preparing :deep(*),
+.review-card-buffer--incoming :deep(*),
+.review-card-buffer--outgoing :deep(*) { pointer-events: none !important; }
+.review-card-buffer--incoming,
+.review-card-buffer--outgoing { visibility: visible; transition: opacity 200ms ease, transform 220ms cubic-bezier(.22, 1, .36, 1); }
+.review-card-buffer--incoming { opacity: 1; transform: none; }
+.review-card-buffer--outgoing { opacity: 0; }
+.review-card-buffer--preparing.review-card-buffer--next { transform: translateX(1.5rem); }
+.review-card-buffer--outgoing.review-card-buffer--next { transform: translateX(-1.5rem); }
+.review-card-buffer--preparing.review-card-buffer--previous { transform: translateX(-1.5rem); }
+.review-card-buffer--outgoing.review-card-buffer--previous { transform: translateX(1.5rem); }
+.review-card-buffer--preparing.review-card-buffer--back { transform: translateY(1.5rem); }
+.review-card-buffer--outgoing.review-card-buffer--back { transform: translateY(-1.5rem); }
+.review-card-buffer--preparing.review-card-buffer--front { transform: translateY(-1.5rem); }
+.review-card-buffer--outgoing.review-card-buffer--front { transform: translateY(1.5rem); }
 
 @media (orientation: portrait) {
   .interval-review-card__content { height: 10.5rem; }
@@ -596,55 +758,7 @@ defineExpose({ refitContent })
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .review-card-image-enter-active,
-  .review-card-image-leave-active,
-  .review-card-image-next-enter-active,
-  .review-card-image-next-leave-active,
-  .review-card-image-previous-enter-active,
-  .review-card-image-previous-leave-active,
-  .review-card-image-front-enter-active,
-  .review-card-image-front-leave-active,
-  .review-card-image-back-enter-active,
-  .review-card-image-back-leave-active,
-  .standalone-review-content-next-enter-active,
-  .standalone-review-content-next-leave-active,
-  .standalone-review-content-previous-enter-active,
-  .standalone-review-content-previous-leave-active,
-  .standalone-review-content-front-enter-active,
-  .standalone-review-content-front-leave-active,
-  .standalone-review-content-back-enter-active,
-  .standalone-review-content-back-leave-active,
-  .interval-flashcard-next-enter-active,
-  .interval-flashcard-next-leave-active,
-  .interval-flashcard-previous-enter-active,
-  .interval-flashcard-previous-leave-active,
-  .interval-flashcard-front-enter-active,
-  .interval-flashcard-front-leave-active,
-  .interval-flashcard-back-enter-active,
-  .interval-flashcard-back-leave-active { transition: none; }
-  .review-card-image-next-enter-from,
-  .review-card-image-next-leave-to,
-  .review-card-image-previous-enter-from,
-  .review-card-image-previous-leave-to,
-  .review-card-image-front-enter-from,
-  .review-card-image-front-leave-to,
-  .review-card-image-back-enter-from,
-  .review-card-image-back-leave-to,
-  .standalone-review-content-next-enter-from,
-  .standalone-review-content-next-leave-to,
-  .standalone-review-content-previous-enter-from,
-  .standalone-review-content-previous-leave-to,
-  .standalone-review-content-front-enter-from,
-  .standalone-review-content-front-leave-to,
-  .standalone-review-content-back-enter-from,
-  .standalone-review-content-back-leave-to,
-  .interval-flashcard-next-enter-from,
-  .interval-flashcard-next-leave-to,
-  .interval-flashcard-previous-enter-from,
-  .interval-flashcard-previous-leave-to,
-  .interval-flashcard-front-enter-from,
-  .interval-flashcard-front-leave-to,
-  .interval-flashcard-back-enter-from,
-  .interval-flashcard-back-leave-to { opacity: 1; transform: none; }
+  .review-card-buffer--incoming,
+  .review-card-buffer--outgoing { transition: none; }
 }
 </style>
