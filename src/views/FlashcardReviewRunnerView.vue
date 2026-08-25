@@ -20,6 +20,7 @@ import {
   stopFlashcardSpeech,
   syncBackgroundFlashcardReview,
   toggleFlashcardSpeechOverAmplification,
+  waitForFlashcardSpeechHandoff,
 } from '@/services/flashcardSpeech'
 import {
   playFlashcardEjectCue,
@@ -122,6 +123,11 @@ const backgroundSpeechWarning = ref('')
 const speechFailureSnackbar = ref(false)
 const spokenWord = ref<FlashcardSpeechWord>()
 const reconcilingBackground = ref(false)
+const visibilitySpeechHandoff = ref(false)
+const backgroundViewedTarget = ref<number>()
+const backgroundVisualSnapshotReady = ref(false)
+const backgroundPassiveRemainingMs = ref(0)
+const backgroundPassiveDurationMs = ref(1000)
 let animationFrame: number | undefined
 let lastTickAt = 0
 let mounted = true
@@ -214,13 +220,21 @@ const timeLimitReached = computed(() => Boolean(
   session.value?.timeLimitSeconds
   && elapsedSeconds.value >= session.value.timeLimitSeconds,
 ))
+const displayedViewedCount = computed(() => Math.max(
+  session.value?.viewedCount || 0,
+  backgroundViewedTarget.value || 0,
+))
 const completedCards = computed(() => session.value
-  ? session.value.totalCards - session.value.queue.length
+  ? Math.min(
+      session.value.totalCards,
+      session.value.totalCards - session.value.queue.length
+        + Math.max(0, displayedViewedCount.value - session.value.viewedCount),
+    )
   : 0)
 const progressCards = computed(() => {
   if (!session.value?.totalCards) return 0
   return session.value.indefinite
-    ? session.value.viewedCount % session.value.totalCards
+    ? displayedViewedCount.value % session.value.totalCards
     : completedCards.value
 })
 const currentCardPosition = computed(() => session.value?.queue.length
@@ -265,7 +279,13 @@ const passiveSpeechRepeatIndex = computed(() => {
 const passiveProgress = computed(() => {
   tickVersion.value
   if (session.value?.mode !== 'passive') return 0
-  return Math.max(0, Math.min(100, (1 - passiveRemainingMs.value / passiveDurationMs.value) * 100))
+  const remainingMs = backgroundVisualSnapshotReady.value
+    ? backgroundPassiveRemainingMs.value
+    : passiveRemainingMs.value
+  const durationMs = backgroundVisualSnapshotReady.value
+    ? backgroundPassiveDurationMs.value
+    : passiveDurationMs.value
+  return Math.max(0, Math.min(100, (1 - remainingMs / durationMs) * 100))
 })
 const accuracy = computed(() => session.value ? sessionAccuracy(session.value) : undefined)
 const exitDestination = computed(() => route.query.from === 'tasks' ? '/tasks' : '/flashcards')
@@ -548,6 +568,21 @@ function tick() {
     || document.visibilityState !== 'visible'
     || (busy.value && !continuePassiveTickWhileBusy)
   ) return
+  if (visibilitySpeechHandoff.value || reconcilingBackground.value) {
+    localElapsedMs.value += delta
+    if (
+      backgroundVisualSnapshotReady.value
+      && session.value?.mode === 'passive'
+      && currentCard.value
+    ) {
+      backgroundPassiveRemainingMs.value = Math.max(
+        0,
+        backgroundPassiveRemainingMs.value - delta,
+      )
+    }
+    tickVersion.value++
+    return
+  }
   localElapsedMs.value += delta
   if (timeLimitReached.value && !completingTimeLimit) {
     completingTimeLimit = true
@@ -795,32 +830,45 @@ async function restartReview() {
 }
 
 function handleVisibilityChange() {
+  if (
+    canUseNativeBackground.value
+    && nativeBackgroundReady.value
+  ) {
+    visibilitySpeechHandoff.value = true
+    if (document.visibilityState === 'hidden') backgroundVisualSnapshotReady.value = false
+  }
   visibilityWork = visibilityWork.then(async () => {
-    if (!mounted || isFinished.value) return
-    if (document.visibilityState === 'hidden') {
-      // Android's window flag is harmless in the background and becomes effective
-      // again as soon as the Activity resumes. Keep its holder alive for the whole
-      // review screen; browser wake-lock sentinels must be requested again instead.
-      if (wakeLock?.kind !== 'native-android') await releaseWakeLock()
-      lastSpokenKey = speechKey()
-      await stopFlashcardSpeech()
-      if (canUseNativeBackground.value && nativeBackgroundReady.value) {
-        savePassiveState()
+    let preserveBackgroundHandoff = false
+    try {
+      if (!mounted || isFinished.value) return
+      if (document.visibilityState === 'hidden') {
+        // Android's window flag is harmless in the background and becomes effective
+        // again as soon as the Activity resumes. Keep its holder alive for the whole
+        // review screen; browser wake-lock sentinels must be requested again instead.
+        if (wakeLock?.kind !== 'native-android') await releaseWakeLock()
+        lastSpokenKey = speechKey()
+        if (canUseNativeBackground.value && nativeBackgroundReady.value) {
+          preserveBackgroundHandoff = true
+          savePassiveState()
+          return
+        }
+        await stopFlashcardSpeech()
+        await pauseReview(true)
         return
       }
-      await pauseReview(true)
-      return
-    }
 
-    await acquireWakeLock()
-    if (canUseNativeBackground.value) {
-      const restored = await reconcileBackgroundReview()
-      if (restored) return
+      await acquireWakeLock()
+      if (canUseNativeBackground.value) {
+        const restored = await reconcileBackgroundReview()
+        if (restored) return
+      }
+      if (visibilityPaused.value && session.value?.status === 'paused') {
+        await resumeReview()
+      }
+      await speakCurrentSide()
+    } finally {
+      if (!preserveBackgroundHandoff) visibilitySpeechHandoff.value = false
     }
-    if (visibilityPaused.value && session.value?.status === 'paused') {
-      await resumeReview()
-    }
-    await speakCurrentSide()
   })
 }
 
@@ -842,9 +890,12 @@ async function speakCurrentSide(allowPaused = false) {
   const card = currentCard.value
   const key = speechKey(allowPaused)
   if (
-    loading.value
-    || reconcilingBackground.value
+    reconcilingBackground.value
+    || visibilitySpeechHandoff.value
     || document.visibilityState !== 'visible'
+  ) return
+  if (
+    loading.value
     || !value
     || !card
     || !key
@@ -1083,7 +1134,7 @@ async function reconcileBackgroundReview(
 ) {
   const value = session.value
   if (!value || !nativeFlashcardBackgroundIsAvailable()) return false
-  const state = providedState || await backgroundFlashcardReviewState()
+  let state = providedState || await backgroundFlashcardReviewState()
   if (!state) return false
   if (state.sessionId !== value.id) {
     await stopBackgroundFlashcardReview()
@@ -1097,6 +1148,22 @@ async function reconcileBackgroundReview(
   }
 
   reconcilingBackground.value = true
+  applyBackgroundProgressSnapshot(value, state)
+  if (document.visibilityState === 'visible') {
+    await waitForFlashcardSpeechHandoff(async () => {
+      const currentState = await backgroundFlashcardReviewState()
+      if (currentState?.sessionId !== value.id) return
+      state = currentState
+      applyBackgroundProgressSnapshot(value, currentState)
+    })
+    if (document.visibilityState !== 'visible') {
+      reconcilingBackground.value = false
+      return true
+    }
+    state = await backgroundFlashcardReviewState() || state
+    applyBackgroundProgressSnapshot(value, state)
+  }
+
   nativeBackgroundReady.value = false
   await stopFlashcardSpeech()
   await stopBackgroundFlashcardReview(false)
@@ -1128,6 +1195,8 @@ async function reconcileBackgroundReview(
     savePassiveState()
   }
   reconcilingBackground.value = false
+  backgroundViewedTarget.value = undefined
+  backgroundVisualSnapshotReady.value = false
 
   if (!reconciledAllViews) return true
   await stopBackgroundFlashcardReview()
@@ -1136,6 +1205,21 @@ async function reconcileBackgroundReview(
     await syncNativeBackground()
   }
   return true
+}
+
+function applyBackgroundProgressSnapshot(
+  value: FlashcardReviewSession,
+  state: BackgroundFlashcardReviewState,
+) {
+  backgroundViewedTarget.value = value.viewedCount + Math.max(0, state.completedCards)
+  localElapsedMs.value = Math.max(localElapsedMs.value, state.elapsedMs)
+  backgroundPassiveRemainingMs.value = Math.max(0, state.remainingMs)
+  backgroundPassiveDurationMs.value = state.side === 'front'
+    ? Math.max(1000, value.frontSeconds * 1000)
+    : flashcardBackDurationMs(value.backSeconds, value.backSpeechRepeatCount)
+  lastTickAt = Date.now()
+  backgroundVisualSnapshotReady.value = true
+  tickVersion.value++
 }
 
 function copySessionSettings(value: FlashcardReviewSession) {
@@ -1417,7 +1501,7 @@ async function leaveRunner() {
         />
         <div class="runner-header__title min-width-0">
           <strong class="text-truncate">{{ session.name }}</strong>
-          <span v-if="session.indefinite">{{ session.viewedCount }} viewed · looping</span>
+          <span v-if="session.indefinite">{{ displayedViewedCount }} viewed · looping</span>
           <span v-else>{{ completedCards }} of {{ session.totalCards }}</span>
         </div>
         <div class="runner-header__actions">

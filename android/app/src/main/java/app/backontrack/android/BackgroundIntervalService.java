@@ -451,7 +451,6 @@ public class BackgroundIntervalService extends Service {
             return;
         }
         if (appVisible) {
-            if (!appWasVisible) stopSpeechPlayback();
             lastReviewSpeechKey = "";
             pendingReviewSpeechText = "";
             pendingReviewSpeechLanguage = "";
@@ -459,12 +458,25 @@ public class BackgroundIntervalService extends Service {
         } else {
             speakCurrentReviewSide(now, appWasVisible);
         }
-        appWasVisible = appVisible;
+        appWasVisible = appVisible && !isReviewSpeechActive();
     }
 
     public static boolean handoffForegroundSpeech(String speechKey) {
         BackgroundIntervalService instance = activeInstance;
         return instance != null && instance.recordForegroundSpeech(speechKey);
+    }
+
+    public static boolean isSpeechActive() {
+        BackgroundIntervalService instance = activeInstance;
+        return instance != null && (
+            instance.isReviewSpeechActive()
+            || (instance.intervalSpeech != null && instance.intervalSpeech.isSpeaking())
+        );
+    }
+
+    private boolean isReviewSpeechActive() {
+        return (volumeBoost != null && volumeBoost.isActive())
+            || (recordingPlayer != null && recordingPlayer.isActive());
     }
 
     private boolean recordForegroundSpeech(String speechKey) {

@@ -211,6 +211,18 @@ public class FlashcardSpeechPlugin extends Plugin {
         call.resolve();
     }
 
+    @PluginMethod
+    public void isSpeechActive(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put(
+            "active",
+            (volumeBoost != null && volumeBoost.isActive())
+                || (recordingPlayer != null && recordingPlayer.isActive())
+                || BackgroundFlashcardService.isSpeechActive()
+        );
+        call.resolve(result);
+    }
+
     private void stopForegroundSpeech() {
         backgroundIntervalSpeechKey = "";
         if (pendingSpeechCall != null) {
@@ -317,9 +329,13 @@ public class FlashcardSpeechPlugin extends Plugin {
 
     @Override
     protected void handleOnPause() {
-        // Preserve an interval face that already started in the foreground. The background
-        // service skips that exact phase and takes ownership beginning with the next one.
-        if (!BackgroundIntervalService.handoffForegroundSpeech(backgroundIntervalSpeechKey)) {
+        // Preserve a review face that already started in the foreground. The active background
+        // service owns timing and takes over speech beginning with the next face.
+        boolean intervalHandoff = BackgroundIntervalService.handoffForegroundSpeech(
+            backgroundIntervalSpeechKey
+        );
+        boolean reviewHandoff = BackgroundFlashcardService.handoffForegroundSpeech();
+        if (!intervalHandoff && !reviewHandoff) {
             stopForegroundSpeech();
         }
     }

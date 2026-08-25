@@ -427,6 +427,19 @@ public class BackgroundFlashcardService extends Service {
         return encoded.isEmpty() ? new JSONObject() : new JSONObject(encoded);
     }
 
+    public static boolean handoffForegroundSpeech() {
+        BackgroundFlashcardService instance = activeInstance;
+        return instance != null && instance.running && !instance.sessionId.isEmpty();
+    }
+
+    public static boolean isSpeechActive() {
+        BackgroundFlashcardService instance = activeInstance;
+        return instance != null && (
+            (instance.volumeBoost != null && instance.volumeBoost.isActive())
+            || (instance.recordingPlayer != null && instance.recordingPlayer.isActive())
+        );
+    }
+
     private void updateNotification(boolean complete) {
         getSystemService(NotificationManager.class).notify(
             NOTIFICATION_ID,

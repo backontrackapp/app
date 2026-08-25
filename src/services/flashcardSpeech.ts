@@ -41,6 +41,7 @@ interface FlashcardSpeechPlugin {
     backgroundIntervalSpeechKey?: string
   }): Promise<void>
   setOverAmplification(options: { enabled: boolean }): Promise<void>
+  isSpeechActive?(): Promise<{ active: boolean }>
   stopSpeaking(): Promise<void>
   startBackground(options: {
     sessionId: string
@@ -499,6 +500,24 @@ export async function stopFlashcardSpeech() {
       synthesis.cancel()
     }
     activeBrowserUtterance = undefined
+  }
+}
+
+export async function waitForFlashcardSpeechHandoff(
+  refreshProgress?: () => void | Promise<void>,
+) {
+  if (
+    !isNativeAndroid()
+    || typeof document === 'undefined'
+    || !NativeFlashcardSpeech.isSpeechActive
+  ) return
+  while (document.visibilityState === 'visible') {
+    const active = await NativeFlashcardSpeech.isSpeechActive()
+      .then(result => result.active)
+      .catch(() => false)
+    if (!active) return
+    await refreshProgress?.()
+    await new Promise(resolve => window.setTimeout(resolve, 100))
   }
 }
 

@@ -52,6 +52,7 @@ interface BackgroundIntervalPlugin {
     }
   }): Promise<void>
   playCue(options: { name: NativeIntervalCueName, signal?: boolean }): Promise<void>
+  isSpeechActive?(): Promise<{ active: boolean }>
   stop(): Promise<void>
 }
 
@@ -142,6 +143,21 @@ export async function stopBackgroundInterval() {
     await BackgroundInterval.stop()
   } finally {
     nativeBackgroundIntervalActive = false
+  }
+}
+
+export async function waitForBackgroundIntervalSpeech() {
+  if (
+    Capacitor.getPlatform() !== 'android'
+    || typeof document === 'undefined'
+    || !BackgroundInterval.isSpeechActive
+  ) return
+  while (document.visibilityState === 'visible') {
+    const active = await BackgroundInterval.isSpeechActive()
+      .then(result => result.active)
+      .catch(() => false)
+    if (!active) return
+    await new Promise(resolve => window.setTimeout(resolve, 100))
   }
 }
 

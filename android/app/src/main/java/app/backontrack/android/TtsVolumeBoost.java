@@ -87,6 +87,10 @@ final class TtsVolumeBoost {
         clearPlayback();
     }
 
+    synchronized boolean isActive() {
+        return !activeUtteranceId.isEmpty();
+    }
+
     static double linearAmplitudeMultiplier(int gainMillibels) {
         return Math.pow(10d, gainMillibels / 2000d);
     }
