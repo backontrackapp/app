@@ -22,6 +22,9 @@ const ready = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
 const deleteDialog = ref(false)
+const navigationDialog = ref(false)
+const pendingNavigationId = ref('')
+const navigating = ref(false)
 const error = ref('')
 const original = ref('')
 const draft = reactive<FlashcardDraft>({ front: '', back: '', transliteration: '', note: '', tags: [] })
@@ -30,11 +33,22 @@ const backAudio = ref<FlashcardAudioValue>(emptyAudio())
 const image = ref<SquareImageSourceValue>(emptyImage())
 const frontAudioRecording = ref(false)
 const backAudioRecording = ref(false)
+const navigationCardIds = ref(readNavigationCardIds())
 
-const cardId = computed(() => typeof route.params.id === 'string' ? route.params.id : '')
+const cardId = ref(typeof route.params.id === 'string' ? route.params.id : '')
 const reviewSetId = computed(() => typeof route.params.reviewSetId === 'string' ? route.params.reviewSetId : '')
 const isReviewSetCard = computed(() => Boolean(reviewSetId.value))
 const isEditing = computed(() => Boolean(cardId.value))
+const navigationIndex = computed(() => navigationCardIds.value.indexOf(cardId.value))
+const showNavigator = computed(() => isEditing.value && navigationIndex.value >= 0)
+const previousCardId = computed(() => navigationIndex.value > 0
+  ? navigationCardIds.value[navigationIndex.value - 1] || ''
+  : '')
+const nextCardId = computed(() => (
+  navigationIndex.value >= 0 && navigationIndex.value < navigationCardIds.value.length - 1
+    ? navigationCardIds.value[navigationIndex.value + 1] || ''
+    : ''
+))
 const returnTo = computed(() => typeof route.query.returnTo === 'string'
   && route.query.returnTo.startsWith('/')
   && !route.query.returnTo.startsWith('//')
@@ -81,7 +95,16 @@ function scrollToFormTop() {
   })
 }
 
-onMounted(async () => {
+function readNavigationCardIds() {
+  const ids = window.history.state?.flashcardNavigationIds
+  return Array.isArray(ids) && ids.every(id => typeof id === 'string')
+    ? [...new Set(ids)]
+    : []
+}
+
+async function loadEditor() {
+  const initialLoad = !ready.value
+  if (initialLoad) loading.value = true
   error.value = ''
   try {
     if (!store.loaded) await store.load()
@@ -90,38 +113,41 @@ onMounted(async () => {
       if (!reviewSet || reviewSet.accessRole === 'readonly') {
         throw new Error('Editor access is required to change these cards.')
       }
-      await store.loadReviewSetCards(reviewSetId.value)
+      if (!store.reviewSetCards[reviewSetId.value]) {
+        await store.loadReviewSetCards(reviewSetId.value)
+      }
     }
     if (isEditing.value) {
-      const card = isReviewSetCard.value
-        ? store.reviewSetCards[reviewSetId.value]?.find(item => item.id === cardId.value)
-        : store.cards.find(item => item.id === cardId.value)
+      const cards = isReviewSetCard.value
+        ? store.reviewSetCards[reviewSetId.value] || []
+        : store.cards
+      const card = cards.find(item => item.id === cardId.value)
       if (!card) throw new Error('That flashcard could not be found.')
+      if (!navigationCardIds.value.length) navigationCardIds.value = cards.map(item => item.id)
+      applyCard(card)
+    } else {
       Object.assign(draft, {
-        id: card.id,
-        front: card.front,
-        back: card.back,
-        transliteration: card.transliteration || '',
-        note: card.note,
-        tags: [...card.tags],
+        id: undefined,
+        front: '',
+        back: '',
+        transliteration: '',
+        note: '',
+        tags: [],
       })
-      frontAudio.value = existingAudio(card.frontAudio || '')
-      backAudio.value = existingAudio(card.backAudio || '')
-      image.value = {
-        source: card.imageSource,
-        url: card.imageSource === 'url' ? card.image : '',
-        existingUrl: card.image,
-        existingSource: card.imageSource,
-      }
+      frontAudio.value = emptyAudio()
+      backAudio.value = emptyAudio()
+      image.value = emptyImage()
     }
     original.value = signature.value
     ready.value = true
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not open this flashcard.'
   } finally {
-    loading.value = false
+    if (initialLoad) loading.value = false
   }
-})
+}
+
+onMounted(loadEditor)
 
 function emptyAudio(): FlashcardAudioValue {
   return { url: '', existingUrl: '' }
@@ -135,9 +161,62 @@ function existingAudio(url: string): FlashcardAudioValue {
   return { url, existingUrl: url }
 }
 
+function applyCard(card: typeof store.cards[number]) {
+  Object.assign(draft, {
+    id: card.id,
+    front: card.front,
+    back: card.back,
+    transliteration: card.transliteration || '',
+    note: card.note,
+    tags: [...card.tags],
+  })
+  frontAudio.value = existingAudio(card.frontAudio || '')
+  backAudio.value = existingAudio(card.backAudio || '')
+  image.value = {
+    source: card.imageSource,
+    url: card.imageSource === 'url' ? card.image : '',
+    existingUrl: card.image,
+    existingSource: card.imageSource,
+  }
+}
+
 function setAudioRecording(side: 'front' | 'back', recording: boolean) {
   if (side === 'front') frontAudioRecording.value = recording
   else backAudioRecording.value = recording
+}
+
+function requestCardNavigation(targetId: string) {
+  if (!targetId || navigating.value) return
+  if (changed.value) {
+    pendingNavigationId.value = targetId
+    navigationDialog.value = true
+    return
+  }
+  void navigateToCard(targetId)
+}
+
+async function navigateToCard(targetId: string) {
+  if (!targetId) return
+  navigating.value = true
+  navigationDialog.value = false
+  pendingNavigationId.value = ''
+  error.value = ''
+  try {
+    const cards = isReviewSetCard.value
+      ? store.reviewSetCards[reviewSetId.value] || []
+      : store.cards
+    const card = cards.find(item => item.id === targetId)
+    if (!card) throw new Error('That flashcard could not be found.')
+    cardId.value = targetId
+    applyCard(card)
+    original.value = signature.value
+    await nextTick()
+    form.value?.resetValidation()
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not open this flashcard.'
+  } finally {
+    navigating.value = false
+  }
 }
 
 async function save() {
@@ -223,7 +302,10 @@ async function remove() {
 </script>
 
 <template>
-  <main class="app-page app-page--editor flashcard-editor-page">
+  <main
+    class="app-page app-page--editor flashcard-editor-page"
+    :class="{ 'flashcard-editor-page--with-navigation': showNavigator }"
+  >
     <v-alert v-if="error" type="error" variant="tonal" class="mb-4">{{ error }}</v-alert>
     <div v-if="loading" class="flashcard-editor-loading py-12">
       <v-progress-circular indeterminate color="secondary" />
@@ -304,6 +386,37 @@ async function remove() {
       @submit="save"
       @cancel="router.back()"
       @delete="deleteDialog = true"
+    >
+      <template v-if="showNavigator" #below>
+        <nav class="flashcard-editor-navigator" aria-label="Card editor navigation">
+          <v-btn
+            icon="mdi-chevron-left"
+            variant="text"
+            aria-label="Previous card"
+            :disabled="!previousCardId || navigating"
+            @click="requestCardNavigation(previousCardId)"
+          />
+          <span class="text-body-2 font-weight-bold" aria-live="polite">
+            {{ navigationIndex + 1 }} of {{ navigationCardIds.length }}
+          </span>
+          <v-btn
+            icon="mdi-chevron-right"
+            variant="text"
+            aria-label="Next card"
+            :disabled="!nextCardId || navigating"
+            @click="requestCardNavigation(nextCardId)"
+          />
+        </nav>
+      </template>
+    </FormActionBar>
+
+    <ConfirmDialog
+      v-model="navigationDialog"
+      title="Discard changes?"
+      message="Your unsaved changes will be lost when you open another card."
+      confirm-text="Discard and continue"
+      confirm-color="warning"
+      @confirm="navigateToCard(pendingNavigationId)"
     />
 
     <ConfirmDialog
@@ -323,5 +436,8 @@ async function remove() {
 <style scoped>
 .flashcard-editor-fields { display: grid; gap: 1rem; }
 .flashcard-editor-loading { display: flex; align-items: center; justify-content: center; gap: .75rem; }
+.flashcard-editor-navigator { display: flex; min-height: 2.75rem; align-items: center; justify-content: space-between; gap: .5rem; }
+.flashcard-editor-navigator .v-btn { width: 2.75rem; min-width: 2.75rem; min-height: 2.75rem; }
+.flashcard-editor-page--with-navigation { padding-bottom: 10.5rem; }
 .required-mark { color: rgb(var(--v-theme-error)); }
 </style>

@@ -84,6 +84,11 @@ function discardChanges() {
       </v-btn>
     </div>
 
+    <v-divider v-if="$slots.below" class="form-action-bar__divider my-3" />
+    <div v-if="$slots.below" class="form-action-bar__below">
+      <slot name="below" />
+    </div>
+
     <ConfirmDialog
       v-if="hasChanges"
       v-model="discardDialog"
@@ -116,6 +121,18 @@ function discardChanges() {
   margin: 0 auto;
   align-items: center;
   gap: .5rem;
+}
+
+.form-action-bar__below {
+  width: 100%;
+  max-width: 54.25rem;
+  margin: 0 auto;
+}
+
+.form-action-bar__divider {
+  width: 100%;
+  max-width: 54.25rem;
+  margin: .5rem auto 0;
 }
 
 .form-action-bar__inner > .v-btn {

@@ -264,12 +264,13 @@ function openNewCard() {
   })
 }
 
-function openCard(card: Flashcard) {
+function openCard(card: Flashcard, cards: Flashcard[]) {
   if (!draft.id || !canEditCards.value) return
   void router.push({
     name: 'flashcard-review-set-card-edit',
     params: { reviewSetId: draft.id, id: card.id },
     query: { returnTo: editorReturnTo.value },
+    state: { flashcardNavigationIds: cards.map(item => item.id) },
   })
 }
 
@@ -415,7 +416,7 @@ async function remove() {
         >
           <template #action-column-heading><span v-if="canEditCards" class="d-sr-only">Edit</span></template>
           <template #last-column-heading>Tags</template>
-          <template #action-column="{ card }">
+          <template #action-column="{ card, cards }">
             <div
               v-if="canEditCards"
               class="review-set-card-edit"
@@ -429,7 +430,7 @@ async function remove() {
                 variant="text"
                 size="small"
                 :aria-label="`Edit card: ${card.front}`"
-                @click.stop="openCard(card)"
+                @click.stop="openCard(card, cards)"
               />
             </div>
           </template>

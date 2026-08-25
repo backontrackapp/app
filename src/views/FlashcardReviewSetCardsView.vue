@@ -35,11 +35,12 @@ onMounted(async () => {
   }
 })
 
-function openCard(card: Flashcard) {
+function openCard(card: Flashcard, cardList: Flashcard[]) {
   if (!canEdit.value) return
   void router.push({
     name: 'flashcard-review-set-card-edit',
     params: { reviewSetId: reviewSetId.value, id: card.id },
+    state: { flashcardNavigationIds: cardList.map(item => item.id) },
   })
 }
 
