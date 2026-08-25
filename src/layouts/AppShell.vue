@@ -892,7 +892,6 @@ function releaseLeavingPage(element: Element) {
 .app-bar__ai-control {
   display: grid;
   width: 0;
-  height: 2.75rem;
   flex: 0 0 auto;
   overflow: hidden;
   place-items: center;
@@ -900,7 +899,7 @@ function releaseLeavingPage(element: Element) {
 }
 
 .app-bar__ai-control--available {
-  width: 2.75rem;
+  width: 3rem;
 }
 
 .sync-panel {
