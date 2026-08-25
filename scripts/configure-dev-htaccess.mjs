@@ -40,11 +40,15 @@ for (const entry of ipEntries) {
 const uniqueIps = [...new Set(ipEntries)]
 const restriction = [
   '# Development deployment access restriction.',
-  '<RequireAny>',
-  `    Require ip ${uniqueIps.join(' ')}`,
-  '    # The migration endpoint remains protected by its application-level key.',
-  `    Require expr "%{REQUEST_URI} == '/server/migrate.php'"`,
-  '</RequireAny>',
+  'Order Deny,Allow',
+  'Deny from all',
+  `Allow from ${uniqueIps.join(' ')}`,
+  '',
+  '# The migration endpoint remains protected by its application-level key.',
+  '<Files "migrate.php">',
+  '    Order Allow,Deny',
+  '    Allow from all',
+  '</Files>',
   '',
 ].join('\n')
 
