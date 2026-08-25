@@ -446,6 +446,7 @@ async function remove() {
       :primary-text="isEditing ? 'Save' : 'Create'"
       :loading="saving"
       :primary-disabled="!canSave"
+      :has-changes="changed"
       :show-delete="isEditing && isOwner"
       delete-label="Delete Review set"
       :delete-disabled="deleting"

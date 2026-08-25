@@ -80,9 +80,10 @@ const signature = computed(() => JSON.stringify({
   task: task.value || '',
   trackers: trackers.value,
 }))
+const changed = computed(() => !loading.value && signature.value !== original.value)
 const canSave = computed(() =>
   Boolean(body.value.trim() && occurredLocal.value)
-  && signature.value !== original.value
+  && changed.value
   && !saving.value,
 )
 
@@ -400,6 +401,7 @@ async function removeEntry() {
       :primary-text="isEditing ? 'Save' : 'Create'"
       :loading="saving"
       :primary-disabled="!canSave"
+      :has-changes="changed"
       :show-delete="isEditing"
       delete-label="Delete reflection"
       :delete-disabled="deleting"

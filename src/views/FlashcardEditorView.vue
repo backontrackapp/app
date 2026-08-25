@@ -52,12 +52,13 @@ const signature = computed(() => JSON.stringify({
   imageUrl: image.value.url,
   imageUpload: image.value.upload ? `${image.value.upload.size}:${image.value.upload.type}` : '',
 }))
+const changed = computed(() => ready.value && signature.value !== original.value)
 const canSave = computed(() => (
   ready.value
   && !saving.value
   && !frontAudioRecording.value
   && !backAudioRecording.value
-  && signature.value !== original.value
+  && changed.value
   && Boolean(draft.front.trim())
   && Boolean(draft.back.trim())
 ))
@@ -296,6 +297,7 @@ async function remove() {
       :primary-text="isEditing ? 'Save' : 'Create'"
       :loading="saving"
       :primary-disabled="!canSave"
+      :has-changes="changed"
       :show-delete="isEditing"
       delete-label="Delete flashcard"
       :delete-disabled="deleting"

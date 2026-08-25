@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppForm from '@/components/AppForm.vue'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
@@ -25,6 +25,8 @@ const saving = ref(false)
 const deleting = ref(false)
 const deleteDialog = ref(false)
 const error = ref('')
+const ready = ref(false)
+const original = ref('')
 const isEditing = computed(() => Boolean(route.params.id))
 
 const draft = reactive<IntervalTemplateDraft>({
@@ -44,6 +46,15 @@ const draft = reactive<IntervalTemplateDraft>({
 const selectedReviewSet = computed(() => flashcardStore.reviewSets.find(
   reviewSet => reviewSet.id === draft.flashcardReviewSet,
 ))
+const signature = computed(() => JSON.stringify(draft))
+const changed = computed(() => ready.value && signature.value !== original.value)
+
+async function markFormReady() {
+  await nextTick()
+  original.value = signature.value
+  ready.value = true
+}
+
 onMounted(async () => {
   await Promise.all([
     store.loaded ? Promise.resolve() : store.load(),
@@ -54,6 +65,7 @@ onMounted(async () => {
     : ''
   if (!route.params.id && !duplicateTemplateId) {
     draft.sortOrder = store.templates.length
+    await markFormReady()
     return
   }
   const templateId = typeof route.params.id === 'string'
@@ -62,6 +74,7 @@ onMounted(async () => {
   const template = store.templates.find((item) => item.id === templateId)
   if (!template) {
     error.value = 'That interval template could not be found.'
+    await markFormReady()
     return
   }
   Object.assign(
@@ -70,6 +83,7 @@ onMounted(async () => {
       ? duplicateIntervalTemplateDraft(template, store.templates.length)
       : cloneIntervalTemplateDraft(template),
   )
+  await markFormReady()
 })
 
 async function save() {
@@ -142,6 +156,7 @@ async function removeTemplate() {
     <FormActionBar
       :primary-text="isEditing ? 'Save' : 'Create'"
       :loading="saving"
+      :has-changes="changed"
       :show-delete="isEditing"
       delete-label="Delete interval"
       :delete-disabled="deleting"

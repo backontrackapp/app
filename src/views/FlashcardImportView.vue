@@ -34,6 +34,7 @@ const canManageReviewSet = computed(() => (
 ))
 let exampleCopiedTimer: number | undefined
 const parsed = computed(() => parseFlashcardCsv(csv.value))
+const changed = computed(() => csv.value !== '')
 const previewRows = computed(() => parsed.value.rows.slice(0, 5))
 const canImport = computed(() => (
   parsed.value.rows.length > 0
@@ -217,6 +218,7 @@ async function importCards() {
       :primary-text="parsed.rows.length ? `Import ${parsed.rows.length}` : 'Import'"
       :loading="importing"
       :primary-disabled="!canImport"
+      :has-changes="changed"
       @submit="importCards"
       @cancel="router.back()"
     />

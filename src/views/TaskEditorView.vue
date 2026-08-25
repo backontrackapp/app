@@ -49,6 +49,8 @@ const referencedStepIds = ref(new Set<string>())
 const checkedStepReferenceIds = ref(new Set<string>())
 const failedStepReferenceIds = ref(new Set<string>())
 const error = ref('')
+const ready = ref(false)
+const original = ref('')
 const reminderAvailable = taskReminderSettingsAvailable()
 const stepDragIds = new WeakMap<ProgramStepDraft, string>()
 let nextStepDragId = 0
@@ -171,6 +173,14 @@ const draft = reactive<TaskDraft>({
   reminderTimes: [],
   steps: [],
 })
+const signature = computed(() => JSON.stringify(draft))
+const changed = computed(() => ready.value && signature.value !== original.value)
+
+async function markFormReady() {
+  await nextTick()
+  original.value = signature.value
+  ready.value = true
+}
 const scheduledTimeModel = computed({
   get: () => draft.scheduledTime || '09:00',
   set: (value: number | string) => { draft.scheduledTime = String(value) },
@@ -401,6 +411,7 @@ onMounted(async () => {
   ])
   if (!route.params.id && !duplicateTaskId.value) {
     if (draft.type === 'program' && !draft.steps.length) addStep(false)
+    await markFormReady()
     return
   }
   const taskId = typeof route.params.id === 'string'
@@ -409,6 +420,7 @@ onMounted(async () => {
   const task = store.tasks.find((item) => item.id === taskId)
   if (!task) {
     error.value = 'That task could not be found.'
+    await markFormReady()
     return
   }
   const taskSteps = orderedProgramItems(
@@ -441,6 +453,7 @@ onMounted(async () => {
       })),
     })
     if (task.type === 'program') syncProgramSequence()
+    await markFormReady()
     return
   }
   Object.assign(draft, {
@@ -448,6 +461,7 @@ onMounted(async () => {
     steps: taskSteps,
   })
   if (task.type === 'program') syncProgramSequence()
+  await markFormReady()
 })
 
 async function addStep(focusName = true) {
@@ -1274,6 +1288,7 @@ async function deleteTaskPermanently() {
     <FormActionBar
       :primary-text="isEditing ? 'Save' : 'Create'"
       :loading="saving"
+      :has-changes="changed"
       :show-archive="isEditing"
       :archived="draft.archived"
       :archive-label="draft.archived ? 'Restore task' : 'Archive task'"

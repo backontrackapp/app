@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppForm from '@/components/AppForm.vue'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
@@ -17,6 +17,8 @@ const saving = ref(false)
 const deleting = ref(false)
 const deleteDialog = ref(false)
 const error = ref('')
+const ready = ref(false)
+const original = ref('')
 
 const kindOptions: Array<{ value: TrackerKind; title: string; subtitle: string; icon: string }> = [
   { value: 'yes_no', title: 'Yes / no', subtitle: 'One explicit answer per log', icon: 'mdi-check-circle-outline' },
@@ -57,6 +59,14 @@ const draft = reactive<TrackingTrackerDraft>({
 const isEditing = computed(() => Boolean(route.params.id))
 const hasEntries = computed(() => Boolean(draft.id && store.entries.some((entry) => entry.tracker === draft.id)))
 const measurementLocked = computed(() => isEditing.value && hasEntries.value)
+const signature = computed(() => JSON.stringify(draft))
+const changed = computed(() => ready.value && signature.value !== original.value)
+
+async function markFormReady() {
+  await nextTick()
+  original.value = signature.value
+  ready.value = true
+}
 
 watch(() => draft.kind, (kind) => {
   if (measurementLocked.value) return
@@ -92,9 +102,11 @@ onMounted(async () => {
     const tracker = store.trackers.find((item) => item.id === id)
     if (!tracker) {
       error.value = 'That tracker could not be found.'
+      await markFormReady()
       return
     }
     Object.assign(draft, tracker)
+    await markFormReady()
     return
   }
   const presetId = typeof route.query.preset === 'string' ? route.query.preset : ''
@@ -104,6 +116,7 @@ onMounted(async () => {
     draft.sortOrder = store.trackers.length
     if (route.query.role === 'factor' || route.query.role === 'outcome') draft.role = route.query.role
   }
+  await markFormReady()
 })
 
 async function save() {
@@ -222,6 +235,7 @@ async function remove() {
     <FormActionBar
       :primary-text="isEditing ? 'Save' : 'Create'"
       :loading="saving"
+      :has-changes="changed"
       :show-delete="isEditing"
       delete-label="Delete tracker"
       :delete-disabled="deleting"
