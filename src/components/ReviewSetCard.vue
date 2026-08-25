@@ -433,7 +433,7 @@ defineExpose({ refitContent })
           label
           :color="tag.selected ? tag.color : undefined"
           :variant="tag.selected ? 'flat' : 'outlined'"
-          :prepend-icon="tag.selected ? 'mdi-check' : 'mdi-tag-outline'"
+          prepend-icon="mdi-tag-outline"
           :disabled="!canTag"
           :aria-pressed="tag.selected"
           :aria-label="`${tag.selected ? 'Remove' : 'Add'} ${tag.name} tag`"
@@ -642,7 +642,7 @@ defineExpose({ refitContent })
       <v-btn
         v-if="ejectable"
         class="review-card__tag-control review-card__eject-button"
-        variant="text"
+        variant="tonal"
         color="warning"
         prepend-icon="mdi-eject-outline"
         aria-label="Eject current card"
@@ -660,8 +660,8 @@ defineExpose({ refitContent })
           :data-tag-name="tag.name"
           label
           :color="tag.selected ? tag.color : undefined"
-          :variant="tag.selected ? 'flat' : 'outlined'"
-          :prepend-icon="tag.selected ? 'mdi-check' : 'mdi-tag-outline'"
+          :variant="tag.selected ? 'flat' : undefined"
+          prepend-icon="mdi-tag-outline"
           :disabled="!canTag"
           :aria-pressed="tag.selected"
           :aria-label="`${tag.selected ? 'Remove' : 'Add'} ${tag.name} tag`"
@@ -713,7 +713,8 @@ defineExpose({ refitContent })
 .review-card__tag-actions { position: absolute; z-index: 3; right: 1.5rem; bottom: 1.25rem; left: 1.5rem; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: .5rem; }
 .review-card__tag-control { min-height: 2.75rem; }
 .review-card__eject-button { min-width: 0; grid-column: 1; justify-self: start; }
-.review-card__quick-tags { display: flex; grid-column: 2; justify-self: end; gap: .5rem; }
+.review-card__quick-tags { display: flex; width: 100%; min-width: 0; grid-column: 2; justify-self: stretch; gap: .5rem; }
+.review-card__quick-tag { flex: 1 1 0; justify-content: center; }
 .review-card__quick-tag.v-chip--variant-outlined { border-color: rgba(var(--v-theme-on-surface), .18); }
 
 .interval-review-card { position: relative; width: min(100%, 34rem); overflow: hidden; border: .0625rem solid rgba(var(--v-theme-on-surface), .08); border-radius: .75rem; background: rgba(var(--v-theme-on-surface), .055); box-shadow: none; color: inherit; cursor: pointer; font: inherit; text-align: left; touch-action: none; }

@@ -348,8 +348,6 @@ const sessionActionItems = computed(() => reviewRunnerSessionMenuItems({
   canEjectCard: Boolean(currentCard.value),
   canUndoEject: Boolean(session.value?.ejectedCount),
 }))
-const sessionActionsDisabled = computed(() => sessionActionItems.value.every(item => item.disabled))
-
 watch([
   loading,
   () => session.value?.status,
@@ -1485,7 +1483,6 @@ async function leaveRunner() {
           icon="mdi-chevron-down"
           variant="text"
           aria-label="Leave review"
-          :disabled="busy"
           @click="leaveRunner"
         />
         <div class="runner-header__title min-width-0">
@@ -1499,7 +1496,6 @@ async function leaveRunner() {
             variant="text"
             class="runner-actions-button"
             aria-label="Review actions"
-            :disabled="sessionActionsDisabled"
             @touchstart.stop
             @click.stop="openSessionActions"
           />
@@ -1607,8 +1603,7 @@ async function leaveRunner() {
           :quick-tags="quickTags"
           :can-tag="canTagCurrentCard"
           ejectable
-          :ejecting="busy"
-          :eject-disabled="isReviewSetPreview || busy || !currentCard"
+          :eject-disabled="isReviewSetPreview || !currentCard"
           @pointer-down="beginReviewCardSwipe"
           @pointer-move="moveReviewCardSwipe"
           @pointer-up="finishReviewCardSwipe"
@@ -1668,7 +1663,7 @@ async function leaveRunner() {
               variant="tonal"
               size="large"
               aria-label="Previous card"
-              :disabled="!canNavigateCards || busy"
+              :disabled="!canNavigateCards"
               @click="navigateLeft"
             />
           </div>
@@ -1677,7 +1672,6 @@ async function leaveRunner() {
               :icon="session.status === 'paused' ? 'mdi-play' : 'mdi-pause'"
               color="secondary"
               size="x-large"
-              :loading="busy"
               :aria-label="isReviewSetPreview
                 ? 'Start review'
                 : session.status === 'paused' ? 'Resume review' : 'Pause review'"
@@ -1693,7 +1687,7 @@ async function leaveRunner() {
               variant="tonal"
               size="large"
               aria-label="Next card"
-              :disabled="!canNavigateCards || busy"
+              :disabled="!canNavigateCards"
               @click="navigateRight"
             />
           </div>
