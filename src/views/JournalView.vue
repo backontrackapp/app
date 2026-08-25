@@ -330,10 +330,12 @@ onMounted(async () => {
           <v-icon :icon="archiveExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'" size="small" />
         </v-btn>
         <v-expand-transition>
-          <div v-show="archiveExpanded" id="archived-reflections" class="journal-entry-list mt-2">
-            <v-card v-for="entry in archivedEntries" :key="entry.id" class="journal-entry surface-card pa-4" :style="{ '--journal-entry-color': entry.color }" role="link" tabindex="0" :aria-label="`Edit archived ${journalEntryHeading(entry)}`" @click="router.push({ name: 'journal-edit', params: { id: entry.id } })" @keydown.enter="router.push({ name: 'journal-edit', params: { id: entry.id } })" @keydown.space.prevent="router.push({ name: 'journal-edit', params: { id: entry.id } })">
-              <div class="d-flex align-center ga-3"><v-icon icon="mdi-archive-outline" color="warning" /><div class="min-width-0"><h3 class="text-body-1 font-weight-black text-truncate">{{ journalEntryHeading(entry) }}</h3><p class="text-caption muted mt-1">{{ format(parseISO(entry.localDate), 'MMM d') }} · Open to restore</p></div></div>
-            </v-card>
+          <div v-show="archiveExpanded" id="archived-reflections">
+            <div class="journal-entry-list mt-2">
+              <v-card v-for="entry in archivedEntries" :key="entry.id" class="journal-entry surface-card pa-4" :style="{ '--journal-entry-color': entry.color }" role="link" tabindex="0" :aria-label="`Edit archived ${journalEntryHeading(entry)}`" @click="router.push({ name: 'journal-edit', params: { id: entry.id } })" @keydown.enter="router.push({ name: 'journal-edit', params: { id: entry.id } })" @keydown.space.prevent="router.push({ name: 'journal-edit', params: { id: entry.id } })">
+                <div class="d-flex align-center ga-3"><v-icon icon="mdi-archive-outline" color="warning" /><div class="min-width-0"><h3 class="text-body-1 font-weight-black text-truncate">{{ journalEntryHeading(entry) }}</h3><p class="text-caption muted mt-1">{{ format(parseISO(entry.localDate), 'MMM d') }} · Open to restore</p></div></div>
+              </v-card>
+            </div>
           </div>
         </v-expand-transition>
       </section>

@@ -123,13 +123,15 @@ function runTemplateAction(action: IntervalTemplateAction, template: IntervalTem
       <v-icon :icon="archiveExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'" size="small" />
     </v-btn>
     <v-expand-transition>
-      <div v-show="archiveExpanded" id="archived-intervals" class="interval-plan-list mt-2">
-        <v-card v-for="template in archivedTemplates" :key="template.id" class="surface-card pa-4 interval-plan-card" role="link" tabindex="0" :aria-label="`Edit archived interval ${template.name}`" @click="editTemplate(template)" @keydown.enter="editTemplate(template)" @keydown.space.prevent="editTemplate(template)">
-          <div class="interval-plan-card__row d-flex align-start ga-3">
-            <div class="interval-template-icon" :style="{ background: template.color }"><v-icon icon="mdi-archive-outline" size="21" /></div>
-            <div class="interval-plan-details"><h2 class="text-body-1 font-weight-black text-truncate">{{ template.name }}</h2><p class="text-caption muted mt-1">Archived · Open to restore</p></div>
-          </div>
-        </v-card>
+      <div v-show="archiveExpanded" id="archived-intervals">
+        <div class="interval-plan-list mt-2">
+          <v-card v-for="template in archivedTemplates" :key="template.id" class="surface-card pa-4 interval-plan-card" role="link" tabindex="0" :aria-label="`Edit archived interval ${template.name}`" @click="editTemplate(template)" @keydown.enter="editTemplate(template)" @keydown.space.prevent="editTemplate(template)">
+            <div class="interval-plan-card__row d-flex align-start ga-3">
+              <div class="interval-template-icon" :style="{ background: template.color }"><v-icon icon="mdi-archive-outline" size="21" /></div>
+              <div class="interval-plan-details"><h2 class="text-body-1 font-weight-black text-truncate">{{ template.name }}</h2><p class="text-caption muted mt-1">Archived · Open to restore</p></div>
+            </div>
+          </v-card>
+        </div>
       </div>
     </v-expand-transition>
   </section>

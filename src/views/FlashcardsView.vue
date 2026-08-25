@@ -436,10 +436,12 @@ async function reorderReviewSets(result: LongPressDragResult) {
           <v-icon :icon="archiveExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'" size="small" />
         </v-btn>
         <v-expand-transition>
-          <div v-show="archiveExpanded" id="archived-review-sets" class="review-set-list mt-2">
-            <v-card v-for="reviewSet in archivedReviewSets" :key="reviewSet.id" class="review-set surface-card pa-4" role="link" tabindex="0" :aria-label="`Edit archived Review set ${reviewSet.name}`" @click="router.push({ name: 'flashcard-review-set-edit', params: { id: reviewSet.id } })" @keydown.enter="router.push({ name: 'flashcard-review-set-edit', params: { id: reviewSet.id } })" @keydown.space.prevent="router.push({ name: 'flashcard-review-set-edit', params: { id: reviewSet.id } })">
-              <div class="d-flex align-center ga-3"><v-icon icon="mdi-archive-outline" color="warning" /><div class="min-width-0"><h3 class="text-body-1 font-weight-black text-truncate">{{ reviewSet.name }}</h3><p class="text-caption muted mt-1">Archived · Open to restore</p></div></div>
-            </v-card>
+          <div v-show="archiveExpanded" id="archived-review-sets">
+            <div class="review-set-list mt-2">
+              <v-card v-for="reviewSet in archivedReviewSets" :key="reviewSet.id" class="review-set surface-card pa-4" role="link" tabindex="0" :aria-label="`Edit archived Review set ${reviewSet.name}`" @click="router.push({ name: 'flashcard-review-set-edit', params: { id: reviewSet.id } })" @keydown.enter="router.push({ name: 'flashcard-review-set-edit', params: { id: reviewSet.id } })" @keydown.space.prevent="router.push({ name: 'flashcard-review-set-edit', params: { id: reviewSet.id } })">
+                <div class="d-flex align-center ga-3"><v-icon icon="mdi-archive-outline" color="warning" /><div class="min-width-0"><h3 class="text-body-1 font-weight-black text-truncate">{{ reviewSet.name }}</h3><p class="text-caption muted mt-1">Archived · Open to restore</p></div></div>
+              </v-card>
+            </div>
           </div>
         </v-expand-transition>
       </section>
