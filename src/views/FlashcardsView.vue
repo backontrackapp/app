@@ -60,12 +60,6 @@ onMounted(() => {
   ]).catch(() => undefined)
 })
 
-function tagName(reviewSet: FlashcardReviewSet, id: string) {
-  return reviewSet.tagDetails.find(tag => tag.id === id)?.name
-    || store.tags.find(tag => tag.id === id)?.name
-    || 'Removed tag'
-}
-
 function recentReviewColor(session: FlashcardReviewHistoryItem) {
   return session.status === 'completed' ? 'success' : 'warning'
 }
@@ -386,14 +380,6 @@ async function reorderReviewSets(result: LongPressDragResult) {
                   <v-icon icon="mdi-card-multiple-outline" size="small" />
                   <span>{{ reviewSetCardCount(reviewSet) }} cards/session</span>
                 </span>
-                <span
-                  v-for="tag in reviewSet.tags"
-                  :key="tag"
-                  class="review-set__meta-item"
-                >
-                  <v-icon icon="mdi-tag-outline" size="small" />
-                  <span>{{ tagName(reviewSet, tag) }}</span>
-                </span>
               </div>
             </div>
           </div>
@@ -481,10 +467,6 @@ async function reorderReviewSets(result: LongPressDragResult) {
                 <span class="review-set__meta-item">
                   <v-icon icon="mdi-card-multiple-outline" size="small" />
                   <span>{{ reviewSetCardCount(reviewSet) }} cards/session</span>
-                </span>
-                <span v-for="tag in reviewSet.tags" :key="tag" class="review-set__meta-item">
-                  <v-icon icon="mdi-tag-outline" size="small" />
-                  <span>{{ tagName(reviewSet, tag) }}</span>
                 </span>
               </div>
             </div>
