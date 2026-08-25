@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { ApiError, api, apiAssetUrl } from '@/lib/api'
 import { createLocalRecordId, hasLocalBootstrap } from '@/lib/localDatabase'
 import {
+  cardMatchesReviewSet,
   cardMatchesTags,
   createFlashcardReviewPreviewSession,
   DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
