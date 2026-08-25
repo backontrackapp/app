@@ -1575,6 +1575,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     action: FlashcardReviewAction,
     elapsedSeconds: number,
     viewCount = 1,
+    ejectReplacementIndex?: number,
   ) {
     const currentSession = sessions.value.find(session => session.id === sessionId)
     const normalizedViewCount = action === 'view' ? Math.max(1, Math.round(viewCount)) : 1
@@ -1591,8 +1592,20 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     const accountId = api.authStore.record?.id || ''
     const usingLocalDatabase = Boolean(accountId && await hasLocalBootstrap(accountId))
     const response = usingLocalDatabase
-      ? await actOnLocalSession(sessionId, action, elapsedSeconds, normalizedViewCount)
-      : await api.actOnFlashcardReviewSession(sessionId, action, elapsedSeconds, normalizedViewCount)
+      ? await actOnLocalSession(
+          sessionId,
+          action,
+          elapsedSeconds,
+          normalizedViewCount,
+          ejectReplacementIndex,
+        )
+      : await api.actOnFlashcardReviewSession(
+          sessionId,
+          action,
+          elapsedSeconds,
+          normalizedViewCount,
+          ejectReplacementIndex,
+        )
     const session = mapSession(response.session)
     const index = sessions.value.findIndex(item => item.id === session.id)
     if (index >= 0) sessions.value.splice(index, 1, session)
@@ -1766,6 +1779,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     action: FlashcardReviewAction,
     elapsedSeconds: number,
     viewCount = 1,
+    ejectReplacementIndex?: number,
   ) {
     const current = sessions.value.find(session => session.id === sessionId)
     if (!current) throw new Error('Flashcard review not found.')
@@ -1890,11 +1904,19 @@ export const useFlashcardStore = defineStore('flashcards', () => {
                 ? cards.value
                 : reviewSetCards.value[reviewSet.id]
               if (!availableCards) availableCards = await loadReviewSetCards(reviewSet.id)
-              while (reserveCardIds.length && queue.length < current.maxCards) {
+              const replacements: typeof queue = []
+              while (
+                reserveCardIds.length
+                && queue.length + replacements.length < current.maxCards
+              ) {
                 const replacementId = reserveCardIds.shift()!
+                if (
+                  queue.some(card => card.id === replacementId)
+                  || replacements.some(card => card.id === replacementId)
+                ) continue
                 const replacement = availableCards.find(item => item.id === replacementId)
                 if (!replacement) continue
-                queue.push({
+                replacements.push({
                   id: replacement.id,
                   front: replacement.front,
                   back: replacement.back,
@@ -1906,6 +1928,10 @@ export const useFlashcardStore = defineStore('flashcards', () => {
                 })
                 totalCards += 1
               }
+              const replacementIndex = ejectReplacementIndex === undefined
+                ? queue.length
+                : Math.min(Math.max(0, ejectReplacementIndex), queue.length)
+              queue.splice(replacementIndex, 0, ...replacements)
             }
           }
           else {

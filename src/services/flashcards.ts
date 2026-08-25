@@ -2,6 +2,7 @@ import type {
   Flashcard,
   FlashcardBulkAction,
   FlashcardBulkSwapColumn,
+  FlashcardReviewQueueCard,
   FlashcardReviewSession,
   FlashcardReviewSet,
   FlashcardReviewCardSides,
@@ -386,8 +387,8 @@ export function flashcardReviewActionFromSwipe(
   const direction = flashcardSwipeDirection(start, end)
   if (direction === 'left') return { action: 'back', transition: 'next' }
   if (direction === 'right') return { action: 'front', transition: 'previous' }
-  if (direction === 'up') return { action: 'previous', transition: 'back' }
-  if (direction === 'down') return { action: 'next', transition: 'front' }
+  if (direction === 'up') return { action: 'next', transition: 'back' }
+  if (direction === 'down') return { action: 'previous', transition: 'front' }
   return undefined
 }
 
@@ -732,14 +733,25 @@ export function intervalFlashcardEjectionOffsetMs(
   review: IntervalFlashcardReviewSnapshot,
   elapsedMs: number,
   ejectedCardId: string,
+  remainingCards: FlashcardReviewQueueCard[],
 ) {
   const currentPhase = intervalFlashcardPhase(review, elapsedMs)
-  const remainingCards = review.cards.filter(card => card.id !== ejectedCardId)
   if (!currentPhase || !remainingCards.length) {
     return Number.isFinite(review.playbackOffsetMs) ? review.playbackOffsetMs! : 0
   }
 
-  const nextCardIndex = currentPhase.cardIndex % remainingCards.length
+  const ejectedCardIndex = review.cards.findIndex(card => card.id === ejectedCardId)
+  const originalCardIds = new Set(review.cards.map(card => card.id))
+  const remainingCardIds = new Set(remainingCards.map(card => card.id))
+  const orderedCandidates = ejectedCardIndex >= 0
+    ? [
+        ...review.cards.slice(ejectedCardIndex + 1),
+        ...remainingCards.filter(card => !originalCardIds.has(card.id)),
+        ...review.cards.slice(0, ejectedCardIndex),
+      ]
+    : remainingCards
+  const nextCardId = orderedCandidates.find(card => remainingCardIds.has(card.id))?.id
+  const nextCardIndex = Math.max(0, remainingCards.findIndex(card => card.id === nextCardId))
   const remainingReview = { ...review, cards: remainingCards }
   return nextCardIndex * intervalFlashcardCardDurationMs(remainingReview) - elapsedMs
 }

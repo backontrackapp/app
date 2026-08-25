@@ -1649,6 +1649,7 @@ class ApiClient {
     action: FlashcardReviewAction,
     elapsedSeconds: number,
     viewCount = 1,
+    ejectReplacementIndex?: number,
   ) {
     return request<FlashcardReviewActionResponse>(
       `/flashcard-review-sessions/${encodeURIComponent(sessionId)}/actions`,
@@ -1659,6 +1660,9 @@ class ApiClient {
           elapsed_seconds: Math.max(0, Math.round(elapsedSeconds)),
           ...(action === 'view' && viewCount > 1
             ? { view_count: Math.max(1, Math.round(viewCount)) }
+            : {}),
+          ...(action === 'eject' && ejectReplacementIndex !== undefined
+            ? { eject_replacement_index: Math.max(0, Math.round(ejectReplacementIndex)) }
             : {}),
         },
       },

@@ -20,6 +20,7 @@ import {
   nativeBackgroundIntervalIsActive,
   stopBackgroundInterval,
   syncBackgroundInterval,
+  waitForBackgroundIntervalSpeech,
 } from '@/services/backgroundInterval'
 import {
   flashcardSpeechOverAmplificationIsEnabled,
@@ -27,6 +28,7 @@ import {
   speakFlashcardText,
   stopFlashcardSpeech,
   toggleFlashcardSpeechOverAmplification,
+  waitForFlashcardSpeechHandoff,
 } from '@/services/flashcardSpeech'
 import {
   cardMatchesTags,
@@ -901,6 +903,13 @@ async function handleVisibility() {
     const backgroundWasActive = nativeBackgroundIntervalIsActive()
     reconcilingVisibilitySpeech = backgroundWasActive
     try {
+      if (backgroundWasActive) {
+        await Promise.all([
+          waitForFlashcardSpeechHandoff(),
+          waitForBackgroundIntervalSpeech(),
+        ])
+        if (document.visibilityState !== 'visible') return
+      }
       wakeLock = await requestIntervalWakeLock()
       await tick()
       if (backgroundWasActive && flashcardPhase.value) {
@@ -1740,6 +1749,7 @@ async function ejectIntervalFlashcard() {
       await ensureIntervalFlashcardSource()
       while (reserveCardIds.length && cards.length < maxCards) {
         const replacementId = reserveCardIds.shift()!
+        if (cards.some(card => card.id === replacementId)) continue
         const replacement = intervalFlashcardSource.value.find(card => card.id === replacementId)
         if (!replacement) continue
         cards.push({
@@ -1773,6 +1783,7 @@ async function ejectIntervalFlashcard() {
         review,
         flashcardReviewElapsedMs.value,
         cardId,
+        cards,
       ),
     })
     playFlashcardEjectCue()

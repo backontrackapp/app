@@ -35,4 +35,4 @@ function onDateSwiped() {
 
 `confirmSwipeHint(id)` stores the understood hint id in local storage and immediately removes every mounted hint with that id. Future mounts check storage and stay hidden. Confirmation is intentionally separate from the directive so it can happen from the actual gesture handler, a button, or another application event.
 
-Review-set cards use the shared `review-set-card-navigation` hint in both standalone and dense interval sessions. It teaches swipe up for the previous card, swipe down for the next card, and either horizontal direction to flip the card. The hint repeats until the first recognized card swipe that is not consumed by scrolling, then that gesture confirms the hint for both card variants.
+Review-set cards use the shared `review-set-card-navigation` hint in both standalone and dense interval sessions. It teaches swipe up for the next card, swipe down for the previous card, and either horizontal direction to flip the card. The hint repeats until the first recognized card swipe that is not consumed by scrolling, then that gesture confirms the hint for both card variants.

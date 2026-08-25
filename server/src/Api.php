@@ -4516,7 +4516,9 @@ final class Api
     private function actOnFlashcardReviewSession(string $id, array $user): never
     {
         $body = $this->jsonBody();
-        $this->allowOnlyFields($body, ['action', 'elapsed_seconds', 'view_count']);
+        $this->allowOnlyFields($body, [
+            'action', 'elapsed_seconds', 'view_count', 'eject_replacement_index',
+        ]);
         if (!array_key_exists('action', $body) || !array_key_exists('elapsed_seconds', $body)) {
             throw new ApiException(422, 'The action and elapsed_seconds fields are required.');
         }
@@ -4541,6 +4543,19 @@ final class Api
             : 1;
         if ($action !== 'view' && array_key_exists('view_count', $body)) {
             throw new ApiException(422, 'The view_count field is only valid for passive views.');
+        }
+        $ejectReplacementIndex = array_key_exists('eject_replacement_index', $body)
+            ? $this->validateInteger(
+                $body['eject_replacement_index'],
+                'eject_replacement_index',
+                ['min' => 0, 'max' => 100],
+            )
+            : null;
+        if ($action !== 'eject' && $ejectReplacementIndex !== null) {
+            throw new ApiException(
+                422,
+                'The eject_replacement_index field is only valid for ejection.',
+            );
         }
 
         $owner = (string) $user['id'];
@@ -4741,12 +4756,24 @@ final class Api
                                 && $reserveCardIds !== []
                             ) {
                                 $sourceOwner = (string) ($session['source_owner'] ?: $owner);
+                                $replacements = [];
                                 while (
                                     $reserveCardIds !== []
-                                    && count($queue) < (int) $session['max_cards_snapshot']
+                                    && count($queue) + count($replacements)
+                                        < (int) $session['max_cards_snapshot']
                                 ) {
                                     $replacementId = array_shift($reserveCardIds);
                                     if (!is_string($replacementId) || $replacementId === '') {
+                                        continue;
+                                    }
+                                    if (
+                                        in_array($replacementId, array_column($queue, 'id'), true)
+                                        || in_array(
+                                            $replacementId,
+                                            array_column($replacements, 'id'),
+                                            true,
+                                        )
+                                    ) {
                                         continue;
                                     }
                                     try {
@@ -4764,7 +4791,7 @@ final class Api
                                     $replacementTags = $this->decodeJsonColumn(
                                         $replacement['tags'] ?? '[]',
                                     );
-                                    $queue[] = [
+                                    $replacements[] = [
                                         'id' => (string) $replacement['id'],
                                         'front' => (string) $replacement['front'],
                                         'back' => (string) $replacement['back'],
@@ -4779,6 +4806,10 @@ final class Api
                                     ];
                                     $totalCards++;
                                 }
+                                $replacementIndex = $ejectReplacementIndex === null
+                                    ? count($queue)
+                                    : min($ejectReplacementIndex, count($queue));
+                                array_splice($queue, $replacementIndex, 0, $replacements);
                             }
                         } else {
                             $viewedCount++;

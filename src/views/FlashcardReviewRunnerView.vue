@@ -631,7 +631,10 @@ async function performAction(
   let succeeded = false
   if (action === 'eject') void prepareFlashcardEjectCue()
   try {
-    const updated = options.viewCount === undefined
+    const replacementIndex = previousQueueLength - previousQueueIndex - 1
+    const updated = action === 'eject' && previousQueueIndex > 0
+      ? await store.act(session.value.id, action, elapsedSeconds.value, 1, replacementIndex)
+      : options.viewCount === undefined
       ? await store.act(session.value.id, action, elapsedSeconds.value)
       : await store.act(session.value.id, action, elapsedSeconds.value, options.viewCount)
     if (action === 'previous' && updated.queue.length) {
