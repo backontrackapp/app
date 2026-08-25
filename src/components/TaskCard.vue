@@ -356,10 +356,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="flex-grow-1 min-width-0 overflow-hidden">
-        <div class="d-flex align-center ga-2 flex-wrap">
-          <h3 class="task-title">{{ title }}</h3>
-          <v-chip v-if="task.archived" size="x-small" color="warning" variant="tonal">Archived</v-chip>
-        </div>
+        <h3 class="task-title">{{ title }}</h3>
         <Transition name="task-tag">
           <span v-if="scheduleStatus" :key="scheduleStatus" class="schedule-status mt-1">
             {{ scheduleStatus === 'paused'

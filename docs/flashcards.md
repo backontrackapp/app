@@ -42,7 +42,7 @@ Deleting an owned Review set asks whether its currently matching cards should al
 
 Recent reviews are grouped by day, with every group collapsed by default.
 
-Reviews connected to a Review set or Interval that has since been archived remain in recent history and show an **Archived** tag.
+Reviews connected to a Review set or Interval that has since been archived remain in recent history without an archive tag.
 
 Selecting a recent Review opens its action menu. **See details** reopens the saved completion summary; **Delete** asks for confirmation and removes the history item immediately. Reviews recorded inside an Interval open that Interval's details, and deleting one removes the shared Interval run from both histories. Deleting session history does not reverse task progress already recorded by the completed session.
 

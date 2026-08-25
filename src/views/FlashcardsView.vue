@@ -45,12 +45,6 @@ const selectedActions = computed(() => selectedReviewSet.value
   : [])
 
 const reviewHistory = computed(() => flashcardReviewHistoryItems(store.sessions, intervalStore.sessions))
-const archivedReviewSetIds = computed(() => new Set(
-  store.reviewSets.filter((reviewSet) => reviewSet.archived).map((reviewSet) => reviewSet.id),
-))
-const archivedIntervalTemplateIds = computed(() => new Set(
-  intervalStore.templates.filter((template) => template.archived).map((template) => template.id),
-))
 const recentReviewsForWeek = computed(() => reviewHistory.value.filter(session =>
   isSameWeek(new Date(session.startedAt), recentWeekStart.value, { weekStartsOn: 1 }),
 ))
@@ -74,22 +68,6 @@ function tagName(reviewSet: FlashcardReviewSet, id: string) {
 
 function recentReviewColor(session: FlashcardReviewHistoryItem) {
   return session.status === 'completed' ? 'success' : 'warning'
-}
-
-function recentReviewIsArchived(session: FlashcardReviewHistoryItem) {
-  if (session.source === 'flashcards') {
-    const sessionId = recentReviewSessionId(session)
-    const reviewSetId = store.sessions.find((item) => item.id === sessionId)?.reviewSet
-    return Boolean(reviewSetId && archivedReviewSetIds.value.has(reviewSetId))
-  }
-
-  const sessionId = recentReviewSessionId(session)
-  const intervalSession = intervalStore.sessions.find((item) => item.id === sessionId)
-  return Boolean(
-    (intervalSession?.template && archivedIntervalTemplateIds.value.has(intervalSession.template))
-    || (intervalSession?.flashcardReview?.reviewSet
-      && archivedReviewSetIds.value.has(intervalSession.flashcardReview.reviewSet)),
-  )
 }
 
 function isRecentReviewDayExpanded(dayKey: string) {
@@ -566,10 +544,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
                         :color="recentReviewColor(session)"
                       />
                     </template>
-                    <div class="d-flex align-center ga-2 flex-wrap">
-                      <span class="text-body-1">{{ session.name }}</span>
-                      <v-chip v-if="recentReviewIsArchived(session)" size="x-small" color="warning" variant="tonal">Archived</v-chip>
-                    </div>
+                    <span class="text-body-1">{{ session.name }}</span>
                     <span class="recent-review-meta">
                       {{ format(new Date(session.startedAt), 'h:mm a') }} · {{ session.sourceLabel }}
                     </span>

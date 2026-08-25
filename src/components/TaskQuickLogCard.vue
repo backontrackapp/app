@@ -95,10 +95,7 @@ const cardInk = computed(() => {
         <v-icon :icon="progress.complete ? 'mdi-check-bold' : presentation.icon" size="28" />
       </span>
       <span class="task-quick-log__content">
-        <span class="d-flex align-center ga-1 flex-wrap">
-          <strong>{{ title }}</strong>
-          <v-chip v-if="task.archived" size="x-small" color="warning" variant="tonal">Archived</v-chip>
-        </span>
+        <strong>{{ title }}</strong>
         <small v-if="remainingLabel" class="task-quick-log__remaining">{{ remainingLabel }}</small>
         <v-progress-linear
           v-if="hasProgress"
