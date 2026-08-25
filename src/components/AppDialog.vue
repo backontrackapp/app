@@ -12,6 +12,7 @@ const zIndex = useOverlayStack(model, () => { model.value = false })
     v-model="model"
     v-bind="$attrs"
     :z-index="zIndex"
+    scrollable
   >
     <template
       v-for="(_, slotName) in $slots"
