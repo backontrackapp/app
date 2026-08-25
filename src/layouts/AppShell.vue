@@ -58,6 +58,7 @@ const pendingMainNavigationPath = ref<string>()
 const isIos = Capacitor.getPlatform() === 'ios'
 const isAndroid = Capacitor.getPlatform() === 'android'
 const isBrowser = Capacitor.getPlatform() === 'web'
+const isDevBuild = import.meta.env.MODE === 'dev'
 const storedMenuOrder = ref(readStoredMainMenuOrder())
 const storedHiddenMenuItems = ref(readStoredHiddenMainMenuItems())
 const reducedMotion = ref(
@@ -595,7 +596,7 @@ function releaseLeavingPage(element: Element) {
       <header
         v-if="!immersive && !mobileKeyboardVisible"
         class="app-bar"
-        :class="{ 'app-bar--ios': isIos, 'app-bar--back': canGoBack }"
+        :class="{ 'app-bar--ios': isIos, 'app-bar--back': canGoBack, 'app-bar--dev': isDevBuild }"
       >
         <div class="app-bar__inner">
           <div class="app-bar__leading">
@@ -615,6 +616,15 @@ function releaseLeavingPage(element: Element) {
           <h1 class="app-bar__title">{{ pageTitle }}</h1>
 
           <div class="app-bar__actions d-flex align-center ga-1">
+            <v-chip
+              v-if="isDevBuild"
+              color="warning"
+              variant="tonal"
+              size="x-small"
+              label
+            >
+              DEV
+            </v-chip>
             <v-btn
               :icon="syncIcon"
               :color="syncColor"
@@ -883,6 +893,14 @@ function releaseLeavingPage(element: Element) {
   justify-content: flex-end;
 }
 
+.app-bar--dev .app-bar__inner {
+  grid-template-columns: 0 minmax(0, 1fr) 11rem;
+}
+
+.app-bar--dev .app-bar__actions {
+  width: 11rem;
+}
+
 .sync-panel {
   display: grid;
   gap: 1rem;
@@ -946,6 +964,11 @@ function releaseLeavingPage(element: Element) {
 .app-bar--back .app-bar__inner {
   grid-template-columns: 2.75rem minmax(0, 1fr) 8.75rem;
   gap: 1rem;
+}
+
+.app-bar--back.app-bar--dev .app-bar__inner,
+.app-bar--ios.app-bar--dev .app-bar__inner {
+  grid-template-columns: 2.75rem minmax(0, 1fr) 11rem;
 }
 
 .app-bar--ios .app-bar__inner {
