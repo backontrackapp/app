@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import FlashcardResponseText from '@/components/FlashcardResponseText.vue'
 import FitReviewContent from '@/components/FitReviewContent.vue'
 import SpokenText from '@/components/SpokenText.vue'
@@ -100,6 +100,10 @@ const emit = defineEmits<{
   toggleTag: [name: string]
   openTags: []
   eject: []
+  previous: [transitionDirection: ReviewCardTransitionDirection]
+  next: [transitionDirection: ReviewCardTransitionDirection]
+  flip: [side: FlashcardReviewSide, transitionDirection: ReviewCardTransitionDirection]
+  togglePlayback: []
 }>()
 
 const root = ref<HTMLElement>()
@@ -275,7 +279,46 @@ function refitContent() {
     .forEach(element => element.dispatchEvent(new Event(REFIT_TEXT_CONTENT_EVENT)))
 }
 
-onBeforeUnmount(clearBufferTransitionSchedule)
+function handleReviewSetKeydown(event: KeyboardEvent) {
+  const target = event.target
+  if (
+    event.defaultPrevented
+    || event.isComposing
+    || event.repeat
+    || event.altKey
+    || event.ctrlKey
+    || event.metaKey
+    || event.shiftKey
+    || (target instanceof Element && target.closest(
+      'input, textarea, select, [contenteditable]:not([contenteditable="false"])',
+    ))
+  ) return
+
+  const key = event.code === 'Space' || event.key === 'Spacebar' ? ' ' : event.key
+  if (key === 'ArrowUp') {
+    if (!props.disabled) emit('previous', 'back')
+  } else if (key === 'ArrowDown') {
+    if (!props.disabled) emit('next', 'front')
+  } else if (key === 'ArrowLeft') {
+    if (!props.disabled) emit('flip', props.side === 'front' ? 'back' : 'front', 'next')
+  } else if (key === 'ArrowRight') {
+    if (!props.disabled) emit('flip', props.side === 'front' ? 'back' : 'front', 'previous')
+  } else if (key === 'Backspace') {
+    if (!props.disabled && !props.ejectDisabled) emit('eject')
+  } else if (key === ' ') {
+    if (!props.disabled) emit('togglePlayback')
+  } else return
+
+  event.preventDefault()
+  event.stopPropagation()
+}
+
+onMounted(() => document.addEventListener('keydown', handleReviewSetKeydown, true))
+
+onBeforeUnmount(() => {
+  clearBufferTransitionSchedule()
+  document.removeEventListener('keydown', handleReviewSetKeydown, true)
+})
 
 defineExpose({ refitContent })
 </script>

@@ -2297,6 +2297,10 @@ async function runAgain(repetitions?: number) {
             @eject="ejectIntervalFlashcard"
             @toggle-tag="toggleIntervalFlashcardTag({ name: $event })"
             @open-tags="openFlashcardTagSheet"
+            @previous="navigateIntervalFlashcard('previous', $event)"
+            @next="navigateIntervalFlashcard('next', $event)"
+            @flip="showIntervalFlashcardSide"
+            @toggle-playback="session.status === 'paused' ? resume() : pause()"
           />
 
         </div>

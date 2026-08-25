@@ -1539,6 +1539,10 @@ async function leaveRunner() {
           @tag-click-capture="suppressTagClickAfterSwipe"
           @toggle-tag="toggleCurrentCardTag({ name: $event })"
           @eject="ejectCurrentCard"
+          @previous="navigateLeft"
+          @next="navigateRight"
+          @flip="showReviewCardSide"
+          @toggle-playback="session.status === 'paused' ? resumeReview() : pauseReview(false)"
         />
 
         <div v-if="session.mode === 'manual'" class="grading-actions">
