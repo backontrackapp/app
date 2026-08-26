@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
+import AssistantPlanTable from '@/components/AssistantPlanTable.vue'
 import {
   assistantChoice,
   assistantReadToolResult,
@@ -30,6 +31,7 @@ import type {
   AssistantChoice,
   AssistantConversationItem,
   AssistantMessageItem,
+  AssistantPlanEntry,
   AssistantToolCallItem,
   AssistantWritePlan,
   PhoneSpeechStatus,
@@ -43,25 +45,28 @@ const items = ref<AssistantConversationItem[]>([])
 const composer = ref('')
 const liveTranscript = ref('')
 const busy = ref(false)
+const receivingReply = ref(false)
 const recording = ref(false)
 const error = ref('')
 const pendingPlan = ref<AssistantWritePlan>()
 const pendingChoice = ref<AssistantChoice>()
+const planEntries = reactive(new Map<string, AssistantPlanEntry>())
 const messagesElement = ref<HTMLElement>()
 const speechStatus = ref<PhoneSpeechStatus>({ available: false, permission: 'prompt' })
 const spokenReplies = ref(true)
 const replySpeechLanguage = ref('')
 let requestRevision = 0
+let activeRequestController: AbortController | undefined
+const AUTO_SCROLL_BOTTOM_TOLERANCE = 16
 
 const messages = computed(() => items.value.filter(
   (item): item is AssistantMessageItem => item.type === 'message',
 ))
 const visibleItems = computed(() => items.value.filter(item => (
-  item.type === 'message' || (item.type === 'function_call' && item.name === 'present_choices')
+  item.type === 'message' || (item.type === 'function_call' && (
+    item.name === 'present_choices' || planEntries.has(item.callId)
+  ))
 )))
-const canSend = computed(() => (
-  Boolean(composer.value.trim()) && !busy.value && !pendingPlan.value && !pendingChoice.value
-))
 const voiceAvailable = computed(() => phoneSpeechRecognitionIsNative() && speechStatus.value.available)
 
 const suggestions = [
@@ -76,6 +81,18 @@ async function scrollMessagesToEnd() {
   if (element) element.scrollTop = element.scrollHeight
 }
 
+function messagesAreAtEnd() {
+  const element = messagesElement.value
+  if (!element) return true
+  return element.scrollHeight - element.scrollTop - element.clientHeight <= AUTO_SCROLL_BOTTOM_TOLERANCE
+}
+
+function requiredPlanEntry(callId: string) {
+  const entry = planEntries.get(callId)
+  if (!entry) throw new Error('The assistant proposal is unavailable.')
+  return entry
+}
+
 async function speakReply(content: string) {
   if (!spokenReplies.value || !replySpeechLanguage.value || !content.trim()) return
   await speakFlashcardText(content, replySpeechLanguage.value).catch(() => undefined)
@@ -84,12 +101,32 @@ async function speakReply(content: string) {
 async function runAssistant() {
   if (busy.value || pendingPlan.value || pendingChoice.value) return
   const revision = ++requestRevision
+  const controller = new AbortController()
+  activeRequestController = controller
+  let streamedMessage: AssistantMessageItem | undefined
   busy.value = true
   error.value = ''
   try {
     for (let iteration = 0; iteration < 6; iteration += 1) {
-      const response = await requestAssistantResponse(items.value)
+      streamedMessage = undefined
+      const response = await requestAssistantResponse(items.value, delta => {
+        if (revision !== requestRevision || !model.value) return
+        const shouldAutoScroll = messagesAreAtEnd()
+        if (!streamedMessage) {
+          streamedMessage = reactive({ type: 'message', role: 'assistant', content: '' })
+          items.value.push(streamedMessage)
+          receivingReply.value = true
+        }
+        streamedMessage.content += delta
+        if (shouldAutoScroll) void scrollMessagesToEnd()
+      }, controller.signal)
       if (revision !== requestRevision || !model.value) return
+      if (streamedMessage) {
+        const streamedIndex = items.value.indexOf(streamedMessage)
+        if (streamedIndex >= 0) items.value.splice(streamedIndex, 1)
+        streamedMessage = undefined
+      }
+      receivingReply.value = false
       const responseItems = response.items
       responseItems.forEach(item => {
         if (item.type === 'function_call' && item.name === 'present_choices') assistantChoice(item)
@@ -113,8 +150,10 @@ async function runAssistant() {
           continued = true
           continue
         }
-        pendingPlan.value = assistantWritePlan(item, flashcards)
-        if (!pendingPlan.value) throw new Error('The assistant requested an unsupported action.')
+        const plan = assistantWritePlan(item, flashcards)
+        if (!plan) throw new Error('The assistant requested an unsupported action.')
+        pendingPlan.value = plan
+        planEntries.set(plan.call.callId, { plan, status: 'pending' })
         await scrollMessagesToEnd()
         return
       }
@@ -122,17 +161,37 @@ async function runAssistant() {
     }
     throw new Error('The assistant used too many steps. Try a more specific request.')
   } catch (cause) {
+    if (streamedMessage) {
+      const streamedIndex = items.value.indexOf(streamedMessage)
+      if (streamedIndex >= 0) items.value.splice(streamedIndex, 1)
+    }
+    receivingReply.value = false
+    if (cause instanceof Error && cause.name === 'AbortError') return
     error.value = cause instanceof Error ? cause.message : 'The assistant could not respond.'
   } finally {
-    if (revision === requestRevision) busy.value = false
+    if (activeRequestController === controller) activeRequestController = undefined
+    if (revision === requestRevision) {
+      receivingReply.value = false
+      busy.value = false
+    }
   }
 }
 
 async function submit(message = composer.value) {
   const content = message.trim()
-  if (!content || busy.value || pendingPlan.value || pendingChoice.value) return
+  if (!content || busy.value) return
   await stopFlashcardSpeech()
   composer.value = ''
+  if (pendingPlan.value) {
+    items.value.push(cancelledAssistantToolOutput(pendingPlan.value.call.callId))
+    const entry = planEntries.get(pendingPlan.value.call.callId)
+    if (entry) planEntries.set(pendingPlan.value.call.callId, { ...entry, status: 'cancelled' })
+    pendingPlan.value = undefined
+  }
+  if (pendingChoice.value) {
+    items.value.push(cancelledAssistantToolOutput(pendingChoice.value.call.callId))
+    pendingChoice.value = undefined
+  }
   items.value.push({ type: 'message', role: 'user', content })
   await scrollMessagesToEnd()
   await runAssistant()
@@ -163,6 +222,8 @@ async function confirmPlan() {
   error.value = ''
   try {
     items.value.push(await executeAssistantWritePlan(plan, flashcards))
+    const entry = planEntries.get(plan.call.callId)
+    if (entry) planEntries.set(plan.call.callId, { ...entry, status: 'applied' })
     pendingPlan.value = undefined
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'The flashcard action could not be completed.'
@@ -173,20 +234,19 @@ async function confirmPlan() {
   await runAssistant()
 }
 
-async function cancelPlan() {
+function cancelPlan() {
   const plan = pendingPlan.value
   if (!plan || busy.value) return
   items.value.push(cancelledAssistantToolOutput(plan.call.callId))
+  const entry = planEntries.get(plan.call.callId)
+  if (entry) planEntries.set(plan.call.callId, { ...entry, status: 'cancelled' })
   pendingPlan.value = undefined
-  await runAssistant()
 }
 
 async function beginListening() {
   if (
     busy.value
     || recording.value
-    || pendingPlan.value
-    || pendingChoice.value
     || !phoneSpeechRecognitionIsNative()
   ) return
   await stopFlashcardSpeech()
@@ -222,6 +282,8 @@ async function stopListening() {
 
 async function resetPanel() {
   requestRevision += 1
+  activeRequestController?.abort()
+  activeRequestController = undefined
   await Promise.all([
     cancelPhoneSpeechRecognition().catch(() => undefined),
     stopFlashcardSpeech().catch(() => undefined),
@@ -230,10 +292,12 @@ async function resetPanel() {
   composer.value = ''
   liveTranscript.value = ''
   recording.value = false
+  receivingReply.value = false
   busy.value = false
   error.value = ''
   pendingPlan.value = undefined
   pendingChoice.value = undefined
+  planEntries.clear()
 }
 
 watch(model, async (open) => {
@@ -315,7 +379,7 @@ onBeforeUnmount(() => {
             <v-icon icon="mdi-microphone-message" color="secondary" size="42" />
             <h2 class="text-h6">What should I build?</h2>
             <p class="text-body-2 text-medium-emphasis mb-0">
-              Speak or type a request. You will review every change before it is saved.
+              Ask for a flashcard or Review set task. You will review every change before it is saved.
             </p>
             <div class="d-flex flex-column align-stretch mt-4">
               <v-btn
@@ -364,66 +428,16 @@ onBeforeUnmount(() => {
                 </v-btn>
               </div>
             </div>
+            <AssistantPlanTable
+              v-else-if="item.type === 'function_call' && planEntries.has(item.callId)"
+              :entry="requiredPlanEntry(item.callId)"
+              :busy="busy && pendingPlan?.call.callId === item.callId"
+              @cancel="cancelPlan"
+              @confirm="confirmPlan"
+            />
           </template>
 
-          <v-card v-if="pendingPlan" class="surface-card assistant-plan pa-4" rounded="xl">
-            <div class="d-flex align-start ga-3">
-              <v-avatar color="secondary" variant="tonal" size="36">
-                <v-icon :icon="pendingPlan.updatedReviewSet || pendingPlan.updatedCards ? 'mdi-card-edit-outline' : 'mdi-card-multiple-outline'" />
-              </v-avatar>
-              <div class="min-width-0">
-                <strong>{{ pendingPlan.title }}</strong>
-                <p class="text-body-2 text-medium-emphasis mt-1 mb-0">{{ pendingPlan.description }}</p>
-              </div>
-            </div>
-            <v-alert
-              v-if="pendingPlan.convertsTagSelection"
-              type="warning"
-              variant="tonal"
-              density="compact"
-              class="mt-3"
-            >
-              This tag-based set will become a fixed card list while keeping its current cards.
-            </v-alert>
-            <v-list v-if="pendingPlan.changes?.length" bg-color="transparent" density="compact" class="mt-2 pa-0">
-              <v-list-item
-                v-for="change in pendingPlan.changes"
-                :key="change.label"
-                :title="change.label"
-                :subtitle="`${change.before} → ${change.after}`"
-              />
-            </v-list>
-            <v-list v-if="pendingPlan.updatedCards?.length" bg-color="transparent" density="compact" class="mt-2 pa-0">
-              <v-list-group v-for="card in pendingPlan.updatedCards" :key="card.id">
-                <template #activator="{ props }">
-                  <v-list-item v-bind="props" :title="card.label" />
-                </template>
-                <v-list-item
-                  v-for="change in card.changes"
-                  :key="`${card.id}-${change.label}`"
-                  :title="change.label"
-                  :subtitle="`${change.before} → ${change.after}`"
-                />
-              </v-list-group>
-            </v-list>
-            <v-list v-if="pendingPlan.newCards.length" bg-color="transparent" density="compact" class="mt-2 pa-0">
-              <v-list-item
-                v-for="card in pendingPlan.newCards.slice(0, 5)"
-                :key="`${card.front}-${card.back}`"
-                :title="card.front"
-                :subtitle="card.back"
-              />
-            </v-list>
-            <p v-if="pendingPlan.newCards.length > 5" class="text-caption text-medium-emphasis mb-0">
-              And {{ pendingPlan.newCards.length - 5 }} more new cards.
-            </p>
-            <div class="d-flex justify-end ga-2 mt-4">
-              <v-btn variant="text" :disabled="busy" @click="cancelPlan">Cancel</v-btn>
-              <v-btn color="secondary" :loading="busy" @click="confirmPlan">Confirm</v-btn>
-            </div>
-          </v-card>
-
-          <div v-if="busy && !pendingPlan" class="assistant-panel__thinking text-body-2 text-medium-emphasis">
+          <div v-if="busy && !pendingPlan && !receivingReply" class="assistant-panel__thinking text-body-2 text-medium-emphasis">
             <v-progress-circular indeterminate color="secondary" size="20" width="2" />
             <span>Thinking…</span>
           </div>
@@ -437,12 +451,12 @@ onBeforeUnmount(() => {
           </p>
           <v-textarea
             v-model="composer"
-            label="Ask the AI"
+            label="Ask about your flashcards"
             rows="1"
             auto-grow
             max-rows="4"
             hide-details="auto"
-            :disabled="busy || recording || Boolean(pendingPlan) || Boolean(pendingChoice)"
+            :disabled="busy || recording"
             @keydown.enter.exact.prevent="submit()"
           >
             <template #append-inner>
@@ -453,7 +467,7 @@ onBeforeUnmount(() => {
                   :color="recording ? 'error' : voiceAvailable ? 'secondary' : undefined"
                   variant="text"
                   :aria-label="recording ? 'Stop listening' : 'Start voice request'"
-                  :disabled="busy || Boolean(pendingPlan) || Boolean(pendingChoice)"
+                  :disabled="busy"
                   @click="recording ? stopListening() : beginListening()"
                 />
                 <v-btn
@@ -461,8 +475,7 @@ onBeforeUnmount(() => {
                   color="secondary"
                   variant="text"
                   aria-label="Send request"
-                  :disabled="!canSend"
-                  :loading="busy"
+                  :disabled="busy"
                   @click="submit()"
                 />
               </div>
@@ -560,11 +573,6 @@ onBeforeUnmount(() => {
   white-space: normal;
 }
 .assistant-choice__button--selected:disabled { opacity: 1; }
-.assistant-plan {
-  min-height: min-content;
-  flex: 0 0 auto;
-  background: rgb(var(--v-theme-surface));
-}
 .assistant-panel__thinking,
 .assistant-panel__listening { display: flex; align-items: center; gap: .5rem; }
 .assistant-panel__composer { padding-bottom: calc(1rem + max(env(safe-area-inset-bottom, 0rem), var(--safe-area-inset-bottom, 0rem))) !important; border-top: .0625rem solid rgb(var(--v-theme-on-surface) / .08); background: rgb(var(--v-theme-surface)); }

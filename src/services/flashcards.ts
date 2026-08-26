@@ -26,6 +26,9 @@ export const MIN_FLASHCARD_BACK_SPEECH_REPEATS = 1
 export const MAX_FLASHCARD_BACK_SPEECH_REPEATS = 5
 export const DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS = 1
 export const DEFAULT_FLASHCARD_REVIEW_CARD_SIDES: FlashcardReviewCardSides = 'both'
+export const MIN_FLASHCARD_EJECT_EXCLUDE_AFTER = 1
+export const MAX_FLASHCARD_EJECT_EXCLUDE_AFTER = 20
+export const DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER = 3
 
 export const INTERVAL_FLASHCARD_QUICK_TAGS = [
   { name: 'easy', color: 'success' },
@@ -186,6 +189,22 @@ export function flashcardEjectBehavior(
   return 'remove'
 }
 
+export function normalizeFlashcardEjectExcludeAfter(value: unknown) {
+  const count = Number(value)
+  if (!Number.isInteger(count)) return DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER
+  return Math.min(
+    MAX_FLASHCARD_EJECT_EXCLUDE_AFTER,
+    Math.max(MIN_FLASHCARD_EJECT_EXCLUDE_AFTER, count),
+  )
+}
+
+export function flashcardEjectReachesExclusionThreshold(
+  ejectCount: number,
+  ejectExcludeAfter: number,
+) {
+  return ejectCount >= normalizeFlashcardEjectExcludeAfter(ejectExcludeAfter)
+}
+
 export function updateFlashcardReviewExclusions(
   excludedCards: readonly string[],
   action: FlashcardSelectionAction,
@@ -205,6 +224,7 @@ export function flashcardReviewSettingsSignature(settings: FlashcardReviewSettin
     timeLimitSeconds: settings.mode === 'passive' ? settings.timeLimitSeconds || 0 : 0,
     maxCards: settings.maxCards,
     ejectBehavior: settings.ejectBehavior || 'remove',
+    ejectExcludeAfter: normalizeFlashcardEjectExcludeAfter(settings.ejectExcludeAfter),
     frontSeconds: settings.frontSeconds,
     backSeconds: settings.backSeconds,
     backSpeechRepeatCount: settings.backSpeechRepeatCount,
@@ -224,6 +244,9 @@ export function flashcardReviewSettingsAreValid(
   return Number.isInteger(settings.maxCards)
     && settings.maxCards >= minCards
     && settings.maxCards <= MAX_FLASHCARD_SESSION_CARDS
+    && Number.isInteger(settings.ejectExcludeAfter)
+    && settings.ejectExcludeAfter >= MIN_FLASHCARD_EJECT_EXCLUDE_AFTER
+    && settings.ejectExcludeAfter <= MAX_FLASHCARD_EJECT_EXCLUDE_AFTER
     && Number.isInteger(settings.backSpeechRepeatCount)
     && settings.backSpeechRepeatCount >= MIN_FLASHCARD_BACK_SPEECH_REPEATS
     && settings.backSpeechRepeatCount <= MAX_FLASHCARD_BACK_SPEECH_REPEATS
@@ -518,8 +541,8 @@ export function sortFlashcardsForReview(
         return left.lastReviewedAt ? 1 : -1
       }
       return !left.lastReviewedAt
-        ? compareText(right.createdAt, left.createdAt)
-        : compareText(left.lastReviewedAt, right.lastReviewedAt || '')
+          ? compareText(right.createdAt, left.createdAt)
+          : compareText(left.lastReviewedAt, right.lastReviewedAt || '')
     }
 
     const priorityTag = sortMode === 'easiest' ? 'easy' : 'hard'
@@ -581,6 +604,7 @@ export function flashcardReviewQueueState(
       backAudio: card.backAudio,
       image: card.image,
       tags: [...card.tags],
+      ejectCount: card.ejectCount,
     }))
   const queue = candidates.slice(0, reviewSet.maxCards)
   return {
@@ -613,6 +637,7 @@ export function createFlashcardReviewPreviewSession(
     timeLimitSeconds: reviewSet.mode === 'passive' ? reviewSet.timeLimitSeconds || 0 : 0,
     maxCards: reviewSet.maxCards,
     ejectBehavior: reviewSet.ejectBehavior || 'remove',
+    ejectExcludeAfter: normalizeFlashcardEjectExcludeAfter(reviewSet.ejectExcludeAfter),
     sortMode: reviewSet.sortMode,
     sortDirection: reviewSet.sortDirection,
     tags: [...reviewSet.tags],
@@ -657,6 +682,7 @@ export function createIntervalFlashcardReviewSnapshot(
     sortMode: reviewSet.sortMode,
     sortDirection: reviewSet.sortDirection,
     ejectBehavior: reviewSet.ejectBehavior || 'remove',
+    ejectExcludeAfter: normalizeFlashcardEjectExcludeAfter(reviewSet.ejectExcludeAfter),
     maxCards: reviewSet.maxCards,
     cardSides: reviewSet.cardSides,
     invertFaces: reviewSet.cardSides === 'both' && reviewSet.invertFaces === true,

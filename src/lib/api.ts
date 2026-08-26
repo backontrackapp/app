@@ -1,6 +1,8 @@
 import type {
   AssistantConversationItem,
   AssistantFlashcardDraft,
+  AssistantResponsePayload,
+  AssistantResponseStreamEvent,
   CuratedReviewSetDetail,
   CuratedReviewSetSummary,
   Flashcard,
@@ -11,7 +13,11 @@ import type {
   FlashcardReviewSetAccessRole,
   FlashcardReviewSettings,
 } from '@/types/domain'
-import { flashcardSwapColumnsError, swapFlashcardColumns } from '@/services/flashcards'
+import {
+  DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
+  flashcardSwapColumnsError,
+  swapFlashcardColumns,
+} from '@/services/flashcards'
 import type { AuthActionResponse } from '@/types/auth'
 import {
   createLocalRecordId,
@@ -140,6 +146,7 @@ function flashcardReviewSettingsBody(
     time_limit_seconds: settings.timeLimitSeconds || 0,
     max_cards: settings.maxCards,
     eject_behavior: settings.ejectBehavior || 'remove',
+    eject_exclude_after: settings.ejectExcludeAfter || DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
     front_seconds: settings.frontSeconds,
     back_seconds: settings.backSeconds,
     back_speech_repeat_count: settings.backSpeechRepeatCount,
@@ -175,7 +182,7 @@ function localCreateDefaults(resource: string, body: Record<string, unknown>) {
       transliteration: '', note: '', image_url: '', image_file: '',
       front_audio_url: '', front_audio_file: '', back_audio_url: '', back_audio_file: '',
       tags: [], archived: false, created_at: now, updated_at: now, last_reviewed_at: '',
-      passive_views: 0, success_count: 0, error_count: 0,
+      passive_views: 0, success_count: 0, error_count: 0, eject_count: 0,
       ...body,
     }
   }
@@ -505,11 +512,17 @@ class ApiClient {
     // Kept as a no-op so existing store initialization remains compatible.
   }
 
-  assistantRespond(items: AssistantConversationItem[]) {
-    return request<{ items: AssistantConversationItem[] }>(
+  assistantRespond(
+    items: AssistantConversationItem[],
+    onTextDelta: (delta: string) => void,
+    signal?: AbortSignal,
+  ) {
+    return requestAssistantStream(
       '/assistant/respond',
       { method: 'POST', body: { items } },
       this.authStore,
+      onTextDelta,
+      signal,
     )
   }
 
@@ -584,7 +597,8 @@ class ApiClient {
         ...flashcardReviewSettingsBody(input.settings || {
           mode: 'manual', cardSides: 'both', indefinite: false, timeLimitSeconds: 0,
           maxCards: Math.min(100, Math.max(1, Number(input.maxCards) || 20)),
-          ejectBehavior: 'replace', frontSeconds: 5, backSeconds: 5,
+          ejectBehavior: 'replace', ejectExcludeAfter: DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
+          frontSeconds: 5, backSeconds: 5,
           backSpeechRepeatCount: 1, backDisplay: 'back', speechEnabled: false,
           frontLanguage: '', backLanguage: '', sortMode: 'difficult', sortDirection: 'asc',
         }),
@@ -1016,6 +1030,58 @@ class ApiClient {
     )
   }
 
+  async incrementFlashcardEjectCount(
+    reviewSetId: string,
+    cardId: string,
+    currentCount: number,
+  ) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const payload = {
+        review_set_id: reviewSetId,
+        card_id: cardId,
+      }
+      const nextCount = Math.max(0, Math.round(currentCount)) + 1
+      const reviewedAt = new Date().toISOString()
+      const reviewSet = await getLocalRecord(
+        accountId,
+        'accessible_flashcard_review_sets',
+        reviewSetId,
+      )
+      if (reviewSet?.owner === accountId) {
+        await putLocalCommandWithResourceChanges(
+          accountId,
+          'flashcard_eject.increment',
+          payload,
+          [{
+            resource: 'flashcards',
+            id: cardId,
+            patch: {
+              eject_count: nextCount,
+              last_reviewed_at: reviewedAt,
+              updated_at: reviewedAt,
+            },
+          }],
+        )
+      } else {
+        await putLocalProjectionPatch(
+          accountId,
+          'review_set_cards',
+          `${reviewSetId}:${cardId}`,
+          { eject_count: nextCount, last_reviewed_at: reviewedAt },
+        )
+        await putLocalCommand(accountId, 'flashcard_eject.increment', payload)
+      }
+      return nextCount
+    }
+    const response = await request<{ eject_count: number }>(
+      `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards/${encodeURIComponent(cardId)}/eject`,
+      { method: 'POST', body: {} },
+      this.authStore,
+    )
+    return Number(response.eject_count || 0)
+  }
+
   startFlashcardReviewSession(
     reviewSetId: string,
     input: {
@@ -1258,6 +1324,10 @@ class ApiClient {
         invert_faces: Boolean(source.invert_faces),
         indefinite: Boolean(source.indefinite),
         max_cards: Number(source.max_cards || 20),
+        eject_behavior: source.eject_behavior || 'remove',
+        eject_exclude_after: Number(
+          source.eject_exclude_after || DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
+        ),
         front_seconds: Number(source.front_seconds || 5),
         back_seconds: Number(source.back_seconds || 5),
         back_speech_repeat_count: Number(source.back_speech_repeat_count || 1),
@@ -1364,6 +1434,7 @@ class ApiClient {
         passive_views: 0,
         success_count: 0,
         error_count: 0,
+        eject_count: 0,
         archived: false,
       })
     }
@@ -1742,6 +1813,87 @@ async function request<T>(
     )
   }
   return payload as T
+}
+
+async function requestAssistantStream(
+  path: string,
+  options: { method: string; body: unknown },
+  authStore: AuthStore,
+  onTextDelta: (delta: string) => void,
+  signal?: AbortSignal,
+): Promise<AssistantResponsePayload> {
+  const headers = new Headers({
+    Accept: 'application/x-ndjson',
+    'Content-Type': 'application/json',
+  })
+  if (authStore.token) headers.set('Authorization', `Bearer ${authStore.token}`)
+
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: options.method,
+    headers,
+    body: JSON.stringify(options.body),
+    signal,
+  })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}))
+    if (response.status === 401) authStore.expireToken()
+    throw new ApiError(
+      response.status,
+      typeof payload.message === 'string' ? payload.message : `API request failed (${response.status}).`,
+      payload.details && typeof payload.details === 'object' ? payload.details : {},
+    )
+  }
+
+  let result: AssistantResponsePayload | undefined
+  const processLine = (line: string) => {
+    if (!line.trim()) return
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(line)
+    } catch {
+      throw new ApiError(502, 'The assistant returned an invalid stream.')
+    }
+    if (!parsed || typeof parsed !== 'object') {
+      throw new ApiError(502, 'The assistant returned an invalid stream.')
+    }
+    const event = parsed as AssistantResponseStreamEvent
+    if (event.type === 'text_delta' && typeof event.delta === 'string') {
+      onTextDelta(event.delta)
+      return
+    }
+    if (event.type === 'response' && Array.isArray(event.items)) {
+      result = { items: event.items }
+      return
+    }
+    if (event.type === 'error' && typeof event.message === 'string') {
+      throw new ApiError(502, event.message)
+    }
+    throw new ApiError(502, 'The assistant returned an invalid stream.')
+  }
+
+  if (response.body) {
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      buffer += decoder.decode(value, { stream: !done })
+      let newline = buffer.indexOf('\n')
+      while (newline >= 0) {
+        processLine(buffer.slice(0, newline).replace(/\r$/, ''))
+        buffer = buffer.slice(newline + 1)
+        newline = buffer.indexOf('\n')
+      }
+      if (done) {
+        processLine(buffer)
+        break
+      }
+    }
+  } else {
+    for (const line of (await response.text()).split(/\r?\n/)) processLine(line)
+  }
+  if (!result) throw new ApiError(502, 'The assistant stream ended before the response completed.')
+  return result
 }
 
 function tokenExpiration(token: string) {

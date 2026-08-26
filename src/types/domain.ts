@@ -258,6 +258,7 @@ export interface IntervalFlashcardReviewSnapshot {
   sortMode: FlashcardReviewSort
   sortDirection: FlashcardReviewSortDirection
   ejectBehavior: FlashcardReviewEjectBehavior
+  ejectExcludeAfter: number
   maxCards: number
   cardSides: FlashcardReviewCardSides
   invertFaces?: boolean
@@ -445,6 +446,7 @@ export interface Flashcard {
   passiveViews: number
   successCount: number
   errorCount: number
+  ejectCount: number
 }
 
 export interface FlashcardDraft {
@@ -486,6 +488,7 @@ export interface FlashcardReviewSettings {
   timeLimitSeconds?: number
   maxCards: number
   ejectBehavior: FlashcardReviewEjectBehavior
+  ejectExcludeAfter: number
   frontSeconds: number
   backSeconds: number
   backSpeechRepeatCount: number
@@ -606,6 +609,7 @@ export interface FlashcardReviewQueueCard {
   backAudio?: string
   image: string
   tags: string[]
+  ejectCount: number
 }
 
 export interface FlashcardReviewCardQuickTag {
@@ -738,6 +742,15 @@ export type AssistantConversationItem =
   | AssistantToolOutputItem
   | AssistantReasoningItem
 
+export interface AssistantResponsePayload {
+  items: AssistantConversationItem[]
+}
+
+export type AssistantResponseStreamEvent =
+  | { type: 'text_delta'; delta: string }
+  | { type: 'response'; items: AssistantConversationItem[] }
+  | { type: 'error'; message: string }
+
 export interface AssistantFlashcardDraft {
   front: string
   back: string
@@ -771,6 +784,23 @@ export interface AssistantReviewSetChange {
   label: string
   before: string
   after: string
+}
+
+export interface AssistantPlanChangeRow extends AssistantReviewSetChange {
+  id: string
+  item: string
+}
+
+export interface AssistantPlanCardRow extends AssistantFlashcardDraft {
+  id: string
+  source: 'New' | 'Existing'
+}
+
+export type AssistantPlanStatus = 'pending' | 'cancelled' | 'applied'
+
+export interface AssistantPlanEntry {
+  plan: AssistantWritePlan
+  status: AssistantPlanStatus
 }
 
 export interface AssistantChoice {

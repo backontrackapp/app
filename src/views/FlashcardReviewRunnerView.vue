@@ -33,6 +33,7 @@ import { confirmSwipeHint, REVIEW_SET_CARD_SWIPE_HINT } from '@/services/swipeHi
 import { prepareFlashcardSpeechWordTracking } from '@/services/spokenText'
 import {
   createFlashcardReviewPreviewSession,
+  DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
   FLASHCARD_SETTINGS_APPLY_MENU_ITEMS,
   firstFlashcardReviewSide,
   flashcardBackDurationMs,
@@ -103,6 +104,7 @@ const sessionSettingsDraft = reactive<FlashcardReviewSettings>({
   timeLimitSeconds: 0,
   maxCards: 20,
   ejectBehavior: 'remove',
+  ejectExcludeAfter: DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
   frontSeconds: 5,
   backSeconds: 5,
   backSpeechRepeatCount: 1,
@@ -377,9 +379,9 @@ watch([
   if (!cardId || !side || !previousCardId || !previousSide) return
   const cardChanged = cardId !== previousCardId
   const sideChanged = side !== previousSide
+  if (cardChanged || sideChanged) spokenWord.value = undefined
   if (reviewCardTransitionDirection.value) return
 
-  if (cardChanged || sideChanged) spokenWord.value = undefined
   if (cardChanged) {
     reviewCardTransitionDirection.value = 'back'
   } else if (sideChanged) {
@@ -1268,6 +1270,7 @@ function copySessionSettings(value: FlashcardReviewSession) {
     timeLimitSeconds: value.timeLimitSeconds || 0,
     maxCards: value.maxCards,
     ejectBehavior: value.ejectBehavior,
+    ejectExcludeAfter: value.ejectExcludeAfter,
     frontSeconds: value.frontSeconds,
     backSeconds: value.backSeconds,
     backSpeechRepeatCount: value.backSpeechRepeatCount,

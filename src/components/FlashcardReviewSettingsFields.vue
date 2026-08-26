@@ -4,13 +4,16 @@ import LabeledSlider from '@/components/LabeledSlider.vue'
 import TimerWheelPicker from '@/components/TimerWheelPicker.vue'
 import {
   DEFAULT_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
+  DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
   FLASHCARD_REVIEW_CARD_SIDE_OPTIONS,
   FLASHCARD_REVIEW_SORT_OPTIONS,
   MAX_FLASHCARD_BACK_SPEECH_REPEATS,
   MAX_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
   MAX_FLASHCARD_SESSION_CARDS,
+  MAX_FLASHCARD_EJECT_EXCLUDE_AFTER,
   MIN_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
   MIN_FLASHCARD_BACK_SPEECH_REPEATS,
+  MIN_FLASHCARD_EJECT_EXCLUDE_AFTER,
   flashcardEjectBehavior,
   flashcardEjectExcludes,
   flashcardEjectLoadsNext,
@@ -66,6 +69,12 @@ const ejectExcludes = computed({
       flashcardEjectLoadsNext(settings.value.ejectBehavior),
       Boolean(enabled),
     )
+  },
+})
+const ejectExcludeAfter = computed({
+  get: () => settings.value.ejectExcludeAfter || DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
+  set: (value: number) => {
+    settings.value.ejectExcludeAfter = Number(value)
   },
 })
 const cardLimit = computed(() => {
@@ -140,6 +149,14 @@ const speechLanguages = computed(() => speechLanguageOptions([
 watch(cardLimit, ({ minimum, maximum }) => {
   if (settings.value.maxCards < minimum) settings.value.maxCards = minimum
   if (settings.value.maxCards > maximum) settings.value.maxCards = maximum
+}, { immediate: true })
+
+watch(() => settings.value.ejectExcludeAfter, (value) => {
+  if (
+    !Number.isInteger(value)
+    || value < MIN_FLASHCARD_EJECT_EXCLUDE_AFTER
+    || value > MAX_FLASHCARD_EJECT_EXCLUDE_AFTER
+  ) settings.value.ejectExcludeAfter = DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER
 }, { immediate: true })
 
 function updateMode(mode: 'manual' | 'passive') {
@@ -477,43 +494,71 @@ function updateSpeechEnabled(enabled: boolean | null) {
         <label class="field-label">Eject button behavior</label>
         <div v-if="vuetifyDefaultsAvailable" class="eject-behavior-options mt-2">
           <v-checkbox
-            v-model="ejectLoadsNext"
-            color="secondary"
-            hide-details="auto"
-          >
-            <template #label>
-              <span class="eject-behavior-option py-2">
-                <strong>Load the next card.</strong>
-                <small>Keep the active list filled from the rest of the Review set.</small>
-              </span>
-            </template>
-          </v-checkbox>
-          <v-checkbox
             v-model="ejectExcludes"
             color="secondary"
             hide-details="auto"
           >
             <template #label>
               <span class="eject-behavior-option py-2">
-                <strong>Exclude card.</strong>
-                <small>Prevent the ejected card from appearing in future sessions.</small>
+                <strong>Exclude after {{ ejectExcludeAfter }} {{ ejectExcludeAfter === 1 ? 'ejection' : 'ejections' }}.</strong>
+                <small>Count card ejections, then prevent the card from appearing in future sessions.</small>
+              </span>
+            </template>
+          </v-checkbox>
+          <v-expand-transition>
+            <div v-if="ejectExcludes">
+              <div class="ml-10 mb-3">
+                <LabeledSlider
+                  v-model="ejectExcludeAfter"
+                  title="Ejections before exclusion"
+                  :min="MIN_FLASHCARD_EJECT_EXCLUDE_AFTER"
+                  :max="MAX_FLASHCARD_EJECT_EXCLUDE_AFTER"
+                  :value-label="ejectExcludeAfter"
+                  :aria-label="`Exclude a card after ${ejectExcludeAfter} ejections`"
+                />
+              </div>
+            </div>
+          </v-expand-transition>
+          <v-checkbox
+            v-model="ejectLoadsNext"
+            color="secondary"
+            hide-details="auto"
+          >
+            <template #label>
+              <span class="eject-behavior-option py-2">
+                <strong>Inject a new card.</strong>
+                <small>Keep the active list filled from the rest of the Review set.</small>
               </span>
             </template>
           </v-checkbox>
         </div>
         <div v-else class="eject-behavior-options mt-2">
           <label class="eject-behavior-native-option">
-            <input v-model="ejectLoadsNext" type="checkbox">
-            <span class="eject-behavior-option py-2">
-              <strong>Load the next card.</strong>
-              <small>Keep the active list filled from the rest of the Review set.</small>
-            </span>
-          </label>
-          <label class="eject-behavior-native-option">
             <input v-model="ejectExcludes" type="checkbox">
             <span class="eject-behavior-option py-2">
-              <strong>Exclude card.</strong>
-              <small>Prevent the ejected card from appearing in future sessions.</small>
+              <strong>Exclude after {{ ejectExcludeAfter }} {{ ejectExcludeAfter === 1 ? 'ejection' : 'ejections' }}.</strong>
+              <small>Count card ejections, then prevent the card from appearing in future sessions.</small>
+            </span>
+          </label>
+          <v-expand-transition>
+            <div v-if="ejectExcludes">
+              <div class="ml-10 mb-3">
+                <LabeledSlider
+                  v-model="ejectExcludeAfter"
+                  title="Ejections before exclusion"
+                  :min="MIN_FLASHCARD_EJECT_EXCLUDE_AFTER"
+                  :max="MAX_FLASHCARD_EJECT_EXCLUDE_AFTER"
+                  :value-label="ejectExcludeAfter"
+                  :aria-label="`Exclude a card after ${ejectExcludeAfter} ejections`"
+                />
+              </div>
+            </div>
+          </v-expand-transition>
+          <label class="eject-behavior-native-option">
+            <input v-model="ejectLoadsNext" type="checkbox">
+            <span class="eject-behavior-option py-2">
+              <strong>Inject a new card.</strong>
+              <small>Keep the active list filled from the rest of the Review set.</small>
             </span>
           </label>
         </div>

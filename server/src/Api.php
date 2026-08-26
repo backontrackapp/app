@@ -43,13 +43,13 @@ final class Api
         'none',
     ];
     private const FLASHCARD_REVIEW_SETTING_FIELDS = [
-        'mode', 'card_sides', 'invert_faces', 'indefinite', 'time_limit_seconds', 'max_cards', 'eject_behavior', 'front_seconds', 'back_seconds',
+        'mode', 'card_sides', 'invert_faces', 'indefinite', 'time_limit_seconds', 'max_cards', 'eject_behavior', 'eject_exclude_after', 'front_seconds', 'back_seconds',
         'back_speech_repeat_count', 'back_display',
         'speech_enabled', 'front_language', 'back_language',
         'sort_mode', 'sort_direction',
     ];
     private const FLASHCARD_REVIEW_PREFERENCE_FIELDS = [
-        'mode', 'card_sides', 'invert_faces', 'indefinite', 'time_limit_seconds', 'max_cards', 'eject_behavior', 'front_seconds', 'back_seconds',
+        'mode', 'card_sides', 'invert_faces', 'indefinite', 'time_limit_seconds', 'max_cards', 'eject_behavior', 'eject_exclude_after', 'front_seconds', 'back_seconds',
         'back_speech_repeat_count', 'back_display',
         'speech_enabled', 'front_language', 'back_language',
         'sort_mode', 'sort_direction', 'excluded_cards',
@@ -258,7 +258,7 @@ final class Api
             if ($method === 'POST' && $path === '/assistant/respond') {
                 $user = $this->authenticate();
                 $this->rateLimit('assistant:' . (string) $user['id'], 30, 300, true);
-                $this->respond($this->assistantService->respond($this->jsonBody(), $user));
+                $this->assistantService->stream($this->jsonBody(), $user);
             }
             if ($method === 'POST' && $path === '/assistant/flashcards/apply') {
                 $user = $this->authenticate();
@@ -374,6 +374,20 @@ final class Api
                 $this->flashcardReviewSetShares(
                     $method,
                     $reviewSetShareMatches[1],
+                    $this->authenticate(),
+                );
+            }
+            if (
+                $method === 'POST'
+                && preg_match(
+                    '#^/flashcard-review-sets/([a-zA-Z0-9_-]{1,64})/cards/([a-zA-Z0-9_-]{1,64})/eject/?$#',
+                    $path,
+                    $sharedCardEjectMatches,
+                ) === 1
+            ) {
+                $this->ejectSharedFlashcard(
+                    $sharedCardEjectMatches[1],
+                    $sharedCardEjectMatches[2],
                     $this->authenticate(),
                 );
             }
@@ -2890,7 +2904,7 @@ final class Api
         if ($collection['name'] === 'flashcards') {
             $this->rejectFields($body, [
                 'created_at', 'updated_at', 'last_reviewed_at',
-                'passive_views', 'success_count', 'error_count',
+                'passive_views', 'success_count', 'error_count', 'eject_count',
                 'image_file',
                 'front_audio_url',
                 'front_audio_file', 'back_audio_url', 'back_audio_file',
@@ -2945,6 +2959,7 @@ final class Api
                 'passive_views' => 0,
                 'success_count' => 0,
                 'error_count' => 0,
+                'eject_count' => 0,
             ];
         }
         if ($collection['name'] === 'flashcard_review_sets') {
@@ -2957,6 +2972,7 @@ final class Api
                 'invert_faces' => false,
                 'indefinite' => false,
                 'max_cards' => 20,
+                'eject_exclude_after' => 3,
                 'front_seconds' => 5,
                 'back_seconds' => 5,
                 'back_speech_repeat_count' => 1,
@@ -3050,7 +3066,7 @@ final class Api
             $this->allowOnlyFields($body, [
                 'name', 'tags', 'mode', 'card_sides', 'invert_faces', 'indefinite',
                 'selection_mode', 'included_cards',
-                'time_limit_seconds', 'max_cards', 'eject_behavior', 'front_seconds', 'back_seconds',
+                'time_limit_seconds', 'max_cards', 'eject_behavior', 'eject_exclude_after', 'front_seconds', 'back_seconds',
                 'back_speech_repeat_count',
                 'back_display',
                 'speech_enabled', 'front_language', 'back_language',
@@ -3916,13 +3932,13 @@ final class Api
 
             $setStatement = $pdo->prepare(
                 'INSERT INTO flashcard_review_sets (
-                    id, owner, name, tags, mode, card_sides, invert_faces, indefinite, time_limit_seconds, max_cards, eject_behavior,
+                    id, owner, name, tags, mode, card_sides, invert_faces, indefinite, time_limit_seconds, max_cards, eject_behavior, eject_exclude_after,
                     front_seconds, back_seconds, back_speech_repeat_count,
                     back_display,
                     speech_enabled, front_language, back_language, sort_mode, sort_direction, excluded_cards,
                     sort_order, created_at, updated_at
                  ) VALUES (
-                    :id, :owner, :name, :tags, :mode, :card_sides, :invert_faces, :indefinite, :time_limit_seconds, :max_cards, :eject_behavior,
+                    :id, :owner, :name, :tags, :mode, :card_sides, :invert_faces, :indefinite, :time_limit_seconds, :max_cards, :eject_behavior, :eject_exclude_after,
                     :front_seconds, :back_seconds, :back_speech_repeat_count,
                     :back_display,
                     :speech_enabled, :front_language, :back_language, :sort_mode, :sort_direction, :excluded_cards,
@@ -4062,6 +4078,15 @@ final class Api
         $card = $this->ownedRecord('flashcards', $cardId, (string) $reviewSet['owner']);
         $this->syncFlashcardWithActiveReviewQueues($card, (string) $reviewSet['owner'], true);
         $this->respond($this->flashcardResponseForReviewer($card, $account), 201);
+    }
+
+    private function ejectSharedFlashcard(string $reviewSetId, string $cardId, array $user): never
+    {
+        $account = (string) $user['id'];
+        $reviewSet = $this->accessibleFlashcardReviewSet($reviewSetId, $account);
+        $this->matchingSourceFlashcard($reviewSet, $cardId);
+        $count = $this->incrementFlashcardEjectCount($cardId, $account, $this->now());
+        $this->respond(['eject_count' => $count]);
     }
 
     private function importSharedFlashcards(string $reviewSetId, array $user): never
@@ -4437,7 +4462,7 @@ final class Api
                 'INSERT INTO flashcard_review_sessions (
                     id, owner, source_owner, review_set, status, snapshot_name, mode_snapshot, card_sides_snapshot, invert_faces_snapshot,
                     sort_snapshot, sort_direction_snapshot, indefinite_snapshot, time_limit_seconds_snapshot,
-                    max_cards_snapshot, eject_behavior_snapshot, tags_snapshot,
+                    max_cards_snapshot, eject_behavior_snapshot, eject_exclude_after_snapshot, tags_snapshot,
                     excluded_cards_snapshot,
                     front_seconds_snapshot, back_seconds_snapshot,
                     back_speech_repeat_count_snapshot,
@@ -4449,7 +4474,7 @@ final class Api
                  ) VALUES (
                     :id, :owner, :source_owner, :review_set, :status, :snapshot_name, :mode_snapshot,
                     :card_sides_snapshot, :invert_faces_snapshot, :sort_snapshot, :sort_direction_snapshot, :indefinite_snapshot,
-                    :time_limit_seconds_snapshot, :max_cards_snapshot, :eject_behavior_snapshot,
+                    :time_limit_seconds_snapshot, :max_cards_snapshot, :eject_behavior_snapshot, :eject_exclude_after_snapshot,
                     :tags_snapshot, :excluded_cards_snapshot, :front_seconds_snapshot, :back_seconds_snapshot,
                     :back_speech_repeat_count_snapshot,
                     :back_display_snapshot,
@@ -4476,6 +4501,7 @@ final class Api
                     : 0,
                 'max_cards_snapshot' => (int) $reviewSet['max_cards'],
                 'eject_behavior_snapshot' => (string) $reviewSet['eject_behavior'],
+                'eject_exclude_after_snapshot' => (int) ($reviewSet['eject_exclude_after'] ?? 3),
                 'tags_snapshot' => json_encode(array_values($selectedTags), JSON_THROW_ON_ERROR),
                 'excluded_cards_snapshot' => json_encode(
                     array_values($reviewSet['excluded_cards'] ?? []),
@@ -4670,6 +4696,11 @@ final class Api
                     }
                     $sourceOwner = (string) ($session['source_owner'] ?: $owner);
                     $card = $this->ownedRecord('flashcards', (string) $event['card'], $sourceOwner);
+                    $cardEjectCount = $this->decrementFlashcardEjectCount(
+                        (string) $card['id'],
+                        $owner,
+                        $now,
+                    );
                     $tags = $this->decodeJsonColumn($card['tags'] ?? '[]');
                     array_unshift($queue, [
                         'id' => (string) $card['id'],
@@ -4681,13 +4712,14 @@ final class Api
                         'backAudio' => $this->flashcardAudioPath($card, 'back'),
                         'image' => $this->flashcardImagePath($card),
                         'tags' => is_array($tags) ? array_values($tags) : [],
+                        'ejectCount' => $cardEjectCount,
                     ]);
                     $ejectedCount--;
                     if (in_array(
                         (string) ($session['eject_behavior_snapshot'] ?? 'remove'),
                         ['exclude', 'replace_exclude'],
                         true,
-                    )) {
+                    ) && $cardEjectCount < (int) ($session['eject_exclude_after_snapshot'] ?? 3)) {
                         $excludedCardsSnapshot = $this->setFlashcardReviewEjectExclusion(
                             $session,
                             $owner,
@@ -4733,12 +4765,17 @@ final class Api
                                 $now,
                                 $owner,
                             );
+                            $cardEjectCount = $this->flashcardEjectCount(
+                                (string) ($current['id'] ?? ''),
+                                $owner,
+                            );
                             if (
                                 in_array(
                                     (string) ($session['eject_behavior_snapshot'] ?? 'remove'),
                                     ['exclude', 'replace_exclude'],
                                     true,
                                 )
+                                && $cardEjectCount >= (int) ($session['eject_exclude_after_snapshot'] ?? 3)
                             ) {
                                 $excludedCardsSnapshot = $this->setFlashcardReviewEjectExclusion(
                                     $session,
@@ -4803,6 +4840,10 @@ final class Api
                                         'tags' => is_array($replacementTags)
                                             ? array_values($replacementTags)
                                             : [],
+                                        'ejectCount' => $this->flashcardEjectCount(
+                                            (string) $replacement['id'],
+                                            $owner,
+                                        ),
                                     ];
                                     $totalCards++;
                                 }
@@ -4993,7 +5034,7 @@ final class Api
     {
         $body = $this->jsonBody();
         $fields = [
-            'mode', 'card_sides', 'invert_faces', 'indefinite', 'time_limit_seconds', 'max_cards', 'eject_behavior', 'front_seconds', 'back_seconds',
+            'mode', 'card_sides', 'invert_faces', 'indefinite', 'time_limit_seconds', 'max_cards', 'eject_behavior', 'eject_exclude_after', 'front_seconds', 'back_seconds',
             'back_speech_repeat_count', 'back_display',
             'speech_enabled', 'front_language', 'back_language',
             'sort_mode', 'sort_direction',
@@ -5001,8 +5042,12 @@ final class Api
         $this->allowOnlyFields($body, $fields);
         foreach ($fields as $field) {
             if (!array_key_exists($field, $body)) {
-                if (in_array($field, ['sort_direction', 'eject_behavior'], true)) {
-                    $body[$field] = $field === 'sort_direction' ? 'asc' : 'remove';
+                if (in_array($field, ['sort_direction', 'eject_behavior', 'eject_exclude_after'], true)) {
+                    $body[$field] = match ($field) {
+                        'sort_direction' => 'asc',
+                        'eject_behavior' => 'remove',
+                        default => 3,
+                    };
                     continue;
                 }
                 throw new ApiException(422, 'Every session setting is required.', [
@@ -5103,6 +5148,7 @@ final class Api
                     time_limit_seconds_snapshot = :time_limit_seconds_snapshot,
                     max_cards_snapshot = :max_cards_snapshot,
                     eject_behavior_snapshot = :eject_behavior_snapshot,
+                    eject_exclude_after_snapshot = :eject_exclude_after_snapshot,
                     sort_snapshot = :sort_snapshot,
                     sort_direction_snapshot = :sort_direction_snapshot,
                     front_seconds_snapshot = :front_seconds_snapshot,
@@ -5126,6 +5172,7 @@ final class Api
                 'time_limit_seconds_snapshot' => $settings['time_limit_seconds'],
                 'max_cards_snapshot' => $settings['max_cards'],
                 'eject_behavior_snapshot' => $settings['eject_behavior'],
+                'eject_exclude_after_snapshot' => $settings['eject_exclude_after'],
                 'sort_snapshot' => $settings['sort_mode'],
                 'sort_direction_snapshot' => $settings['sort_direction'],
                 'front_seconds_snapshot' => $settings['front_seconds'],
@@ -5194,6 +5241,7 @@ final class Api
             'success' => 'success_count',
             'error' => 'error_count',
             'passive' => 'passive_views',
+            'ejected' => 'eject_count',
             default => null,
         };
         if ($counter === null) {
@@ -5210,10 +5258,10 @@ final class Api
         $statement = $this->database->pdo->prepare(
             "INSERT INTO flashcard_review_card_stats (
                 reviewer, card, last_reviewed_at, passive_views,
-                success_count, error_count, updated_at
+                success_count, error_count, eject_count, updated_at
              ) VALUES (
                 :reviewer, :card, :reviewed_at,
-                :passive_views, :success_count, :error_count, :reviewed_at
+                :passive_views, :success_count, :error_count, :eject_count, :reviewed_at
              )
              ON CONFLICT(reviewer, card) DO UPDATE SET
                 {$counter} = {$counter} + excluded.{$counter},
@@ -5227,6 +5275,7 @@ final class Api
             'passive_views' => $counter === 'passive_views' ? $eventCount : 0,
             'success_count' => $counter === 'success_count' ? $eventCount : 0,
             'error_count' => $counter === 'error_count' ? $eventCount : 0,
+            'eject_count' => $counter === 'eject_count' ? $eventCount : 0,
         ]);
         if (hash_equals((string) $cardOwner, $owner)) {
             $statement = $this->database->pdo->prepare(
@@ -5241,6 +5290,100 @@ final class Api
                 'owner' => $owner,
             ]);
         }
+    }
+
+    private function flashcardEjectCount(string $cardId, string $reviewer): int
+    {
+        if ($cardId === '') {
+            return 0;
+        }
+        $statement = $this->database->pdo->prepare(
+            'SELECT eject_count FROM flashcard_review_card_stats
+             WHERE reviewer = :reviewer AND card = :card LIMIT 1',
+        );
+        $statement->execute(['reviewer' => $reviewer, 'card' => $cardId]);
+        return max(0, (int) ($statement->fetchColumn() ?: 0));
+    }
+
+    private function decrementFlashcardEjectCount(
+        string $cardId,
+        string $reviewer,
+        string $updatedAt,
+    ): int {
+        $statement = $this->database->pdo->prepare(
+            'UPDATE flashcard_review_card_stats
+             SET eject_count = MAX(0, eject_count - 1), updated_at = :updated_at
+             WHERE reviewer = :reviewer AND card = :card',
+        );
+        $statement->execute([
+            'updated_at' => $updatedAt,
+            'reviewer' => $reviewer,
+            'card' => $cardId,
+        ]);
+        $ownerStatement = $this->database->pdo->prepare(
+            'SELECT owner FROM flashcards WHERE id = :card LIMIT 1',
+        );
+        $ownerStatement->execute(['card' => $cardId]);
+        if (hash_equals((string) ($ownerStatement->fetchColumn() ?: ''), $reviewer)) {
+            $statement = $this->database->pdo->prepare(
+                'UPDATE flashcards
+                 SET eject_count = MAX(0, eject_count - 1), updated_at = :updated_at
+                 WHERE id = :card AND owner = :owner',
+            );
+            $statement->execute([
+                'updated_at' => $updatedAt,
+                'card' => $cardId,
+                'owner' => $reviewer,
+            ]);
+        }
+        return $this->flashcardEjectCount($cardId, $reviewer);
+    }
+
+    private function incrementFlashcardEjectCount(
+        string $cardId,
+        string $reviewer,
+        string $reviewedAt,
+    ): int {
+        $cardStatement = $this->database->pdo->prepare(
+            'SELECT owner FROM flashcards WHERE id = :card LIMIT 1',
+        );
+        $cardStatement->execute(['card' => $cardId]);
+        $cardOwner = $cardStatement->fetchColumn();
+        if (!is_string($cardOwner)) {
+            throw new ApiException(404, 'Flashcard not found.');
+        }
+        $statement = $this->database->pdo->prepare(
+            'INSERT INTO flashcard_review_card_stats (
+                reviewer, card, last_reviewed_at, passive_views,
+                success_count, error_count, eject_count, updated_at
+             ) VALUES (
+                :reviewer, :card, :reviewed_at, 0, 0, 0, 1, :reviewed_at
+             )
+             ON CONFLICT(reviewer, card) DO UPDATE SET
+                eject_count = eject_count + 1,
+                last_reviewed_at = excluded.last_reviewed_at,
+                updated_at = excluded.updated_at',
+        );
+        $statement->execute([
+            'reviewer' => $reviewer,
+            'card' => $cardId,
+            'reviewed_at' => $reviewedAt,
+        ]);
+        if (hash_equals($cardOwner, $reviewer)) {
+            $statement = $this->database->pdo->prepare(
+                'UPDATE flashcards
+                 SET eject_count = eject_count + 1,
+                     last_reviewed_at = :reviewed_at,
+                     updated_at = :reviewed_at
+                 WHERE id = :card AND owner = :owner',
+            );
+            $statement->execute([
+                'reviewed_at' => $reviewedAt,
+                'card' => $cardId,
+                'owner' => $reviewer,
+            ]);
+        }
+        return $this->flashcardEjectCount($cardId, $reviewer);
     }
 
     private function sortFlashcardsForReview(
@@ -5374,6 +5517,7 @@ final class Api
                         'passive_views' => (int) ($cardStats['passive_views'] ?? 0),
                         'success_count' => (int) ($cardStats['success_count'] ?? 0),
                         'error_count' => (int) ($cardStats['error_count'] ?? 0),
+                        'eject_count' => (int) ($cardStats['eject_count'] ?? 0),
                     ]);
                 },
                 $cards,
@@ -5403,6 +5547,7 @@ final class Api
                 'backAudio' => $this->flashcardAudioPath($card, 'back'),
                 'image' => $this->flashcardImagePath($card),
                 'tags' => is_array($tags) ? array_values($tags) : [],
+                'ejectCount' => (int) ($card['eject_count'] ?? 0),
             ];
         }, $cards);
         $queue = array_slice($allQueue, 0, (int) $reviewSet['max_cards']);
@@ -5456,6 +5601,7 @@ final class Api
             'sortMode' => $selection['sortMode'],
             'sortDirection' => $selection['sortDirection'],
             'ejectBehavior' => (string) $reviewSet['eject_behavior'],
+            'ejectExcludeAfter' => (int) ($reviewSet['eject_exclude_after'] ?? 3),
             'maxCards' => (int) $reviewSet['max_cards'],
             'cardSides' => (string) $reviewSet['card_sides'],
             'invertFaces' => (bool) ($reviewSet['invert_faces'] ?? false),
@@ -7873,8 +8019,12 @@ final class Api
         $settings = [];
         foreach (self::FLASHCARD_REVIEW_SETTING_FIELDS as $field) {
             if (!array_key_exists($field, $body)) {
-                if (in_array($field, ['sort_direction', 'eject_behavior'], true)) {
-                    $body[$field] = $field === 'sort_direction' ? 'asc' : 'remove';
+                if (in_array($field, ['sort_direction', 'eject_behavior', 'eject_exclude_after'], true)) {
+                    $body[$field] = match ($field) {
+                        'sort_direction' => 'asc',
+                        'eject_behavior' => 'remove',
+                        default => 3,
+                    };
                 } else {
                     throw new ApiException(422, 'Every Review set preference is required.', [
                         $field => 'required',
@@ -7910,7 +8060,7 @@ final class Api
             $settings[$field] = match ($field) {
                 'invert_faces', 'indefinite', 'speech_enabled'
                     => (bool) ($source[$field] ?? false),
-                'time_limit_seconds', 'max_cards', 'front_seconds', 'back_seconds', 'back_speech_repeat_count'
+                'time_limit_seconds', 'max_cards', 'eject_exclude_after', 'front_seconds', 'back_seconds', 'back_speech_repeat_count'
                     => (int) ($source[$field] ?? 0),
                 'sort_direction' => (string) ($source[$field] ?? 'asc'),
                 default => (string) ($source[$field] ?? ''),
@@ -7930,13 +8080,13 @@ final class Api
     ): void {
         $statement = $this->database->pdo->prepare(
             'INSERT INTO flashcard_review_set_preferences (
-                review_set, account, mode, card_sides, invert_faces, indefinite, time_limit_seconds, max_cards, eject_behavior,
+                review_set, account, mode, card_sides, invert_faces, indefinite, time_limit_seconds, max_cards, eject_behavior, eject_exclude_after,
                 front_seconds, back_seconds, back_speech_repeat_count,
                 back_display,
                 speech_enabled, front_language, back_language, sort_mode, sort_direction,
                 excluded_cards, updated_at
              ) VALUES (
-                :review_set, :account, :mode, :card_sides, :invert_faces, :indefinite, :time_limit_seconds, :max_cards, :eject_behavior,
+                :review_set, :account, :mode, :card_sides, :invert_faces, :indefinite, :time_limit_seconds, :max_cards, :eject_behavior, :eject_exclude_after,
                 :front_seconds, :back_seconds, :back_speech_repeat_count,
                 :back_display,
                 :speech_enabled, :front_language, :back_language, :sort_mode, :sort_direction, :excluded_cards, :updated_at
@@ -7949,6 +8099,7 @@ final class Api
                 time_limit_seconds = excluded.time_limit_seconds,
                 max_cards = excluded.max_cards,
                 eject_behavior = excluded.eject_behavior,
+                eject_exclude_after = excluded.eject_exclude_after,
                 front_seconds = excluded.front_seconds,
                 back_seconds = excluded.back_seconds,
                 back_speech_repeat_count = excluded.back_speech_repeat_count,
@@ -8165,6 +8316,7 @@ final class Api
             'passive_views' => (int) ($cardStats['passive_views'] ?? 0),
             'success_count' => (int) ($cardStats['success_count'] ?? 0),
             'error_count' => (int) ($cardStats['error_count'] ?? 0),
+            'eject_count' => (int) ($cardStats['eject_count'] ?? 0),
         ]);
         $response = $this->normalizeRecord($this->requireCollection('flashcards'), $card);
         $response['tag_details'] = $this->flashcardTagDetails(

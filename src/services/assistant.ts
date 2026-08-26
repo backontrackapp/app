@@ -103,6 +103,7 @@ function reviewSetDraft(reviewSet: FlashcardReviewSet): FlashcardReviewSetDraft 
     timeLimitSeconds: reviewSet.timeLimitSeconds || 0,
     maxCards: reviewSet.maxCards,
     ejectBehavior: reviewSet.ejectBehavior,
+    ejectExcludeAfter: reviewSet.ejectExcludeAfter,
     frontSeconds: reviewSet.frontSeconds,
     backSeconds: reviewSet.backSeconds,
     backSpeechRepeatCount: reviewSet.backSpeechRepeatCount,
@@ -135,8 +136,9 @@ function reviewSetChanges(
   add('Run indefinitely', current.indefinite, draft.indefinite)
   add('Time limit', `${(current.timeLimitSeconds || 0) / 60} min`, `${(draft.timeLimitSeconds || 0) / 60} min`)
   add('Max cards', current.maxCards, draft.maxCards)
-  add('Load next on eject', flashcardEjectLoadsNext(current.ejectBehavior), flashcardEjectLoadsNext(draft.ejectBehavior))
-  add('Exclude on eject', flashcardEjectExcludes(current.ejectBehavior), flashcardEjectExcludes(draft.ejectBehavior))
+  add('Inject a new card', flashcardEjectLoadsNext(current.ejectBehavior), flashcardEjectLoadsNext(draft.ejectBehavior))
+  add('Exclude after ejections', current.ejectExcludeAfter, draft.ejectExcludeAfter)
+  add('Exclude after threshold', flashcardEjectExcludes(current.ejectBehavior), flashcardEjectExcludes(draft.ejectBehavior))
   add('Front duration', `${current.frontSeconds} sec`, `${draft.frontSeconds} sec`)
   add('Back duration', `${current.backSeconds} sec`, `${draft.backSeconds} sec`)
   add('Back speech repeats', current.backSpeechRepeatCount, draft.backSpeechRepeatCount)
@@ -216,6 +218,7 @@ export function assistantReadToolResult(
               max_cards: set.maxCards,
               load_next_on_eject: flashcardEjectLoadsNext(set.ejectBehavior),
               exclude_on_eject: flashcardEjectExcludes(set.ejectBehavior),
+              exclude_after_ejections: set.ejectExcludeAfter,
               front_seconds: set.frontSeconds,
               back_seconds: set.backSeconds,
               back_speech_repeat_count: set.backSpeechRepeatCount,
@@ -400,6 +403,12 @@ export function assistantWritePlan(
       ?? draft.maxCards
     const loadNext = nullableBoolean(call.arguments.load_next_on_eject, 'Load next on eject')
     const exclude = nullableBoolean(call.arguments.exclude_on_eject, 'Exclude on eject')
+    draft.ejectExcludeAfter = nullableInteger(
+      call.arguments.exclude_after_ejections,
+      1,
+      20,
+      'Ejections before exclusion',
+    ) ?? draft.ejectExcludeAfter
     draft.ejectBehavior = flashcardEjectBehavior(
       loadNext ?? flashcardEjectLoadsNext(draft.ejectBehavior),
       exclude ?? flashcardEjectExcludes(draft.ejectBehavior),
@@ -570,6 +579,10 @@ export function cancelledAssistantToolOutput(callId: string): AssistantToolOutpu
   return { type: 'function_call_output', callId, output: { status: 'cancelled' } }
 }
 
-export async function requestAssistantResponse(items: AssistantConversationItem[]) {
-  return api.assistantRespond(items)
+export async function requestAssistantResponse(
+  items: AssistantConversationItem[],
+  onTextDelta: (delta: string) => void,
+  signal?: AbortSignal,
+) {
+  return api.assistantRespond(items, onTextDelta, signal)
 }

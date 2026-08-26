@@ -58,7 +58,8 @@ CREATE TABLE flashcards (
     last_reviewed_at TEXT NOT NULL DEFAULT '',
     passive_views INTEGER NOT NULL DEFAULT 0,
     success_count INTEGER NOT NULL DEFAULT 0,
-    error_count INTEGER NOT NULL DEFAULT 0
+    error_count INTEGER NOT NULL DEFAULT 0,
+    eject_count INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX idx_flashcards_owner_created
@@ -83,6 +84,7 @@ CREATE TABLE flashcard_review_sets (
     time_limit_seconds INTEGER NOT NULL DEFAULT 0,
     max_cards INTEGER NOT NULL DEFAULT 20,
     eject_behavior TEXT NOT NULL DEFAULT 'remove',
+    eject_exclude_after INTEGER NOT NULL DEFAULT 3,
     front_seconds INTEGER NOT NULL DEFAULT 5,
     back_seconds INTEGER NOT NULL DEFAULT 5,
     back_speech_repeat_count INTEGER NOT NULL DEFAULT 1,
@@ -131,6 +133,7 @@ CREATE TABLE flashcard_review_set_preferences (
     time_limit_seconds INTEGER NOT NULL DEFAULT 0,
     max_cards INTEGER NOT NULL DEFAULT 20,
     eject_behavior TEXT NOT NULL DEFAULT 'remove',
+    eject_exclude_after INTEGER NOT NULL DEFAULT 3,
     front_seconds INTEGER NOT NULL DEFAULT 5,
     back_seconds INTEGER NOT NULL DEFAULT 5,
     back_speech_repeat_count INTEGER NOT NULL DEFAULT 1,
@@ -154,6 +157,7 @@ CREATE TABLE flashcard_review_card_stats (
     passive_views INTEGER NOT NULL DEFAULT 0,
     success_count INTEGER NOT NULL DEFAULT 0,
     error_count INTEGER NOT NULL DEFAULT 0,
+    eject_count INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (reviewer, card)
 );
@@ -381,6 +385,7 @@ CREATE TABLE flashcard_review_sessions (
     time_limit_seconds_snapshot INTEGER NOT NULL DEFAULT 0,
     max_cards_snapshot INTEGER NOT NULL DEFAULT 20,
     eject_behavior_snapshot TEXT NOT NULL DEFAULT 'remove',
+    eject_exclude_after_snapshot INTEGER NOT NULL DEFAULT 3,
     sort_snapshot TEXT NOT NULL DEFAULT 'difficult',
     sort_direction_snapshot TEXT NOT NULL DEFAULT 'asc',
     tags_snapshot JSON NOT NULL DEFAULT '[]',

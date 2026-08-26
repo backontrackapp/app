@@ -307,6 +307,7 @@ final class CuratedReviewSetCatalog
             'timeLimitSeconds' => $mode === 'passive' ? $timeLimitSeconds : 0,
             'maxCards' => max(1, min(100, $integer('max_cards', 20))),
             'ejectBehavior' => in_array($row['eject_behavior'] ?? '', ['remove', 'replace', 'exclude', 'replace_exclude'], true) ? $row['eject_behavior'] : 'replace',
+            'ejectExcludeAfter' => max(1, min(20, $integer('eject_exclude_after', 3))),
             'frontSeconds' => max(1, min(60, $integer('front_seconds', 5))),
             'backSeconds' => max(1, min(60, $integer('back_seconds', 5))),
             'backSpeechRepeatCount' => max(1, min(5, $integer('back_speech_repeat_count', 1))),

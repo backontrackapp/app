@@ -71,6 +71,7 @@ export function curatedCards(
     passiveViews: 0,
     successCount: 0,
     errorCount: 0,
+    ejectCount: 0,
   }))
 }
 

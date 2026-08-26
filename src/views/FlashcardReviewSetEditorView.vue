@@ -11,6 +11,7 @@ import FormActionBar from '@/components/FormActionBar.vue'
 import { contentRetirementActions, type ContentRetirementActionId } from '@/services/contentRetirementActions'
 import {
   DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
+  DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
   DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
   DEFAULT_FLASHCARD_SESSION_CARDS,
   cardMatchesReviewSet,
@@ -78,6 +79,7 @@ const draft = reactive<FlashcardReviewSetDraft>({
   timeLimitSeconds: 0,
   maxCards: DEFAULT_FLASHCARD_SESSION_CARDS,
   ejectBehavior: 'replace',
+  ejectExcludeAfter: DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
   frontSeconds: 5,
   backSeconds: 5,
   backSpeechRepeatCount: DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
@@ -129,6 +131,7 @@ function applyReviewSet(reviewSet: FlashcardReviewSet) {
     timeLimitSeconds: reviewSet.timeLimitSeconds || 0,
     maxCards: reviewSet.maxCards,
     ejectBehavior: reviewSet.ejectBehavior,
+    ejectExcludeAfter: reviewSet.ejectExcludeAfter,
     frontSeconds: reviewSet.frontSeconds,
     backSeconds: reviewSet.backSeconds,
     backSpeechRepeatCount: reviewSet.backSpeechRepeatCount,

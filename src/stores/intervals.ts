@@ -4,6 +4,7 @@ import { ApiError, api, apiAssetUrl } from '@/lib/api'
 import { createLocalRecordId } from '@/lib/localDatabase'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
+import { DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER } from '@/services/flashcards'
 import {
   completedIntervalFlashcardReviewSeconds,
   createRuntimeState,
@@ -55,6 +56,9 @@ function mapSession(record: Record<string, any>): IntervalSession {
           cardSides: flashcardSnapshot.cardSides || 'both',
           invertFaces: flashcardSnapshot.invertFaces === true,
           sortDirection: flashcardSnapshot.sortDirection || 'asc',
+          ejectExcludeAfter: Number(
+            flashcardSnapshot.ejectExcludeAfter || DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
+          ),
           ...(flashcardSnapshot.ejectBehavior !== undefined
             ? {
                 ejectBehavior: flashcardSnapshot.ejectBehavior === 'replace'
@@ -73,6 +77,7 @@ function mapSession(record: Record<string, any>): IntervalSession {
             : 'back',
           cards: flashcardSnapshot.cards.map((card: Record<string, any>) => ({
             ...card,
+            ejectCount: Number(card.ejectCount || 0),
             ...(typeof card.frontAudio === 'string' && card.frontAudio
               ? { frontAudio: apiAssetUrl(card.frontAudio) }
               : {}),

@@ -33,7 +33,9 @@ import {
 import {
   cardMatchesTags,
   createIntervalFlashcardReviewSnapshot,
+  DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
   flashcardEjectExcludes,
+  flashcardEjectReachesExclusionThreshold,
   flashcardEjectLoadsNext,
   flashcardReviewActionFromSwipe,
   intervalFlashcardEjectionOffsetMs,
@@ -179,6 +181,7 @@ const flashcardSettingsDraft = reactive<FlashcardReviewSettings>({
   indefinite: true,
   maxCards: 1,
   ejectBehavior: 'remove',
+  ejectExcludeAfter: DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
   frontSeconds: 5,
   backSeconds: 5,
   backSpeechRepeatCount: 1,
@@ -508,17 +511,17 @@ watch([
   () => flashcardPhase.value?.side,
 ], ([cardId, side], [previousCardId, previousSide]) => {
   if (!cardId || !side || !previousCardId || !previousSide) return
-  if (intervalFlashcardTransitionDirection.value) return
-
   const cardChanged = cardId !== previousCardId
   const sideChanged = side !== previousSide
   if (cardChanged || sideChanged) spokenFlashcardWord.value = undefined
-  if (cardId !== previousCardId) {
+  if (intervalFlashcardTransitionDirection.value) return
+
+  if (cardChanged) {
     intervalFlashcardTransitionDirection.value = 'next'
-  } else if (side !== previousSide) {
+  } else if (sideChanged) {
     intervalFlashcardTransitionDirection.value = side
   }
-})
+}, { flush: 'sync' })
 
 watch(flashcardContextSheet, (open, wasOpen) => {
   if (wasOpen && !open) void finishFlashcardContext()
@@ -1697,6 +1700,7 @@ function snapshotCard(card: Flashcard) {
     backAudio: card.backAudio,
     image: card.image,
     tags: [...card.tags],
+    ejectCount: card.ejectCount,
   }
 }
 
@@ -1793,6 +1797,7 @@ async function ejectIntervalFlashcard() {
   const reviewSet = flashcardReviewSet.value
   const previousExcludedCards = [...(reviewSet?.excludedCards || [])]
   try {
+    const ejectCount = await flashcardStore.recordCardEject(review.reviewSet, cardId)
     const cards = review.cards.filter(card => card.id !== cardId)
     const reserveCardIds = [...(review.reserveCardIds || [])]
     const maxCards = review.maxCards || review.cards.length
@@ -1811,11 +1816,19 @@ async function ejectIntervalFlashcard() {
           note: replacement.note,
           frontAudio: replacement.frontAudio,
           backAudio: replacement.backAudio,
+          image: replacement.image,
           tags: [...replacement.tags],
+          ejectCount: replacement.ejectCount,
         })
       }
     }
-    if (flashcardEjectExcludes(review.ejectBehavior)) {
+    if (
+      flashcardEjectExcludes(review.ejectBehavior)
+      && flashcardEjectReachesExclusionThreshold(
+        ejectCount,
+        review.ejectExcludeAfter,
+      )
+    ) {
       if (!reviewSet) throw new Error('The Review set for this session is no longer available.')
         await flashcardStore.saveReviewSetPreferences(reviewSet.id, {
           ...reviewSet,
@@ -1893,6 +1906,7 @@ async function openFlashcardSettings() {
     indefinite: true,
     maxCards: review.maxCards || review.cards.length,
     ejectBehavior: review.ejectBehavior || 'remove',
+    ejectExcludeAfter: review.ejectExcludeAfter || DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
     frontSeconds: review.frontSeconds,
     backSeconds: review.backSeconds,
     backSpeechRepeatCount: review.backSpeechRepeatCount,
@@ -1943,6 +1957,7 @@ async function saveFlashcardSettings(target: FlashcardSettingsApplyTarget = 'ses
         invertFaces: flashcardSettingsDraft.invertFaces === true,
         maxCards: flashcardSettingsDraft.maxCards,
         ejectBehavior: flashcardSettingsDraft.ejectBehavior,
+        ejectExcludeAfter: flashcardSettingsDraft.ejectExcludeAfter,
         frontSeconds: flashcardSettingsDraft.frontSeconds,
         backSeconds: flashcardSettingsDraft.backSeconds,
         backSpeechRepeatCount: flashcardSettingsDraft.backSpeechRepeatCount,
