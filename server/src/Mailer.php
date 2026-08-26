@@ -86,7 +86,7 @@ final class Mailer
             error_log('[backontrack-api/mail] ' . $exception->getMessage());
             throw new ApiException(
                 503,
-                'We could not send the email. Please try again.',
+                'We could not send the email. Please verify your information.',
                 [],
                 $exception,
             );

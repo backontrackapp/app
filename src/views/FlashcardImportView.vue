@@ -2,14 +2,17 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppForm from '@/components/AppForm.vue'
+import FlashcardDuplicateDialog from '@/components/FlashcardDuplicateDialog.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
 import { copyTextToClipboard } from '@/services/clipboard'
 import { parseFlashcardCsv } from '@/services/flashcardCsv'
+import { countFlashcardImportDuplicates } from '@/services/flashcardDuplicates'
 import { useFlashcardStore } from '@/stores/flashcards'
+import type { FlashcardDuplicateResolution } from '@/types/domain'
 
-const CSV_EXAMPLE = `front,back,transliteration,note,tags
-hello,こんにちは,konnichiwa,Common greeting,japanese|greetings
-thank you,ありがとう,arigatou,,japanese|greetings`
+const CSV_EXAMPLE = `front,back,transliteration,note,image,tags
+hello,こんにちは,konnichiwa,Common greeting,https://example.com/hello.jpg,japanese|greetings
+thank you,ありがとう,arigatou,,,japanese|greetings`
 
 const router = useRouter()
 const route = useRoute()
@@ -17,6 +20,7 @@ const store = useFlashcardStore()
 const form = ref()
 const csv = ref('')
 const importing = ref(false)
+const duplicateDialog = ref(false)
 const error = ref('')
 const exampleCopied = ref(false)
 const exampleCopyError = ref('')
@@ -34,7 +38,16 @@ const canManageReviewSet = computed(() => (
 ))
 let exampleCopiedTimer: number | undefined
 const parsed = computed(() => parseFlashcardCsv(csv.value))
+const changed = computed(() => csv.value !== '')
 const previewRows = computed(() => parsed.value.rows.slice(0, 5))
+const duplicateSourceCards = computed(() => isReviewSetImport.value
+  ? store.reviewSetCards[reviewSetId.value] || []
+  : store.cards)
+const duplicateCount = computed(() => countFlashcardImportDuplicates(
+  parsed.value.rows,
+  duplicateSourceCards.value,
+))
+const csvHasImageColumn = computed(() => parsed.value.rows.some(row => 'image' in row))
 const canImport = computed(() => (
   parsed.value.rows.length > 0
   && parsed.value.errors.length === 0
@@ -50,6 +63,9 @@ onMounted(async () => {
     if (!store.loaded) await store.load()
     if (isReviewSetImport.value && (!reviewSet.value || reviewSet.value.accessRole === 'readonly')) {
       throw new Error('Editor access is required to import cards into this Review set.')
+    }
+    if (isReviewSetImport.value && !store.reviewSetCards[reviewSetId.value]) {
+      await store.loadReviewSetCards(reviewSetId.value)
     }
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not prepare the flashcard import.'
@@ -80,16 +96,25 @@ async function copyFormatExample() {
 async function importCards() {
   const result = await form.value?.validate()
   if (!result?.valid || !canImport.value) return
+  if (duplicateCount.value) {
+    duplicateDialog.value = true
+    return
+  }
+  await performImport({ action: 'duplicate', columns: [] })
+}
+
+async function performImport(resolution: FlashcardDuplicateResolution) {
   importing.value = true
+  duplicateDialog.value = false
   error.value = ''
   try {
     const rows = parsed.value.rows
     if (isReviewSetImport.value) {
-      await store.importReviewSetCards(reviewSetId.value, rows)
+      await store.importReviewSetCards(reviewSetId.value, rows, resolution)
       await router.replace(returnTo.value
         || { name: 'flashcard-review-set-cards', params: { id: reviewSetId.value } })
     } else {
-      await store.importCards(rows)
+      await store.importCards(rows, resolution)
       await router.replace({ name: 'flashcard-cards' })
     }
   } catch (cause) {
@@ -109,10 +134,10 @@ async function importCards() {
         <h2 class="text-h6 font-weight-black">Paste your CSV table</h2>
         <p class="text-body-2 muted mt-2 mb-4">
           <template v-if="isReviewSetImport">
-            Front and back are required. Transliteration and note are optional. Imported cards inherit this Review set’s tags; CSV tags are ignored.
+            Front and back are required. Transliteration, note, and image URL are optional. Imported cards inherit this Review set’s tags; CSV tags are ignored.
           </template>
           <template v-else>
-            Front and back are required. Transliteration, note, and tags are optional; separate multiple tags with a vertical bar (|).
+            Front and back are required. Transliteration, note, image URL, and tags are optional; separate multiple tags with a vertical bar (|).
           </template>
         </p>
         <v-textarea
@@ -122,7 +147,7 @@ async function importCards() {
           clearable
           autocomplete="off"
           spellcheck="false"
-          placeholder="front,back,transliteration,note,tags"
+          placeholder="front,back,transliteration,note,image,tags"
           :rules="[
             value => Boolean(value?.trim()) || 'CSV is required',
             () => parsed.errors[0] || true,
@@ -185,6 +210,7 @@ async function importCards() {
                   <th scope="col">Back</th>
                   <th scope="col">Transliteration</th>
                   <th scope="col">Note</th>
+                  <th scope="col">Image</th>
                   <th scope="col">Tags</th>
                 </tr>
               </thead>
@@ -194,6 +220,7 @@ async function importCards() {
                   <td>{{ row.back }}</td>
                   <td>{{ row.transliteration || '—' }}</td>
                   <td>{{ row.note || '—' }}</td>
+                  <td>{{ row.image || '—' }}</td>
                   <td>
                     <div class="flashcard-import-tags">
                       <v-chip v-for="tag in row.tags" :key="tag" size="x-small" variant="tonal">
@@ -217,8 +244,19 @@ async function importCards() {
       :primary-text="parsed.rows.length ? `Import ${parsed.rows.length}` : 'Import'"
       :loading="importing"
       :primary-disabled="!canImport"
+      :has-changes="changed"
       @submit="importCards"
       @cancel="router.back()"
+    />
+
+    <FlashcardDuplicateDialog
+      v-if="duplicateDialog"
+      v-model="duplicateDialog"
+      :duplicate-count="duplicateCount"
+      :loading="importing"
+      :tags-available="!isReviewSetImport"
+      :image-available="csvHasImageColumn"
+      @resolve="performImport"
     />
   </main>
 </template>
@@ -232,10 +270,10 @@ async function importCards() {
 .flashcard-import-summary { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .75rem; }
 .flashcard-import-preview { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; border: .0625rem solid rgba(var(--v-theme-on-surface), .08); border-radius: 1rem; }
 .flashcard-import-preview:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: -.125rem; }
-.flashcard-import-preview__table { min-width: 52rem; background: transparent; }
+.flashcard-import-preview__table { min-width: 62rem; background: transparent; }
 .flashcard-import-preview__table :deep(.v-table__wrapper) { overflow: visible; }
 .flashcard-import-preview__table :deep(table) { table-layout: fixed; }
-.flashcard-import-preview th { width: 20%; }
+.flashcard-import-preview th { width: 16.666%; }
 .flashcard-import-preview th { color: rgba(var(--v-theme-on-surface), .56); font-size: .66rem; font-weight: 900 !important; letter-spacing: .08em; text-transform: uppercase; }
 .flashcard-import-preview td { overflow-wrap: anywhere; font-size: .75rem; }
 .flashcard-import-tags { display: flex; min-width: 0; flex-wrap: wrap; gap: .25rem; }

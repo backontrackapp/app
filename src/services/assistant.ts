@@ -7,6 +7,7 @@ import {
   flashcardReviewSettingsAreValid,
 } from '@/services/flashcards'
 import type {
+  AssistantCardUpdate,
   AssistantChoice,
   AssistantConversationItem,
   AssistantFlashcardDraft,
@@ -41,6 +42,12 @@ function normalizedCard(value: unknown): AssistantFlashcardDraft | undefined {
     transliteration: normalizedText(record.transliteration, 4000),
     note: normalizedText(record.note, 2000),
   }
+}
+
+function nullableText(value: unknown, maximum: number, field: string) {
+  if (value === null || value === undefined) return undefined
+  if (typeof value !== 'string') throw new Error(`${field} must be text.`)
+  return value.trim().slice(0, maximum)
 }
 
 function cardKey(front: string, back: string) {
@@ -91,10 +98,12 @@ function reviewSetDraft(reviewSet: FlashcardReviewSet): FlashcardReviewSetDraft 
     excludedCards: [...(reviewSet.excludedCards || [])],
     mode: reviewSet.mode,
     cardSides: reviewSet.cardSides,
+    invertFaces: reviewSet.invertFaces === true,
     indefinite: reviewSet.indefinite,
     timeLimitSeconds: reviewSet.timeLimitSeconds || 0,
     maxCards: reviewSet.maxCards,
     ejectBehavior: reviewSet.ejectBehavior,
+    ejectExcludeAfter: reviewSet.ejectExcludeAfter,
     frontSeconds: reviewSet.frontSeconds,
     backSeconds: reviewSet.backSeconds,
     backSpeechRepeatCount: reviewSet.backSpeechRepeatCount,
@@ -123,11 +132,13 @@ function reviewSetChanges(
   add('Name', current.name, draft.name)
   add('Mode', current.mode, draft.mode)
   add('Faces', current.cardSides, draft.cardSides)
+  add('Invert faces', current.invertFaces === true, draft.invertFaces === true)
   add('Run indefinitely', current.indefinite, draft.indefinite)
   add('Time limit', `${(current.timeLimitSeconds || 0) / 60} min`, `${(draft.timeLimitSeconds || 0) / 60} min`)
   add('Max cards', current.maxCards, draft.maxCards)
-  add('Load next on eject', flashcardEjectLoadsNext(current.ejectBehavior), flashcardEjectLoadsNext(draft.ejectBehavior))
-  add('Exclude on eject', flashcardEjectExcludes(current.ejectBehavior), flashcardEjectExcludes(draft.ejectBehavior))
+  add('Inject a new card', flashcardEjectLoadsNext(current.ejectBehavior), flashcardEjectLoadsNext(draft.ejectBehavior))
+  add('Exclude after ejections', current.ejectExcludeAfter, draft.ejectExcludeAfter)
+  add('Exclude after threshold', flashcardEjectExcludes(current.ejectBehavior), flashcardEjectExcludes(draft.ejectBehavior))
   add('Front duration', `${current.frontSeconds} sec`, `${draft.frontSeconds} sec`)
   add('Back duration', `${current.backSeconds} sec`, `${draft.backSeconds} sec`)
   add('Back speech repeats', current.backSpeechRepeatCount, draft.backSpeechRepeatCount)
@@ -137,6 +148,22 @@ function reviewSetChanges(
   add('Back language', current.backLanguage, draft.backLanguage)
   add('Card order', current.sortMode, draft.sortMode)
   add('Sort direction', current.sortDirection, draft.sortDirection)
+  return changes
+}
+
+function cardChanges(
+  current: { front: string; back: string; transliteration?: string; note: string },
+  draft: { front: string; back: string; transliteration?: string; note: string },
+) {
+  const changes: AssistantReviewSetChange[] = []
+  const add = (label: string, before: string, after: string) => {
+    if (before === after) return
+    changes.push({ label, before: before || 'None', after: after || 'None' })
+  }
+  add('Front', current.front, draft.front)
+  add('Back', current.back, draft.back)
+  add('Transliteration', current.transliteration || '', draft.transliteration || '')
+  add('Note', current.note, draft.note)
   return changes
 }
 
@@ -185,11 +212,13 @@ export function assistantReadToolResult(
             settings: {
               mode: set.mode,
               card_sides: set.cardSides,
+              invert_faces: set.invertFaces === true,
               run_indefinitely: set.indefinite,
               time_limit_minutes: (set.timeLimitSeconds || 0) / 60,
               max_cards: set.maxCards,
               load_next_on_eject: flashcardEjectLoadsNext(set.ejectBehavior),
               exclude_on_eject: flashcardEjectExcludes(set.ejectBehavior),
+              exclude_after_ejections: set.ejectExcludeAfter,
               front_seconds: set.frontSeconds,
               back_seconds: set.backSeconds,
               back_speech_repeat_count: set.backSpeechRepeatCount,
@@ -201,6 +230,32 @@ export function assistantReadToolResult(
               sort_direction: set.sortDirection,
             },
           })),
+      },
+    }
+  }
+
+  if (call.name === 'list_owned_flashcards') {
+    const query = normalizedText(call.arguments.query, 160).toLocaleLowerCase()
+    const limit = Math.min(100, Math.max(1, integer(call.arguments.limit, 20)))
+    const cards = store.cards
+      .filter(card => !query || [card.front, card.back, card.transliteration || '', card.note]
+        .some(value => value.toLocaleLowerCase().includes(query)))
+      .sort((left, right) => left.front.localeCompare(right.front) || left.id.localeCompare(right.id))
+      .slice(0, limit)
+    return {
+      type: 'function_call_output',
+      callId: call.callId,
+      output: {
+        cards: cards.map(card => ({
+          id: card.id,
+          front: card.front,
+          back: card.back,
+          transliteration: card.transliteration || '',
+          note: card.note,
+          success_count: card.successCount,
+          error_count: card.errorCount,
+          last_reviewed_at: card.lastReviewedAt || '',
+        })),
       },
     }
   }
@@ -252,6 +307,7 @@ export function assistantWritePlan(
     call.name !== 'create_flashcard_review_set'
     && call.name !== 'add_flashcards_to_review_set'
     && call.name !== 'update_flashcard_review_set'
+    && call.name !== 'update_flashcards'
   ) {
     return undefined
   }
@@ -259,6 +315,68 @@ export function assistantWritePlan(
   const ownedSets = store.reviewSets.filter(set => (
     set.owner === accountId && set.accessRole === 'owner'
   ))
+
+  if (call.name === 'update_flashcards') {
+    const reviewSetId = call.arguments.review_set_id === null
+      || call.arguments.review_set_id === undefined
+      ? ''
+      : normalizedText(call.arguments.review_set_id, 64)
+    const reviewSet = reviewSetId ? ownedSets.find(set => set.id === reviewSetId) : undefined
+    if (reviewSetId && !reviewSet) throw new Error('Choose one of your Review sets.')
+    if (!Array.isArray(call.arguments.cards) || !call.arguments.cards.length) {
+      throw new Error('Choose at least one card to update.')
+    }
+    if (call.arguments.cards.length > MAX_ASSISTANT_CARDS) {
+      throw new Error('An assistant action cannot update more than 100 cards.')
+    }
+    const cardsById = new Map(store.cards
+      .filter(card => !reviewSet || cardMatchesReviewSet(card, reviewSet))
+      .map(card => [card.id, card]))
+    const updates: AssistantCardUpdate[] = []
+    const seen = new Set<string>()
+    for (const value of call.arguments.cards) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error('The assistant returned an invalid card update.')
+      }
+      const record = value as Record<string, unknown>
+      const cardId = normalizedText(record.card_id, 64)
+      if (!cardId || seen.has(cardId)) throw new Error('Each card can only be updated once.')
+      seen.add(cardId)
+      const current = cardsById.get(cardId)
+      if (!current) throw new Error(reviewSet
+        ? 'Choose cards from the selected owned Review set.'
+        : 'Choose cards from your Card library.')
+      const front = nullableText(record.front, 4000, 'Front') ?? current.front
+      const back = nullableText(record.back, 4000, 'Back') ?? current.back
+      const transliteration = nullableText(record.transliteration, 4000, 'Transliteration')
+        ?? current.transliteration ?? ''
+      const note = nullableText(record.note, 2000, 'Note') ?? current.note
+      if (!front || !back) throw new Error('Card fronts and backs cannot be empty.')
+      const draft = {
+        id: current.id,
+        front,
+        back,
+        transliteration,
+        note,
+        tags: [...current.tags],
+      }
+      const changes = cardChanges(current, draft)
+      if (changes.length) updates.push({ id: current.id, label: current.front, draft, changes })
+    }
+    if (!updates.length) throw new Error('The requested content already matches these cards.')
+    return {
+      call,
+      title: reviewSet ? `Update cards in ${reviewSet.name}?` : 'Update existing cards?',
+      description: `${updates.length} card${updates.length === 1 ? '' : 's'} will change.`,
+      destinationName: reviewSet?.name || 'Card library',
+      newCards: [],
+      existingCardIds: [],
+      reusedCardIds: [],
+      convertsTagSelection: false,
+      maxCards: reviewSet?.maxCards || MAX_ASSISTANT_CARDS,
+      updatedCards: updates,
+    }
+  }
 
   if (call.name === 'update_flashcard_review_set') {
     const reviewSetId = normalizedText(call.arguments.review_set_id, 64)
@@ -273,6 +391,8 @@ export function assistantWritePlan(
     draft.mode = nullableChoice(call.arguments.mode, ['manual', 'passive'], 'review mode') ?? draft.mode
     draft.cardSides = nullableChoice(call.arguments.card_sides, ['both', 'front', 'back'], 'card faces')
       ?? draft.cardSides
+    draft.invertFaces = nullableBoolean(call.arguments.invert_faces, 'Invert faces')
+      ?? draft.invertFaces
     draft.indefinite = nullableBoolean(call.arguments.run_indefinitely, 'Run indefinitely')
       ?? draft.indefinite
     const timeLimitMinutes = nullableInteger(
@@ -283,6 +403,12 @@ export function assistantWritePlan(
       ?? draft.maxCards
     const loadNext = nullableBoolean(call.arguments.load_next_on_eject, 'Load next on eject')
     const exclude = nullableBoolean(call.arguments.exclude_on_eject, 'Exclude on eject')
+    draft.ejectExcludeAfter = nullableInteger(
+      call.arguments.exclude_after_ejections,
+      1,
+      20,
+      'Ejections before exclusion',
+    ) ?? draft.ejectExcludeAfter
     draft.ejectBehavior = flashcardEjectBehavior(
       loadNext ?? flashcardEjectLoadsNext(draft.ejectBehavior),
       exclude ?? flashcardEjectExcludes(draft.ejectBehavior),
@@ -309,7 +435,7 @@ export function assistantWritePlan(
     }
     draft.sortMode = nullableChoice(
       call.arguments.sort_mode,
-      ['difficult', 'never_reviewed', 'least_recent', 'recently_added', 'random'],
+      ['difficult', 'easiest', 'never_reviewed', 'least_recent', 'recently_added', 'random'],
       'card order',
     ) ?? draft.sortMode
     draft.sortDirection = nullableChoice(call.arguments.sort_direction, ['asc', 'desc'], 'sort direction')
@@ -392,6 +518,27 @@ export function assistantWritePlan(
 }
 
 export async function executeAssistantWritePlan(plan: AssistantWritePlan, store: FlashcardStore) {
+  if (plan.updatedCards) {
+    for (const update of plan.updatedCards) await store.saveCard(update.draft)
+    return {
+      type: 'function_call_output' as const,
+      callId: plan.call.callId,
+      output: {
+        status: 'completed',
+        scope: {
+          type: plan.call.arguments.review_set_id ? 'review_set' : 'card_library',
+          ...(plan.call.arguments.review_set_id ? {
+            id: String(plan.call.arguments.review_set_id),
+            name: plan.destinationName,
+          } : {}),
+        },
+        updated_cards: plan.updatedCards.map(update => ({
+          id: update.id,
+          updated_fields: update.changes.map(change => change.label),
+        })),
+      },
+    }
+  }
   if (plan.updatedReviewSet) {
     const reviewSet = await store.saveReviewSet(plan.updatedReviewSet)
     return {
@@ -432,6 +579,10 @@ export function cancelledAssistantToolOutput(callId: string): AssistantToolOutpu
   return { type: 'function_call_output', callId, output: { status: 'cancelled' } }
 }
 
-export async function requestAssistantResponse(items: AssistantConversationItem[]) {
-  return api.assistantRespond(items)
+export async function requestAssistantResponse(
+  items: AssistantConversationItem[],
+  onTextDelta: (delta: string) => void,
+  signal?: AbortSignal,
+) {
+  return api.assistantRespond(items, onTextDelta, signal)
 }

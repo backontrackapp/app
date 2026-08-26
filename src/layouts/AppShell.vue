@@ -630,16 +630,21 @@ function releaseLeavingPage(element: Element) {
                 floating
               />
             </v-btn>
-            <v-btn
-              icon="mdi-creation-outline"
-              color="secondary"
-              variant="text"
-              :aria-label="assistantAvailable
-                ? 'Open AI flashcard assistant'
-                : 'AI assistant is available in Flashcards'"
-              :disabled="!assistantAvailable"
-              @click="assistantPanel = true"
-            />
+            <div
+              class="app-bar__ai-control"
+              :class="{ 'app-bar__ai-control--available': assistantAvailable }"
+            >
+              <transition name="app-bar-ai-button">
+                <v-btn
+                  v-if="assistantAvailable"
+                  icon="mdi-creation-outline"
+                  color="secondary"
+                  variant="text"
+                  aria-label="Open AI flashcard assistant"
+                  @click="assistantPanel = true"
+                />
+              </transition>
+            </div>
             <AccountMenu
               :account-name="accountName"
               :account-email="accountEmail"
@@ -698,6 +703,7 @@ function releaseLeavingPage(element: Element) {
             :class="{ 'bottom-nav__link--active': selectedMainNavigationPath === item.to }"
             :aria-current="current === item.to ? 'page' : undefined"
             :aria-label="menuItemLabel(item)"
+            data-post-gesture-click-recovery="off"
             @pointerdown="beginMainNavigationPress(item.to, $event)"
             @pointerup="finishMainNavigationPress(item.to, $event)"
             @pointercancel="cancelMainNavigationPress(item.to, $event)"
@@ -883,6 +889,19 @@ function releaseLeavingPage(element: Element) {
   justify-content: flex-end;
 }
 
+.app-bar__ai-control {
+  display: grid;
+  width: 0;
+  flex: 0 0 auto;
+  overflow: hidden;
+  place-items: center;
+  transition: width 220ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.app-bar__ai-control--available {
+  width: 3rem;
+}
+
 .sync-panel {
   display: grid;
   gap: 1rem;
@@ -919,6 +938,24 @@ function releaseLeavingPage(element: Element) {
 .app-bar-button-leave-to {
   opacity: 0;
   transform: translateX(-.5rem);
+}
+
+.app-bar-ai-button-enter-active {
+  transition:
+    opacity 180ms ease,
+    transform 220ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.app-bar-ai-button-leave-active {
+  transition:
+    opacity 160ms ease,
+    transform 180ms cubic-bezier(.4, 0, 1, 1);
+}
+
+.app-bar-ai-button-enter-from,
+.app-bar-ai-button-leave-to {
+  opacity: 0;
+  transform: scale(.72);
 }
 
 .app-chrome-enter-active,
@@ -1273,6 +1310,17 @@ html.route-navigation-scroll-lock {
 .page-depth-higher-leave-to > :not(.page-action-area) { transform: translateY(1rem); }
 
 @media (prefers-reduced-motion: reduce) {
+  .app-bar__ai-control,
+  .app-bar-ai-button-enter-active,
+  .app-bar-ai-button-leave-active {
+    transition-duration: .01ms !important;
+  }
+
+  .app-bar-ai-button-enter-from,
+  .app-bar-ai-button-leave-to {
+    transform: none;
+  }
+
   .page-route-early-leave,
   .page-route-early-leave-resetting {
     transition-duration: .01ms !important;

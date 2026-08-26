@@ -18,8 +18,8 @@ final class SyncService
     private const SYNC_RETENTION_DAYS = 30;
     private const SYNC_COMPACTION_INTERVAL_SECONDS = 3600;
     private const FLASHCARD_REVIEW_PREFERENCE_FIELDS = [
-        'mode', 'card_sides', 'indefinite', 'time_limit_seconds', 'max_cards', 'front_seconds',
-        'eject_behavior', 'back_seconds', 'back_speech_repeat_count', 'back_display',
+        'mode', 'card_sides', 'invert_faces', 'indefinite', 'time_limit_seconds', 'max_cards', 'front_seconds',
+        'eject_behavior', 'eject_exclude_after', 'back_seconds', 'back_speech_repeat_count', 'back_display',
         'speech_enabled', 'front_language', 'back_language', 'sort_mode',
         'excluded_cards',
     ];
@@ -645,7 +645,7 @@ final class SyncService
                 $fields,
                 static fn (string $field): bool => !in_array(
                     $field,
-                    ['excluded_cards', 'eject_behavior'],
+                    ['excluded_cards', 'eject_behavior', 'eject_exclude_after'],
                     true,
                 ),
             ));
@@ -655,6 +655,7 @@ final class SyncService
             }
             $settingsPayload['excluded_cards'] ??= [];
             $settingsPayload['eject_behavior'] ??= 'remove';
+            $settingsPayload['eject_exclude_after'] ??= 3;
             $config = Schema::collection('flashcard_review_sets');
             if ($config === null) {
                 throw new ApiException(500, 'Review set schema is unavailable.');
@@ -698,6 +699,28 @@ final class SyncService
                     $this->reviewSetResponse($record, $account),
                 ),
             ];
+        }
+
+        if ($command === 'flashcard_eject.increment') {
+            $reviewSetId = $this->recordId($payload['review_set_id'] ?? null);
+            $cardId = $this->recordId($payload['card_id'] ?? null);
+            $reviewSet = $this->accessibleReviewSet($reviewSetId, $account);
+            $available = array_fill_keys(
+                array_map(
+                    static fn (array $card): string => (string) $card['id'],
+                    $this->matchingCards($reviewSet),
+                ),
+                true,
+            );
+            if (!isset($available[$cardId])) {
+                throw new ApiException(404, 'Flashcard not found in this Review set.');
+            }
+            $this->recordFlashcardReviewStats([
+                'card' => $cardId,
+                'outcome' => 'ejected',
+                'reviewed_at' => $this->now(),
+            ], $account);
+            return ['status' => 'applied'];
         }
 
         if ($command === 'review_set_share.create') {
@@ -910,6 +933,10 @@ final class SyncService
             }
             $cardId = $this->recordId($row['id'] ?? null);
             $imageUrl = $curated ? $this->curatedFlashcardImageUrl($row['image_url'] ?? '') : '';
+            $tagIds = $this->stringArray($row['tags'] ?? []);
+            foreach ($tagIds as $tagId) {
+                $this->ownedRecord('flashcard_tags', $this->recordId($tagId), $account);
+            }
             $response = $this->createOwnedRecord(
                 'flashcards',
                 $cardConfig,
@@ -920,7 +947,7 @@ final class SyncService
                     'transliteration' => $row['transliteration'] ?? '',
                     'note' => $row['note'] ?? '',
                     'image_url' => $imageUrl,
-                    'tags' => [],
+                    'tags' => array_values(array_unique($tagIds)),
                 ],
                 $fieldClocks,
                 $account,
@@ -946,10 +973,12 @@ final class SyncService
                 'excluded_cards' => [],
                 'mode' => 'manual',
                 'card_sides' => 'both',
+                'invert_faces' => false,
                 'indefinite' => false,
                 'time_limit_seconds' => 0,
                 'max_cards' => $maxCards,
                 'eject_behavior' => 'replace',
+                'eject_exclude_after' => 3,
                 'front_seconds' => 5,
                 'back_seconds' => 5,
                 'back_speech_repeat_count' => 1,
@@ -965,8 +994,8 @@ final class SyncService
                 $reviewSetPayload = [
                     ...$reviewSetPayload,
                     ...array_intersect_key($payload['settings'], array_flip([
-                        'mode', 'card_sides', 'indefinite', 'time_limit_seconds', 'max_cards',
-                        'eject_behavior', 'front_seconds', 'back_seconds',
+                        'mode', 'card_sides', 'invert_faces', 'indefinite', 'time_limit_seconds', 'max_cards',
+                        'eject_behavior', 'eject_exclude_after', 'front_seconds', 'back_seconds',
                         'back_speech_repeat_count', 'back_display', 'speech_enabled',
                         'front_language', 'back_language', 'sort_mode', 'sort_direction',
                     ])),
@@ -1447,6 +1476,12 @@ final class SyncService
             $statement->execute(['task' => $recordId, 'owner' => $account]);
             $taskLogImageFiles = $statement->fetchAll(PDO::FETCH_COLUMN);
         }
+        if (
+            $resource === 'flashcard_review_events'
+            && (string) ($current['outcome'] ?? '') === 'ejected'
+        ) {
+            $this->decrementFlashcardEjectCount($current, $account);
+        }
         $this->cascadeDelete($resource, $recordId, $account);
         if ($resource === 'journal_entries') {
             $filename = $this->validSquareImageFilename($current['image_file'] ?? null);
@@ -1639,6 +1674,7 @@ final class SyncService
                 'back_audio_url' => '', 'back_audio_file' => '',
                 'tags' => [], 'created_at' => $now, 'updated_at' => $now,
                 'last_reviewed_at' => '', 'passive_views' => 0, 'success_count' => 0, 'error_count' => 0,
+                'eject_count' => 0,
             ];
         }
         if ($resource === 'flashcard_review_sets') {
@@ -1923,6 +1959,7 @@ final class SyncService
             'success' => 'success_count',
             'error' => 'error_count',
             'passive' => 'passive_views',
+            'ejected' => 'eject_count',
             default => null,
         };
         $cardId = (string) ($event['card'] ?? '');
@@ -1946,10 +1983,10 @@ final class SyncService
         $statement = $this->database->pdo->prepare(
             "INSERT INTO flashcard_review_card_stats (
                 reviewer, card, last_reviewed_at, passive_views,
-                success_count, error_count, updated_at
+                success_count, error_count, eject_count, updated_at
              ) VALUES (
                 :reviewer, :card, :reviewed_at,
-                :passive_views, :success_count, :error_count, :reviewed_at
+                :passive_views, :success_count, :error_count, :eject_count, :reviewed_at
              )
              ON CONFLICT(reviewer, card) DO UPDATE SET
                 {$counter} = {$counter} + excluded.{$counter},
@@ -1963,6 +2000,7 @@ final class SyncService
             'passive_views' => $counter === 'passive_views' ? $eventCount : 0,
             'success_count' => $counter === 'success_count' ? $eventCount : 0,
             'error_count' => $counter === 'error_count' ? $eventCount : 0,
+            'eject_count' => $counter === 'eject_count' ? $eventCount : 0,
         ]);
         if (hash_equals($cardOwner, $account)) {
             $statement = $this->database->pdo->prepare(
@@ -1974,6 +2012,41 @@ final class SyncService
                 'event_count' => $eventCount,
                 'reviewed_at' => $reviewedAt,
                 'id' => $cardId,
+                'owner' => $account,
+            ]);
+        }
+    }
+
+    private function decrementFlashcardEjectCount(array $event, string $account): void
+    {
+        $cardId = (string) ($event['card'] ?? '');
+        if ($cardId === '') {
+            return;
+        }
+        $updatedAt = $this->now();
+        $statement = $this->database->pdo->prepare(
+            'UPDATE flashcard_review_card_stats
+             SET eject_count = MAX(0, eject_count - 1), updated_at = :updated_at
+             WHERE reviewer = :reviewer AND card = :card',
+        );
+        $statement->execute([
+            'updated_at' => $updatedAt,
+            'reviewer' => $account,
+            'card' => $cardId,
+        ]);
+        $ownerStatement = $this->database->pdo->prepare(
+            'SELECT owner FROM flashcards WHERE id = :card LIMIT 1',
+        );
+        $ownerStatement->execute(['card' => $cardId]);
+        if (hash_equals((string) ($ownerStatement->fetchColumn() ?: ''), $account)) {
+            $statement = $this->database->pdo->prepare(
+                'UPDATE flashcards
+                 SET eject_count = MAX(0, eject_count - 1), updated_at = :updated_at
+                 WHERE id = :card AND owner = :owner',
+            );
+            $statement->execute([
+                'updated_at' => $updatedAt,
+                'card' => $cardId,
                 'owner' => $account,
             ]);
         }
@@ -2624,13 +2697,13 @@ final class SyncService
         $settings = $this->reviewSetPreferencesByAccount[$account][(string) $record['id']] ?? null;
         if (is_array($settings)) {
             foreach ([
-                'mode', 'card_sides', 'indefinite', 'time_limit_seconds', 'max_cards', 'front_seconds',
-                'eject_behavior', 'back_seconds', 'back_speech_repeat_count', 'back_display',
+                'mode', 'card_sides', 'invert_faces', 'indefinite', 'time_limit_seconds', 'max_cards', 'front_seconds',
+                'eject_behavior', 'eject_exclude_after', 'back_seconds', 'back_speech_repeat_count', 'back_display',
                 'speech_enabled', 'front_language', 'back_language', 'sort_mode',
                 'excluded_cards',
             ] as $field) {
                 $result[$field] = match ($field) {
-                    'indefinite', 'speech_enabled' => (bool) $settings[$field],
+                    'invert_faces', 'indefinite', 'speech_enabled' => (bool) $settings[$field],
                     'excluded_cards' => $this->stringArray($settings[$field] ?? []),
                     default => $settings[$field],
                 };
@@ -2661,19 +2734,21 @@ final class SyncService
         $values['excluded_cards'] = $this->stringArray($values['excluded_cards'] ?? []);
         $statement = $this->database->pdo->prepare(
             'INSERT INTO flashcard_review_set_preferences (
-                review_set, account, mode, card_sides, indefinite, time_limit_seconds, max_cards, eject_behavior,
+                review_set, account, mode, card_sides, invert_faces, indefinite, time_limit_seconds, max_cards, eject_behavior, eject_exclude_after,
                 front_seconds, back_seconds, back_speech_repeat_count, back_display,
                 speech_enabled, front_language, back_language, sort_mode, excluded_cards, updated_at
              ) VALUES (
-                :review_set, :account, :mode, :card_sides, :indefinite, :time_limit_seconds, :max_cards, :eject_behavior,
+                :review_set, :account, :mode, :card_sides, :invert_faces, :indefinite, :time_limit_seconds, :max_cards, :eject_behavior, :eject_exclude_after,
                 :front_seconds, :back_seconds, :back_speech_repeat_count, :back_display,
                 :speech_enabled, :front_language, :back_language, :sort_mode, :excluded_cards, :updated_at
              ) ON CONFLICT(review_set, account) DO UPDATE SET
                 mode = excluded.mode, card_sides = excluded.card_sides,
+                invert_faces = excluded.invert_faces,
                 indefinite = excluded.indefinite,
                 time_limit_seconds = excluded.time_limit_seconds,
                 max_cards = excluded.max_cards,
                 eject_behavior = excluded.eject_behavior,
+                eject_exclude_after = excluded.eject_exclude_after,
                 front_seconds = excluded.front_seconds, back_seconds = excluded.back_seconds,
                 back_speech_repeat_count = excluded.back_speech_repeat_count,
                 back_display = excluded.back_display,
@@ -2714,7 +2789,7 @@ final class SyncService
             $result['tag_details'] = $this->tagDetails((string) $card['owner'], $this->stringArray($card['tags'] ?? []));
             $row = $this->cardStatsByReviewer[$account][(string) $card['id']] ?? null;
             if (is_array($row)) {
-                foreach (['last_reviewed_at', 'passive_views', 'success_count', 'error_count'] as $field) {
+                foreach (['last_reviewed_at', 'passive_views', 'success_count', 'error_count', 'eject_count'] as $field) {
                     $result[$field] = $row[$field];
                 }
             }

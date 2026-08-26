@@ -283,6 +283,11 @@ function onKeydown(event: KeyboardEvent) {
       </svg>
     </div>
 
+    <div v-if="!loading && !series.length" class="weekly-chart-empty py-7 text-center" role="status">
+      <v-icon icon="mdi-chart-bar-stacked" size="36" color="secondary" />
+      <p class="mt-3">No entries logged in this week.</p>
+    </div>
+
     <div class="chart-series-select">
       <v-select
         v-model="selectedTrackerIds"
@@ -333,11 +338,6 @@ function onKeydown(event: KeyboardEvent) {
           </span>
         </template>
       </v-select>
-    </div>
-
-    <div v-if="!loading && !series.length" class="weekly-chart-empty py-7 text-center" role="status">
-      <v-icon icon="mdi-chart-bar-stacked" size="36" color="secondary" />
-      <p class="mt-3">No entries logged in this week.</p>
     </div>
   </div>
 </template>

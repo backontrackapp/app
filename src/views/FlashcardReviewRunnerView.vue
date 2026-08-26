@@ -6,13 +6,10 @@ import AppForm from '@/components/AppForm.vue'
 import AppDialog from '@/components/AppDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FlashcardCardDialog from '@/components/FlashcardCardDialog.vue'
-import FlashcardContextActions from '@/components/FlashcardContextActions.vue'
-import FlashcardResponseText from '@/components/FlashcardResponseText.vue'
-import FitReviewContent from '@/components/FitReviewContent.vue'
 import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsFields.vue'
+import ReviewSetCard from '@/components/ReviewSetCard.vue'
 import RunnerStartScreen from '@/components/RunnerStartScreen.vue'
 import RunnerSessionActions from '@/components/RunnerSessionActions.vue'
-import { REFIT_TEXT_CONTENT_EVENT } from '@/composables/useFitLargestWord'
 import {
   backgroundFlashcardReviewState,
   flashcardSpeechOverAmplificationIsEnabled,
@@ -23,6 +20,7 @@ import {
   stopFlashcardSpeech,
   syncBackgroundFlashcardReview,
   toggleFlashcardSpeechOverAmplification,
+  waitForFlashcardSpeechHandoff,
 } from '@/services/flashcardSpeech'
 import {
   playFlashcardEjectCue,
@@ -31,8 +29,11 @@ import {
 } from '@/services/intervalCues'
 import { reviewRunnerSessionMenuItems } from '@/services/runnerSessionActions'
 import { requestScreenWakeLock, type ScreenWakeLock } from '@/services/screenWakeLock'
+import { confirmSwipeHint, REVIEW_SET_CARD_SWIPE_HINT } from '@/services/swipeHints'
+import { prepareFlashcardSpeechWordTracking } from '@/services/spokenText'
 import {
   createFlashcardReviewPreviewSession,
+  DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
   FLASHCARD_SETTINGS_APPLY_MENU_ITEMS,
   firstFlashcardReviewSide,
   flashcardBackDurationMs,
@@ -40,9 +41,11 @@ import {
   flashcardReviewSettingsAreValid,
   flashcardReviewSettingsSignature,
   flashcardReviewActionFromSwipe,
+  flashcardTagToggleUpdate,
   formatReviewDuration,
   INTERVAL_FLASHCARD_QUICK_TAGS,
   normalizeFlashcardBackSpeechRepeatCount,
+  otherFlashcardReviewSide,
   sessionAccuracy,
 } from '@/services/flashcards'
 import { useFlashcardStore } from '@/stores/flashcards'
@@ -57,6 +60,7 @@ import type {
   FlashcardReviewSide,
   FlashcardSettingsApplyTarget,
   FlashcardSpeechSupport,
+  FlashcardSpeechWord,
   FlashcardTag,
   RunnerSessionAction,
 } from '@/types/domain'
@@ -70,11 +74,12 @@ const busy = ref(false)
 const error = ref('')
 const revealed = ref(false)
 const reviewCardTransitionDirection = ref<ReviewCardTransitionDirection>()
-const reviewCardPane = ref<HTMLElement>()
+const reviewCardPane = ref<InstanceType<typeof ReviewSetCard>>()
 const sessionActionsSheet = ref(false)
 const endDialog = ref(false)
-const cardMenuOpen = ref(false)
-const cardTagSheet = ref(false)
+const replaceActiveReviewDialog = ref(false)
+const replacingActiveReview = ref(false)
+const activeReviewName = ref('')
 const cardTagSaving = ref('')
 const cardEditorDialog = ref(false)
 const cardEditorCard = ref<Flashcard>()
@@ -94,10 +99,12 @@ const speechOverAmplificationBusy = ref(false)
 const sessionSettingsDraft = reactive<FlashcardReviewSettings>({
   mode: 'manual',
   cardSides: 'both',
+  invertFaces: false,
   indefinite: false,
   timeLimitSeconds: 0,
   maxCards: 20,
   ejectBehavior: 'remove',
+  ejectExcludeAfter: DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
   frontSeconds: 5,
   backSeconds: 5,
   backSpeechRepeatCount: 1,
@@ -119,7 +126,13 @@ const nativeBackgroundReady = ref(false)
 const speechPlaybackWarning = ref('')
 const backgroundSpeechWarning = ref('')
 const speechFailureSnackbar = ref(false)
+const spokenWord = ref<FlashcardSpeechWord>()
 const reconcilingBackground = ref(false)
+const visibilitySpeechHandoff = ref(false)
+const backgroundViewedTarget = ref<number>()
+const backgroundVisualSnapshotReady = ref(false)
+const backgroundPassiveRemainingMs = ref(0)
+const backgroundPassiveDurationMs = ref(1000)
 let animationFrame: number | undefined
 let lastTickAt = 0
 let mounted = true
@@ -143,9 +156,9 @@ let manualSwipeStart: {
 } | undefined
 let suppressManualCardTap = false
 let manualCardTapResetTimer: number | undefined
+let resumeAfterSessionActions = false
 let resumeAfterSessionSettings = false
 let resumeAfterCardEditor = false
-let resumeAfterCardTagSheet = false
 const speechFailureWarnedSessionIds = new Set<string>()
 
 const currentSessionId = ref('')
@@ -162,6 +175,12 @@ const currentSourceCards = computed(() => {
     : store.reviewSetCards[currentReviewSet.value.id] || []
 })
 const currentSourceCard = computed(() => currentSourceCards.value.find(card => card.id === currentCard.value?.id))
+const displayedCard = computed(() => {
+  const queuedCard = currentCard.value
+  const sourceTransliteration = currentSourceCard.value?.transliteration
+  if (!queuedCard || queuedCard.transliteration || !sourceTransliteration) return queuedCard
+  return { ...queuedCard, transliteration: sourceTransliteration }
+})
 const canManageCurrentCard = computed(() => !currentReviewSet.value
   || currentReviewSet.value.accessRole !== 'readonly')
 const canTagCurrentCard = computed(() => Boolean(
@@ -169,9 +188,6 @@ const canTagCurrentCard = computed(() => Boolean(
   && currentReviewSet.value?.accessRole === 'owner'
   && currentSourceCard.value,
 ))
-const quickTagNames = new Set(
-  INTERVAL_FLASHCARD_QUICK_TAGS.map(tag => tag.name.toLocaleLowerCase()),
-)
 const quickTags = computed(() => INTERVAL_FLASHCARD_QUICK_TAGS.map((quickTag) => {
   const tag = (store.tags || []).find(
     item => item.name.toLocaleLowerCase() === quickTag.name.toLocaleLowerCase(),
@@ -181,9 +197,6 @@ const quickTags = computed(() => INTERVAL_FLASHCARD_QUICK_TAGS.map((quickTag) =>
     selected: Boolean(tag && currentCard.value?.tags.includes(tag.id)),
   }
 }))
-const selectableTags = computed(() => (store.tags || []).filter(
-  tag => !quickTagNames.has(tag.name.toLocaleLowerCase()),
-))
 const isFinished = computed(() => session.value?.status === 'completed' || session.value?.status === 'ended')
 const isRunning = computed(() => session.value?.status === 'running')
 const canReplayCurrentSide = computed(() => Boolean(
@@ -212,13 +225,21 @@ const timeLimitReached = computed(() => Boolean(
   session.value?.timeLimitSeconds
   && elapsedSeconds.value >= session.value.timeLimitSeconds,
 ))
+const displayedViewedCount = computed(() => Math.max(
+  session.value?.viewedCount || 0,
+  backgroundViewedTarget.value || 0,
+))
 const completedCards = computed(() => session.value
-  ? session.value.totalCards - session.value.queue.length
+  ? Math.min(
+      session.value.totalCards,
+      session.value.totalCards - session.value.queue.length
+        + Math.max(0, displayedViewedCount.value - session.value.viewedCount),
+    )
   : 0)
 const progressCards = computed(() => {
   if (!session.value?.totalCards) return 0
   return session.value.indefinite
-    ? session.value.viewedCount % session.value.totalCards
+    ? displayedViewedCount.value % session.value.totalCards
     : completedCards.value
 })
 const currentCardPosition = computed(() => session.value?.queue.length
@@ -230,9 +251,13 @@ const progress = computed(() => {
     : 0
   return Math.max(cardProgress, timeLimitProgress.value)
 })
-const firstReviewSide = computed(() => firstFlashcardReviewSide(session.value?.cardSides || 'both'))
+const firstReviewSide = computed(() => firstFlashcardReviewSide(
+  session.value?.cardSides || 'both',
+  session.value?.invertFaces,
+))
 const manualShowingBack = computed(() => session.value?.cardSides === 'back'
-  || (session.value?.cardSides === 'both' && revealed.value))
+  || (session.value?.cardSides === 'both'
+    && (revealed.value ? firstReviewSide.value === 'front' : firstReviewSide.value === 'back')))
 const backSpeechRepeatCount = computed(() => session.value?.mode === 'passive'
   && session.value.speechEnabled
   ? normalizeFlashcardBackSpeechRepeatCount(session.value.backSpeechRepeatCount)
@@ -259,7 +284,13 @@ const passiveSpeechRepeatIndex = computed(() => {
 const passiveProgress = computed(() => {
   tickVersion.value
   if (session.value?.mode !== 'passive') return 0
-  return Math.max(0, Math.min(100, (1 - passiveRemainingMs.value / passiveDurationMs.value) * 100))
+  const remainingMs = backgroundVisualSnapshotReady.value
+    ? backgroundPassiveRemainingMs.value
+    : passiveRemainingMs.value
+  const durationMs = backgroundVisualSnapshotReady.value
+    ? backgroundPassiveDurationMs.value
+    : passiveDurationMs.value
+  return Math.max(0, Math.min(100, (1 - remainingMs / durationMs) * 100))
 })
 const accuracy = computed(() => session.value ? sessionAccuracy(session.value) : undefined)
 const exitDestination = computed(() => route.query.from === 'tasks' ? '/tasks' : '/flashcards')
@@ -275,6 +306,16 @@ const previewSummary = computed(() => {
 const currentSpeechSide = computed<FlashcardReviewSide>(() => session.value?.mode === 'manual'
   ? (manualShowingBack.value ? 'back' : 'front')
   : passiveSide.value)
+const currentSpeechLanguage = computed(() => currentSpeechSide.value === 'front'
+  ? session.value?.frontLanguage || ''
+  : session.value?.backLanguage || '')
+const currentBackDisplay = computed(() => {
+  const reviewSet = store.reviewSets.find(item => item.id === session.value?.reviewSet)
+  return reviewSet?.backDisplay === 'transliteration'
+    || session.value?.backDisplay === 'transliteration'
+    ? 'transliteration'
+    : 'back'
+})
 const canUseNativeBackground = computed(() => Boolean(
   nativeFlashcardBackgroundIsAvailable()
   && session.value?.mode === 'passive'
@@ -307,9 +348,11 @@ const sessionActionItems = computed(() => reviewRunnerSessionMenuItems({
   preview: isReviewSetPreview.value,
   finished: isFinished.value,
   canRestart: Boolean(session.value?.reviewSet),
+  canManageCard: canManageCurrentCard.value && Boolean(currentCard.value),
+  canAddCard: canManageCurrentCard.value,
+  canEjectCard: Boolean(currentCard.value),
+  canUndoEject: Boolean(session.value?.ejectedCount),
 }))
-const sessionActionsDisabled = computed(() => sessionActionItems.value.every(item => item.disabled))
-
 watch([
   loading,
   () => session.value?.status,
@@ -317,9 +360,17 @@ watch([
   () => currentCard.value?.id,
   currentSpeechSide,
   passiveSpeechRepeatIndex,
-], () => {
-  void speakCurrentSide()
+], ([, status, , cardId, side], [, previousStatus, , previousCardId, previousSide]) => {
+  const navigatedWhilePaused = status === 'paused'
+    && previousStatus === 'paused'
+    && (cardId !== previousCardId || side !== previousSide)
+  if (!navigatedWhilePaused) void speakCurrentSide()
 }, { flush: 'post' })
+
+watch(() => currentCard.value?.id, (cardId, previousCardId) => {
+  if (!cardId || !previousCardId || cardId === previousCardId) return
+  resetCurrentCardPhase()
+}, { flush: 'sync' })
 
 watch([
   () => currentCard.value?.id,
@@ -328,6 +379,7 @@ watch([
   if (!cardId || !side || !previousCardId || !previousSide) return
   const cardChanged = cardId !== previousCardId
   const sideChanged = side !== previousSide
+  if (cardChanged || sideChanged) spokenWord.value = undefined
   if (reviewCardTransitionDirection.value) return
 
   if (cardChanged) {
@@ -335,14 +387,12 @@ watch([
   } else if (sideChanged) {
     reviewCardTransitionDirection.value = side === 'back' ? 'next' : 'previous'
   }
-})
+}, { flush: 'sync' })
 
 function scheduleReviewContentFit() {
   void nextTick(() => {
     if (!mounted) return
-    reviewCardPane.value
-      ?.querySelectorAll<HTMLElement>('.fit-review-content, .fit-response-part')
-      .forEach(element => element.dispatchEvent(new Event(REFIT_TEXT_CONTENT_EVENT)))
+    reviewCardPane.value?.refitContent()
   })
 }
 
@@ -350,6 +400,10 @@ watch([
   () => currentCard.value?.id,
   currentSpeechSide,
 ], scheduleReviewContentFit, { flush: 'post' })
+
+watch(sessionActionsSheet, (open, wasOpen) => {
+  if (wasOpen && !open) void finishSessionActions()
+})
 
 watch(shouldKeepScreenAwake, (keepAwake) => {
   if (keepAwake && document.visibilityState === 'visible') void acquireWakeLock()
@@ -385,8 +439,10 @@ onMounted(async () => {
     } else {
       throw new Error('This review could not be found.')
     }
-    const autoplay = route.query.autoplay === '1' && session.value?.status === 'paused'
-    if (autoplay) {
+    const autoResume = !isReviewSetPreview.value
+      && session.value?.status === 'paused'
+      && (session.value.mode === 'manual' || route.query.autoplay === '1')
+    if (autoResume) {
       await resumeReview()
     } else {
       const restoredBackground = await reconcileBackgroundReview()
@@ -469,7 +525,7 @@ function passiveStorageKey(id: string) {
 }
 
 function restorePassiveState(value: FlashcardReviewSession) {
-  passiveSide.value = firstFlashcardReviewSide(value.cardSides)
+  passiveSide.value = firstFlashcardReviewSide(value.cardSides, value.invertFaces)
   passiveRemainingMs.value = passiveDurationMs.value
   if (value.mode !== 'passive') return
   try {
@@ -521,6 +577,21 @@ function tick() {
     || document.visibilityState !== 'visible'
     || (busy.value && !continuePassiveTickWhileBusy)
   ) return
+  if (visibilitySpeechHandoff.value || reconcilingBackground.value) {
+    localElapsedMs.value += delta
+    if (
+      backgroundVisualSnapshotReady.value
+      && session.value?.mode === 'passive'
+      && currentCard.value
+    ) {
+      backgroundPassiveRemainingMs.value = Math.max(
+        0,
+        backgroundPassiveRemainingMs.value - delta,
+      )
+    }
+    tickVersion.value++
+    return
+  }
   localElapsedMs.value += delta
   if (timeLimitReached.value && !completingTimeLimit) {
     completingTimeLimit = true
@@ -551,12 +622,9 @@ function updateProgressFrame() {
 
 async function advancePassive() {
   if (!session.value || session.value.mode !== 'passive' || passiveAdvancing) return
-  if (session.value.cardSides === 'both' && passiveSide.value === 'front') {
-    passiveSide.value = 'back'
-    passiveRemainingMs.value = flashcardBackDurationMs(
-      session.value.backSeconds,
-      backSpeechRepeatCount.value,
-    )
+  if (session.value.cardSides === 'both' && passiveSide.value === firstReviewSide.value) {
+    passiveSide.value = otherFlashcardReviewSide(passiveSide.value)
+    passiveRemainingMs.value = passiveDurationMs.value
     savePassiveState()
     await syncNativeBackground()
     return
@@ -581,16 +649,30 @@ async function navigateLeft(
   transitionDirection: ReviewCardTransitionDirection = 'front',
 ) {
   if (!session.value || !canNavigateCards.value || busy.value) return
+  const speakAfterNavigation = session.value.status === 'paused'
   reviewCardTransitionDirection.value = transitionDirection
-  if (!await performAction('previous')) reviewCardTransitionDirection.value = undefined
+  if (!await performAction('previous')) {
+    reviewCardTransitionDirection.value = undefined
+  } else if (speakAfterNavigation) {
+    lastSpokenKey = ''
+    await nextTick()
+    await speakCurrentSide(true)
+  }
 }
 
 async function navigateRight(
   transitionDirection: ReviewCardTransitionDirection = 'back',
 ) {
   if (!session.value || !canNavigateCards.value || busy.value) return
+  const speakAfterNavigation = session.value.status === 'paused'
   reviewCardTransitionDirection.value = transitionDirection
-  if (!await performAction('next')) reviewCardTransitionDirection.value = undefined
+  if (!await performAction('next')) {
+    reviewCardTransitionDirection.value = undefined
+  } else if (speakAfterNavigation) {
+    lastSpokenKey = ''
+    await nextTick()
+    await speakCurrentSide(true)
+  }
 }
 
 async function performAction(
@@ -607,7 +689,10 @@ async function performAction(
   let succeeded = false
   if (action === 'eject') void prepareFlashcardEjectCue()
   try {
-    const updated = options.viewCount === undefined
+    const replacementIndex = previousQueueLength - previousQueueIndex - 1
+    const updated = action === 'eject' && previousQueueIndex > 0
+      ? await store.act(session.value.id, action, elapsedSeconds.value, 1, replacementIndex)
+      : options.viewCount === undefined
       ? await store.act(session.value.id, action, elapsedSeconds.value)
       : await store.act(session.value.id, action, elapsedSeconds.value, options.viewCount)
     if (action === 'previous' && updated.queue.length) {
@@ -686,11 +771,15 @@ async function pauseReview(markVisibilityPause: boolean) {
   await performAction('pause')
 }
 
-async function startPreviewReview() {
+async function startPreviewReview(replaceActive = false) {
   const preview = previewSession.value
   if (!preview?.reviewSet || busy.value) return
+  if (store.activeSession && !replaceActive) {
+    activeReviewName.value = store.activeSession.name
+    replaceActiveReviewDialog.value = true
+    return
+  }
   sessionActionsSheet.value = false
-  cardMenuOpen.value = false
   busy.value = true
   error.value = ''
   try {
@@ -734,11 +823,42 @@ async function startPreviewReview() {
   }
 }
 
+async function replaceActiveReview() {
+  const active = store.activeSession
+  if (replacingActiveReview.value) return
+  replacingActiveReview.value = true
+  error.value = ''
+  try {
+    if (active) await store.act(active.id, 'end', active.elapsedSeconds)
+    replaceActiveReviewDialog.value = false
+    await startPreviewReview(true)
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not end the active review.'
+  } finally {
+    replacingActiveReview.value = false
+  }
+}
+
 async function resumeReview() {
   if (!session.value || session.value.status !== 'paused' || busy.value) return
   await performAction('resume')
   lastTickAt = Date.now()
   visibilityPaused.value = false
+}
+
+async function openSessionActions() {
+  const value = session.value
+  if (!value || busy.value || isFinished.value) return
+  resumeAfterSessionActions = value.mode === 'passive' && value.status === 'running'
+  if (resumeAfterSessionActions) await pauseReview(false)
+  if (session.value?.id === value.id && !isFinished.value) sessionActionsSheet.value = true
+  else resumeAfterSessionActions = false
+}
+
+async function finishSessionActions() {
+  const shouldResume = resumeAfterSessionActions
+  resumeAfterSessionActions = false
+  if (shouldResume && session.value?.status === 'paused') await resumeReview()
 }
 
 async function restartReview() {
@@ -754,32 +874,45 @@ async function restartReview() {
 }
 
 function handleVisibilityChange() {
+  if (
+    canUseNativeBackground.value
+    && nativeBackgroundReady.value
+  ) {
+    visibilitySpeechHandoff.value = true
+    if (document.visibilityState === 'hidden') backgroundVisualSnapshotReady.value = false
+  }
   visibilityWork = visibilityWork.then(async () => {
-    if (!mounted || isFinished.value) return
-    if (document.visibilityState === 'hidden') {
-      // Android's window flag is harmless in the background and becomes effective
-      // again as soon as the Activity resumes. Keep its holder alive for the whole
-      // review screen; browser wake-lock sentinels must be requested again instead.
-      if (wakeLock?.kind !== 'native-android') await releaseWakeLock()
-      lastSpokenKey = speechKey()
-      await stopFlashcardSpeech()
-      if (canUseNativeBackground.value && nativeBackgroundReady.value) {
-        savePassiveState()
+    let preserveBackgroundHandoff = false
+    try {
+      if (!mounted || isFinished.value) return
+      if (document.visibilityState === 'hidden') {
+        // Android's window flag is harmless in the background and becomes effective
+        // again as soon as the Activity resumes. Keep its holder alive for the whole
+        // review screen; browser wake-lock sentinels must be requested again instead.
+        if (wakeLock?.kind !== 'native-android') await releaseWakeLock()
+        lastSpokenKey = speechKey()
+        if (canUseNativeBackground.value && nativeBackgroundReady.value) {
+          preserveBackgroundHandoff = true
+          savePassiveState()
+          return
+        }
+        await stopFlashcardSpeech()
+        await pauseReview(true)
         return
       }
-      await pauseReview(true)
-      return
-    }
 
-    await acquireWakeLock()
-    if (canUseNativeBackground.value) {
-      const restored = await reconcileBackgroundReview()
-      if (restored) return
+      await acquireWakeLock()
+      if (canUseNativeBackground.value) {
+        const restored = await reconcileBackgroundReview()
+        if (restored) return
+      }
+      if (visibilityPaused.value && session.value?.status === 'paused') {
+        await resumeReview()
+      }
+      await speakCurrentSide()
+    } finally {
+      if (!preserveBackgroundHandoff) visibilitySpeechHandoff.value = false
     }
-    if (visibilityPaused.value && session.value?.status === 'paused') {
-      await resumeReview()
-    }
-    await speakCurrentSide()
   })
 }
 
@@ -801,9 +934,12 @@ async function speakCurrentSide(allowPaused = false) {
   const card = currentCard.value
   const key = speechKey(allowPaused)
   if (
-    loading.value
-    || reconcilingBackground.value
+    reconcilingBackground.value
+    || visibilitySpeechHandoff.value
     || document.visibilityState !== 'visible'
+  ) return
+  if (
+    loading.value
     || !value
     || !card
     || !key
@@ -820,10 +956,14 @@ async function speakCurrentSide(allowPaused = false) {
     const text = side === 'front' ? card.front : card.back
     const language = side === 'front' ? value.frontLanguage : value.backLanguage
     const audio = (side === 'front' ? card.frontAudio : card.backAudio) || ''
+    prepareFlashcardSpeechWordTracking(word => {
+      if (request === speechRequest && speechKey(true) === key) spokenWord.value = word
+    })
     if (audio) await speakFlashcardText(text, language, '', audio)
     else await speakFlashcardText(text, language)
     if (request === speechRequest) speechPlaybackWarning.value = ''
   } catch {
+    if (request === speechRequest) spokenWord.value = undefined
     if (request === speechRequest && !speechFailureWarnedSessionIds.has(value.id)) {
       speechFailureWarnedSessionIds.add(value.id)
       speechFailureSnackbar.value = true
@@ -949,6 +1089,7 @@ function finishReviewCardSwipe(event: PointerEvent) {
   )
   suppressNextManualCardTap()
   if (responseConsumedGesture) return
+  confirmSwipeHint(REVIEW_SET_CARD_SWIPE_HINT.id)
   if (gesture.action === 'previous') void navigateLeft(gesture.transition)
   else if (gesture.action === 'next') void navigateRight(gesture.transition)
   else showReviewCardSide(gesture.action, gesture.transition)
@@ -958,7 +1099,7 @@ function cancelReviewCardSwipe(event: PointerEvent) {
   if (manualSwipeStart?.pointerId === event.pointerId) manualSwipeStart = undefined
 }
 
-function showReviewCardSide(
+async function showReviewCardSide(
   side: FlashcardReviewSide,
   transitionDirection: ReviewCardTransitionDirection = side === 'back' ? 'next' : 'previous',
 ) {
@@ -971,17 +1112,23 @@ function showReviewCardSide(
     || busy.value
   ) return
 
+  const speakAfterNavigation = value.status === 'paused'
   reviewCardTransitionDirection.value = transitionDirection
   lastSpokenKey = ''
   if (value.mode === 'manual') {
-    revealed.value = side === 'back'
-    return
+    revealed.value = side !== firstReviewSide.value
+  } else {
+    passiveSide.value = side
+    passiveRemainingMs.value = passiveDurationMs.value
+    savePassiveState()
+    void syncNativeBackground()
   }
 
-  passiveSide.value = side
-  passiveRemainingMs.value = passiveDurationMs.value
-  savePassiveState()
-  void syncNativeBackground()
+  if (speakAfterNavigation) {
+    await nextTick()
+    await stopFlashcardSpeech()
+    await speakCurrentSide(true)
+  }
 }
 
 function handlePassiveCardTap() {
@@ -997,20 +1144,8 @@ function handleReviewCardTap() {
   else handlePassiveCardTap()
 }
 
-function suppressTagClickAfterSwipe(event: MouseEvent) {
-  if (!suppressManualCardTap) return
-  suppressManualCardTap = false
-  if (manualCardTapResetTimer) {
-    window.clearTimeout(manualCardTapResetTimer)
-    manualCardTapResetTimer = undefined
-  }
-  event.preventDefault()
-  event.stopPropagation()
-}
-
 function finishReviewCardTransition() {
   reviewCardTransitionDirection.value = undefined
-  scheduleReviewContentFit()
 }
 
 async function syncNativeBackground() {
@@ -1038,7 +1173,7 @@ async function reconcileBackgroundReview(
 ) {
   const value = session.value
   if (!value || !nativeFlashcardBackgroundIsAvailable()) return false
-  const state = providedState || await backgroundFlashcardReviewState()
+  let state = providedState || await backgroundFlashcardReviewState()
   if (!state) return false
   if (state.sessionId !== value.id) {
     await stopBackgroundFlashcardReview()
@@ -1052,6 +1187,22 @@ async function reconcileBackgroundReview(
   }
 
   reconcilingBackground.value = true
+  applyBackgroundProgressSnapshot(value, state)
+  if (document.visibilityState === 'visible') {
+    await waitForFlashcardSpeechHandoff(async () => {
+      const currentState = await backgroundFlashcardReviewState()
+      if (currentState?.sessionId !== value.id) return
+      state = currentState
+      applyBackgroundProgressSnapshot(value, currentState)
+    })
+    if (document.visibilityState !== 'visible') {
+      reconcilingBackground.value = false
+      return true
+    }
+    state = await backgroundFlashcardReviewState() || state
+    applyBackgroundProgressSnapshot(value, state)
+  }
+
   nativeBackgroundReady.value = false
   await stopFlashcardSpeech()
   await stopBackgroundFlashcardReview(false)
@@ -1083,6 +1234,8 @@ async function reconcileBackgroundReview(
     savePassiveState()
   }
   reconcilingBackground.value = false
+  backgroundViewedTarget.value = undefined
+  backgroundVisualSnapshotReady.value = false
 
   if (!reconciledAllViews) return true
   await stopBackgroundFlashcardReview()
@@ -1093,14 +1246,31 @@ async function reconcileBackgroundReview(
   return true
 }
 
+function applyBackgroundProgressSnapshot(
+  value: FlashcardReviewSession,
+  state: BackgroundFlashcardReviewState,
+) {
+  backgroundViewedTarget.value = value.viewedCount + Math.max(0, state.completedCards)
+  localElapsedMs.value = Math.max(localElapsedMs.value, state.elapsedMs)
+  backgroundPassiveRemainingMs.value = Math.max(0, state.remainingMs)
+  backgroundPassiveDurationMs.value = state.side === 'front'
+    ? Math.max(1000, value.frontSeconds * 1000)
+    : flashcardBackDurationMs(value.backSeconds, value.backSpeechRepeatCount)
+  lastTickAt = Date.now()
+  backgroundVisualSnapshotReady.value = true
+  tickVersion.value++
+}
+
 function copySessionSettings(value: FlashcardReviewSession) {
   Object.assign(sessionSettingsDraft, {
     mode: value.mode,
     cardSides: value.cardSides,
+    invertFaces: value.invertFaces === true,
     indefinite: value.indefinite,
     timeLimitSeconds: value.timeLimitSeconds || 0,
     maxCards: value.maxCards,
     ejectBehavior: value.ejectBehavior,
+    ejectExcludeAfter: value.ejectExcludeAfter,
     frontSeconds: value.frontSeconds,
     backSeconds: value.backSeconds,
     backSpeechRepeatCount: value.backSpeechRepeatCount,
@@ -1114,10 +1284,10 @@ function copySessionSettings(value: FlashcardReviewSession) {
 }
 
 async function openSessionSettings() {
-  cardMenuOpen.value = false
   const value = session.value
   if (!value || busy.value) return
-  resumeAfterSessionSettings = value.status === 'running'
+  resumeAfterSessionSettings = resumeAfterSessionSettings
+    || (value.mode === 'passive' && value.status === 'running')
   if (resumeAfterSessionSettings) await pauseReview(false)
   if (!session.value || isFinished.value) return
   copySessionSettings(session.value)
@@ -1136,7 +1306,10 @@ async function closeSessionSettings() {
   sessionSettingsApplyMenu.value = false
   sessionSettingsDialog.value = false
   sessionSettingsError.value = ''
-  if (resumeAfterSessionSettings && session.value?.status === 'paused') {
+  if (
+    session.value?.status === 'paused'
+    && (resumeAfterSessionSettings || session.value.mode === 'manual')
+  ) {
     await resumeReview()
   }
   resumeAfterSessionSettings = false
@@ -1186,9 +1359,9 @@ function applySessionSettingsTo(target: FlashcardSettingsApplyTarget) {
 }
 
 async function openCardEditor(action: 'add' | 'edit') {
-  cardMenuOpen.value = false
   if (!session.value || busy.value || !canManageCurrentCard.value) return
-  resumeAfterCardEditor = session.value.status === 'running'
+  resumeAfterCardEditor = resumeAfterCardEditor
+    || (session.value.mode === 'passive' && session.value.status === 'running')
   if (resumeAfterCardEditor) await pauseReview(false)
   try {
     if (currentReviewSet.value && currentReviewSet.value.accessRole !== 'owner') {
@@ -1209,20 +1382,6 @@ async function closeCardEditor(open: boolean) {
   if (!open) resumeAfterCardEditor = false
 }
 
-async function openCardTagSheet() {
-  if (!canTagCurrentCard.value || cardTagSaving.value || !selectableTags.value.length || !session.value) return
-  resumeAfterCardTagSheet = session.value.status === 'running'
-  if (resumeAfterCardTagSheet) await pauseReview(false)
-  if (session.value && !isFinished.value) cardTagSheet.value = true
-  else await closeCardTagSheet(false)
-}
-
-async function closeCardTagSheet(open: boolean) {
-  cardTagSheet.value = open
-  if (!open && resumeAfterCardTagSheet && session.value?.status === 'paused') await resumeReview()
-  if (!open) resumeAfterCardTagSheet = false
-}
-
 function currentCardHasTag(tagId: string) {
   return Boolean(currentCard.value?.tags.includes(tagId))
 }
@@ -1233,8 +1392,8 @@ async function toggleCurrentCardTag(tag: FlashcardTag | { name: string }) {
   cardTagSaving.value = 'id' in tag ? tag.id : tag.name
   try {
     const resolvedTag = 'id' in tag ? tag : await store.createTag(tag.name)
-    const action = currentCardHasTag(resolvedTag.id) ? 'remove_tags' : 'add_tags'
-    const updatedCards = await store.bulkUpdateCards(action, [cardId], [resolvedTag.id])
+    const update = flashcardTagToggleUpdate(currentCard.value?.tags || [], resolvedTag, store.tags)
+    const updatedCards = await store.bulkUpdateCards(update.action, [cardId], update.values)
     const updatedCard = updatedCards.find(card => card.id === cardId)
     if (!updatedCard) throw new Error('The flashcard could not be updated.')
     handleCardSaved(updatedCard)
@@ -1268,7 +1427,6 @@ function handleCardSaved(card: Flashcard) {
 }
 
 function requestCurrentCardDeletion() {
-  cardMenuOpen.value = false
   if (!canManageCurrentCard.value) return
   deleteCardId.value = currentCard.value?.id || ''
   deleteCardDialog.value = Boolean(deleteCardId.value)
@@ -1298,30 +1456,45 @@ async function deleteCurrentCard() {
   }
 }
 
-function handleSessionMenuAction(action: FlashcardContextAction) {
+async function handleSessionMenuAction(action: FlashcardContextAction) {
   if (action === 'add' || action === 'edit') {
-    void openCardEditor(action)
+    resumeAfterCardEditor = resumeAfterCardEditor || resumeAfterSessionActions
+    resumeAfterSessionActions = false
+    await openCardEditor(action)
   } else if (action === 'settings') {
-    void openSessionSettings()
+    resumeAfterSessionSettings = resumeAfterSessionSettings || resumeAfterSessionActions
+    resumeAfterSessionActions = false
+    await openSessionSettings()
   } else if (action === 'remove') {
+    await finishSessionActions()
     requestCurrentCardDeletion()
   } else if (action === 'eject') {
-    void ejectCurrentCard()
+    await finishSessionActions()
+    await ejectCurrentCard()
   } else if (action === 'undo_eject') {
-    void undoLastEject()
+    await finishSessionActions()
+    await undoLastEject()
   }
 }
 
-function handleRunnerSessionAction(action: RunnerSessionAction) {
-  if (action === 'options') cardMenuOpen.value = true
-  else if (action === 'amplification') void toggleSpeechOverAmplification()
-  else if (action === 'eject') void ejectCurrentCard()
-  else if (action === 'restart') void restartReview()
-  else if (action === 'end') endDialog.value = true
+async function handleRunnerSessionAction(action: RunnerSessionAction) {
+  if (
+    action === 'add'
+    || action === 'edit'
+    || action === 'settings'
+    || action === 'remove'
+    || action === 'eject'
+    || action === 'undo_eject'
+  ) await handleSessionMenuAction(action)
+  else {
+    await finishSessionActions()
+    if (action === 'amplification') await toggleSpeechOverAmplification()
+    else if (action === 'restart') await restartReview()
+    else if (action === 'end') endDialog.value = true
+  }
 }
 
 async function ejectCurrentCard() {
-  cardMenuOpen.value = false
   if (!session.value || busy.value) return
   const restorePaused = session.value.status === 'paused'
   if (restorePaused) await resumeReview()
@@ -1330,7 +1503,6 @@ async function ejectCurrentCard() {
 }
 
 async function undoLastEject() {
-  cardMenuOpen.value = false
   if (!session.value || session.value.ejectedCount <= 0 || busy.value) return
   const restorePaused = session.value.status === 'paused'
   if (restorePaused) await resumeReview()
@@ -1369,12 +1541,11 @@ async function leaveRunner() {
           icon="mdi-chevron-down"
           variant="text"
           aria-label="Leave review"
-          :disabled="busy"
           @click="leaveRunner"
         />
         <div class="runner-header__title min-width-0">
           <strong class="text-truncate">{{ session.name }}</strong>
-          <span v-if="session.indefinite">{{ session.viewedCount }} viewed · looping</span>
+          <span v-if="session.indefinite">{{ displayedViewedCount }} viewed · looping</span>
           <span v-else>{{ completedCards }} of {{ session.totalCards }}</span>
         </div>
         <div class="runner-header__actions">
@@ -1383,9 +1554,8 @@ async function leaveRunner() {
             variant="text"
             class="runner-actions-button"
             aria-label="Review actions"
-            :disabled="sessionActionsDisabled"
             @touchstart.stop
-            @click.stop="sessionActionsSheet = true"
+            @click.stop="openSessionActions"
           />
         </div>
       </header>
@@ -1428,7 +1598,7 @@ async function leaveRunner() {
         primary-label="Start review"
         cancel-label="Cancel review"
         :busy="busy"
-        @start="startPreviewReview"
+        @start="startPreviewReview()"
         @cancel="leaveRunner"
       />
 
@@ -1471,217 +1641,43 @@ async function leaveRunner() {
           </span>
         </div>
 
-        <div ref="reviewCardPane" class="review-card-pane">
-          <div
-            class="review-card-stack"
-            @pointerdown="beginReviewCardSwipe"
-            @pointermove="moveReviewCardSwipe"
-            @pointerup="finishReviewCardSwipe"
-            @pointercancel="cancelReviewCardSwipe"
-            @lostpointercapture="cancelReviewCardSwipe"
-            @click="handleReviewCardTap"
-          >
-            <div class="review-card-window">
-            <button
-              v-if="session.mode === 'manual'"
-              v-ripple
-              type="button"
-              class="review-card"
-              :class="{ 'review-card--back': manualShowingBack }"
-              :aria-label="session.speechEnabled
-                ? `Replay ${currentSpeechSide} speech`
-                : session.cardSides === 'both' && !revealed ? 'Show answer' : `${currentSpeechSide} shown`"
-              :disabled="busy"
-            >
-              <transition
-                :name="reviewCardTransitionDirection
-                  ? `review-card-image-${reviewCardTransitionDirection}`
-                  : 'review-card-image'"
-              >
-                <img
-                  v-if="currentCard.image"
-                  :key="currentCard.id"
-                  :src="currentCard.image"
-                  alt=""
-                  class="review-card__image"
-                />
-              </transition>
-              <small>{{ manualShowingBack ? 'Back' : 'Front' }}</small>
-              <span class="review-card__content-window">
-                <transition
-                  :name="reviewCardTransitionDirection
-                    ? `standalone-review-content-${reviewCardTransitionDirection}`
-                    : undefined"
-                  @after-enter="finishReviewCardTransition"
-                >
-                  <FitReviewContent
-                    :key="`manual-front-${currentCard.id}`"
-                    v-show="!manualShowingBack"
-                    :text="currentCard.front"
-                    :aria-hidden="manualShowingBack"
-                  />
-                </transition>
-                <transition
-                  :name="reviewCardTransitionDirection
-                    ? `standalone-review-content-${reviewCardTransitionDirection}`
-                    : undefined"
-                  @after-enter="finishReviewCardTransition"
-                >
-                  <span
-                    :key="`manual-back-${currentCard.id}`"
-                    v-show="manualShowingBack"
-                    class="review-card__content"
-                    :aria-hidden="!manualShowingBack"
-                  >
-                    <span class="review-card__answer">
-                      <span v-if="session.cardSides === 'both'" class="review-card__front-reference">
-                        {{ currentCard.front }}
-                      </span>
-                      <FlashcardResponseText
-                        :back="currentCard.back"
-                        :transliteration="currentCard.transliteration"
-                        :note="currentCard.note"
-                        :back-display="session.backDisplay"
-                        show-transliteration
-                        fit-largest-word
-                      />
-                    </span>
-                  </span>
-                </transition>
-              </span>
-              <span v-if="session.speechEnabled" class="review-card__hint">
-                <v-icon icon="mdi-volume-high" size="18" /> Tap to replay
-              </span>
-              <span v-else-if="session.cardSides === 'both' && !revealed" class="review-card__hint">
-                <v-icon icon="mdi-gesture-tap" size="18" /> Tap to reveal
-              </span>
-            </button>
-
-            <div
-              v-else
-              v-ripple="canReplayCurrentSide"
-              class="passive-card"
-              :class="{ 'passive-card--interactive': canReplayCurrentSide }"
-              :role="session.speechEnabled ? 'button' : undefined"
-              :tabindex="canReplayCurrentSide ? 0 : undefined"
-              :aria-label="session.speechEnabled ? `Replay ${passiveSide} speech` : undefined"
-              :aria-disabled="session.speechEnabled ? !canReplayCurrentSide : undefined"
-              @keydown.enter="replayCurrentSide"
-              @keydown.space.prevent="replayCurrentSide"
-            >
-              <transition
-                :name="reviewCardTransitionDirection
-                  ? `review-card-image-${reviewCardTransitionDirection}`
-                  : 'review-card-image'"
-              >
-                <img
-                  v-if="currentCard.image"
-                  :key="currentCard.id"
-                  :src="currentCard.image"
-                  alt=""
-                  class="review-card__image"
-                />
-              </transition>
-              <div class="passive-card__content">
-                <small>{{ passiveSide === 'front' ? 'Front' : 'Back' }}</small>
-                <span class="review-card__content-window">
-                  <transition
-                    :name="reviewCardTransitionDirection
-                      ? `standalone-review-content-${reviewCardTransitionDirection}`
-                      : undefined"
-                    @after-enter="finishReviewCardTransition"
-                  >
-                    <FitReviewContent
-                      :key="`passive-front-${currentCard.id}`"
-                      v-show="passiveSide === 'front'"
-                      :text="currentCard.front"
-                      :aria-hidden="passiveSide !== 'front'"
-                    />
-                  </transition>
-                  <transition
-                    :name="reviewCardTransitionDirection
-                      ? `standalone-review-content-${reviewCardTransitionDirection}`
-                      : undefined"
-                    @after-enter="finishReviewCardTransition"
-                  >
-                    <span
-                      :key="`passive-back-${currentCard.id}`"
-                      v-show="passiveSide === 'back'"
-                      class="review-card__content"
-                      :aria-hidden="passiveSide !== 'back'"
-                    >
-                      <span class="review-card__answer">
-                        <FlashcardResponseText
-                          :back="currentCard.back"
-                          :transliteration="currentCard.transliteration"
-                          :note="currentCard.note"
-                          :back-display="session.backDisplay"
-                          show-transliteration
-                          fit-largest-word
-                        />
-                        <span
-                          v-if="session.cardSides === 'both'"
-                          class="review-card__front-reference"
-                        >
-                          {{ currentCard.front }}
-                        </span>
-                      </span>
-                    </span>
-                  </transition>
-                </span>
-                <span v-if="session.speechEnabled" class="review-card__hint">
-                  <v-icon icon="mdi-volume-high" size="18" /> Tap to replay
-                </span>
-              </div>
-              <v-progress-linear
-                class="review-progress"
-                :model-value="passiveProgress"
-                color="secondary"
-                bg-color="white"
-                :bg-opacity="0.14"
-                height="6"
-                rounded
-              />
-            </div>
-            </div>
-          </div>
-
-          <footer
-            v-if="store.tags"
-            class="review-card__tag-actions"
-            aria-label="Flashcard tags"
-            @click.capture="suppressTagClickAfterSwipe"
-            @click.stop
-          >
-            <div class="review-card__quick-tags">
-              <v-chip
-                v-for="tag in quickTags"
-                :key="tag.name"
-                class="review-card__tag-control review-card__quick-tag"
-                :data-tag-name="tag.name"
-                label
-                :color="tag.selected ? tag.color : undefined"
-                :variant="tag.selected ? 'flat' : 'outlined'"
-                :prepend-icon="tag.selected ? 'mdi-check' : 'mdi-tag-outline'"
-                :disabled="!canTagCurrentCard"
-                :aria-pressed="tag.selected"
-                :aria-label="`${tag.selected ? 'Remove' : 'Add'} ${tag.name} tag`"
-                @click.stop="toggleCurrentCardTag({ name: tag.name })"
-              >
-                {{ tag.name }}
-              </v-chip>
-            </div>
-            <v-btn
-              class="review-card__tag-control review-card__tag-menu-button"
-              variant="text"
-              prepend-icon="mdi-tag-multiple-outline"
-              :disabled="!canTagCurrentCard || !selectableTags.length"
-              @click.stop="openCardTagSheet"
-            >
-              Tags
-            </v-btn>
-          </footer>
-        </div>
+        <ReviewSetCard
+          ref="reviewCardPane"
+          :card="displayedCard || currentCard"
+          :side="currentSpeechSide"
+          :mode="session.mode"
+          :card-sides="session.cardSides"
+          :invert-faces="session.invertFaces"
+          :back-display="currentBackDisplay"
+          :disabled="busy"
+          :revealed="revealed"
+          :speech-enabled="session.speechEnabled"
+          :speech-language="currentSpeechLanguage"
+          :spoken-word="spokenWord"
+          :can-replay="canReplayCurrentSide"
+          :transition-direction="reviewCardTransitionDirection"
+          :progress="passiveProgress"
+          :show-tag-actions="Boolean(store.tags)"
+          :quick-tags="quickTags"
+          :can-tag="canTagCurrentCard"
+          ejectable
+          :eject-disabled="isReviewSetPreview || !currentCard"
+          @pointer-down="beginReviewCardSwipe"
+          @pointer-move="moveReviewCardSwipe"
+          @pointer-up="finishReviewCardSwipe"
+          @pointer-cancel="cancelReviewCardSwipe"
+          @lost-pointer-capture="cancelReviewCardSwipe"
+          @activate="handleReviewCardTap"
+          @replay="replayCurrentSide"
+          @after-enter="finishReviewCardTransition"
+          @toggle-tag="toggleCurrentCardTag({ name: $event })"
+          @eject="ejectCurrentCard"
+          @previous="navigateLeft"
+          @next="navigateRight"
+          @flip="showReviewCardSide"
+          @toggle-playback="session.mode === 'passive'
+            && (session.status === 'paused' ? resumeReview() : pauseReview(false))"
+        />
 
         <div v-if="session.mode === 'manual'" class="grading-actions">
           <v-btn
@@ -1692,7 +1688,7 @@ async function leaveRunner() {
             :disabled="busy || session.status === 'paused'"
             @click="revealed = true"
           >
-            Show answer
+            {{ session.invertFaces ? 'Show front' : 'Show answer' }}
           </v-btn>
           <template v-else>
             <v-btn
@@ -1719,23 +1715,26 @@ async function leaveRunner() {
           </template>
         </div>
 
-        <footer class="review-navigation" aria-label="Review navigation">
+        <footer
+          class="review-navigation"
+          :class="{ 'review-navigation--manual': session.mode === 'manual' }"
+          aria-label="Review navigation"
+        >
           <div class="review-navigation__control">
             <v-btn
               icon="mdi-skip-previous"
               variant="tonal"
               size="large"
               aria-label="Previous card"
-              :disabled="!canNavigateCards || busy"
+              :disabled="!canNavigateCards"
               @click="navigateLeft"
             />
           </div>
-          <div class="review-navigation__control">
+          <div v-if="session.mode === 'passive'" class="review-navigation__control">
             <v-btn
               :icon="session.status === 'paused' ? 'mdi-play' : 'mdi-pause'"
               color="secondary"
               size="x-large"
-              :loading="busy"
               :aria-label="isReviewSetPreview
                 ? 'Start review'
                 : session.status === 'paused' ? 'Resume review' : 'Pause review'"
@@ -1751,36 +1750,11 @@ async function leaveRunner() {
               variant="tonal"
               size="large"
               aria-label="Next card"
-              :disabled="!canNavigateCards || busy"
+              :disabled="!canNavigateCards"
               @click="navigateRight"
             />
           </div>
         </footer>
-
-        <div class="review-card-actions d-flex justify-center ga-2">
-          <v-btn
-            size="large"
-            variant="text"
-            color="warning"
-            prepend-icon="mdi-eject-outline"
-            aria-label="Eject current card"
-            :disabled="isReviewSetPreview || busy || !currentCard"
-            @click="ejectCurrentCard"
-          >
-            Eject card
-          </v-btn>
-          <v-btn
-            size="large"
-            variant="text"
-            :disabled="isReviewSetPreview || busy"
-            @click="cardMenuOpen = true"
-          >
-            <template #prepend>
-              <v-icon icon="mdi-dots-horizontal" size="1.125rem" />
-            </template>
-            Options
-          </v-btn>
-        </div>
 
       </section>
     </div>
@@ -1793,46 +1767,6 @@ async function leaveRunner() {
       :items="sessionActionItems"
       @action="handleRunnerSessionAction"
     />
-
-    <FlashcardContextActions
-      v-if="session && !isReviewSetPreview && !loading"
-      v-model="cardMenuOpen"
-      :busy="busy"
-      :can-manage-card="canManageCurrentCard && Boolean(currentCard)"
-      :can-add-card="canManageCurrentCard"
-      :can-eject-card="Boolean(currentCard)"
-      show-undo-eject
-      :can-undo-eject="Boolean(session?.ejectedCount)"
-      @action="handleSessionMenuAction"
-    />
-
-    <ActionBottomSheet
-      v-if="store.tags"
-      :model-value="cardTagSheet"
-      title="Tag flashcard"
-      description="Choose any additional tags for this card. Easy and hard stay pinned on the card."
-      aria-label="Choose flashcard tags"
-      @update:model-value="closeCardTagSheet"
-    >
-      <v-list-item
-        v-for="tag in selectableTags"
-        :key="tag.id"
-        :data-tag-id="tag.id"
-        :title="tag.name"
-        :prepend-icon="currentCardHasTag(tag.id) ? 'mdi-check-circle' : 'mdi-tag-outline'"
-        :active="currentCardHasTag(tag.id)"
-        :disabled="Boolean(cardTagSaving)"
-        rounded="lg"
-        @click="toggleCurrentCardTag(tag)"
-      />
-      <v-list-item
-        v-if="!selectableTags.length"
-        prepend-icon="mdi-tag-off-outline"
-        title="No other tags available"
-        disabled
-        rounded="lg"
-      />
-    </ActionBottomSheet>
 
     <FlashcardCardDialog
       :model-value="cardEditorDialog"
@@ -1937,6 +1871,16 @@ async function leaveRunner() {
     </AppDialog>
 
     <ConfirmDialog
+      v-model="replaceActiveReviewDialog"
+      title="End the active review?"
+      :message="`${activeReviewName || 'Another review'} is already in progress. End it and start ${previewSession?.name || 'this review'} instead?`"
+      confirm-text="End and continue"
+      confirm-color="warning"
+      icon="mdi-alert-outline"
+      :loading="replacingActiveReview || busy"
+      @confirm="replaceActiveReview"
+    />
+    <ConfirmDialog
       v-model="endDialog"
       title="End this review?"
       message="Partial statistics will be saved, but an attached task will remain incomplete."
@@ -1962,6 +1906,7 @@ async function leaveRunner() {
 <style scoped>
 .review-runner { position: fixed; z-index: 1003; inset: 0; display: flex; width: 100%; max-width: 100vw; height: 100dvh; min-height: 0; flex-direction: column; overflow: hidden; background: radial-gradient(circle at 50% 26%, rgba(var(--v-theme-secondary), .08), transparent 34rem), rgb(var(--v-theme-background)); color: rgb(var(--v-theme-on-background)); }
 .review-screen { display: flex; width: 100%; min-height: 0; flex: 1 1 auto; flex-direction: column; }
+.review-screen > .review-progress { position: relative; z-index: 1; flex: 0 0 auto; }
 .review-progress,
 .review-progress :deep(.v-progress-linear__determinate) { transition: none; }
 .runner-header { display: grid; width: 100%; max-width: 54.25rem; min-height: calc(4rem + max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem))); margin-inline: auto; padding: max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem)) 1rem 0; grid-template-columns: 2.75rem minmax(0, 1fr) auto; align-items: center; gap: .75rem; }
@@ -1982,77 +1927,8 @@ async function leaveRunner() {
 .runner-meta > div { display: flex; align-items: center; gap: .4rem; }
 .runner-meta__card-count { justify-self: center; }
 .runner-meta__elapsed { justify-self: end; }
-.review-card-pane { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); flex: 1 1 auto; flex-direction: column; }
-.review-card-stack { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); flex: 1 1 auto; flex-direction: column; touch-action: none; }
-.review-card-window { display: grid; width: 100%; min-height: min(38dvh, 22rem); flex: 1 1 auto; overflow: hidden; border-radius: 1.5rem; }
-.review-card-window,
-.review-card-window * { pointer-events: none; }
-.review-card-window :deep(.flashcard-response-text) { pointer-events: auto; }
-.review-card-window > * { width: 100%; min-height: inherit; grid-area: 1 / 1; }
-.review-card { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); padding: 2rem 2rem 5.5rem; border: .0625rem solid rgba(var(--v-theme-on-surface), .1); border-radius: 1.5rem; align-items: center; flex: 1 1 auto; flex-direction: column; gap: 1.5rem; overflow: hidden; background: rgb(var(--v-theme-surface)); color: inherit; cursor: pointer; font: inherit; text-align: center; touch-action: none; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); }
-.review-card > :not(.review-card__image), .passive-card > :not(.review-card__image) { position: relative; z-index: 1; }
-.review-card__image { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .58; pointer-events: none; filter: brightness(.42) saturate(.82); }
-.review-card-image-enter-active,
-.review-card-image-leave-active,
-.review-card-image-next-enter-active,
-.review-card-image-next-leave-active,
-.review-card-image-previous-enter-active,
-.review-card-image-previous-leave-active,
-.review-card-image-front-enter-active,
-.review-card-image-front-leave-active,
-.review-card-image-back-enter-active,
-.review-card-image-back-leave-active {
-  transition: opacity 200ms ease, transform 220ms cubic-bezier(.22, 1, .36, 1);
-}
-.review-card-image-enter-from,
-.review-card-image-leave-to { opacity: 0; }
-.review-card-image-next-enter-from,
-.review-card-image-previous-leave-to { opacity: 0; transform: translateX(1.5rem); }
-.review-card-image-next-leave-to,
-.review-card-image-previous-enter-from { opacity: 0; transform: translateX(-1.5rem); }
-.review-card-image-back-enter-from,
-.review-card-image-front-leave-to { opacity: 0; transform: translateY(1.5rem); }
-.review-card-image-back-leave-to,
-.review-card-image-front-enter-from { opacity: 0; transform: translateY(-1.5rem); }
-.review-card--back { border-color: rgba(var(--v-theme-secondary), .34); }
-.review-card :deep(.v-ripple__container) { z-index: 2; }
-.review-card:focus-visible { outline: .1875rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .25rem; }
-.review-card small,
-.passive-card small { color: rgba(var(--v-theme-on-surface), .48); font-size: .68rem; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
-.review-card strong,
-.passive-card strong { max-width: 34rem; overflow-wrap: anywhere; font-size: clamp(1.3rem, 5vw, 2.1rem); font-weight: 850; line-height: 1.35; white-space: pre-wrap; }
-.review-card__content-window { position: relative; width: 100%; height: 0; min-height: 0; flex: 1 1 0; overflow: hidden; }
-.review-card__content { position: absolute; display: flex; inset: 0; width: 100%; height: 100%; min-height: 0; max-height: 100%; align-items: center; align-self: stretch; justify-content: center; flex-direction: column; overflow: hidden; font-size: var(--fit-review-content-size, 3.6rem); }
-.review-card__answer { position: absolute; display: flex; inset: 0; width: 100%; height: 100%; min-width: 0; min-height: 0; max-height: 100%; align-items: center; justify-content: center; flex-direction: column; gap: .45rem; overflow: hidden; }
-.review-card__front-reference { max-width: 30rem; overflow-wrap: anywhere; color: rgba(var(--v-theme-on-surface), .48); font-size: clamp(.72rem, 2.2vw, .88rem); line-height: 1.4; white-space: pre-wrap; }
-.review-card__hint { display: flex; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .48); font-size: .72rem; font-weight: 800; }
-.passive-card { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); padding: 2rem 2rem 5.5rem; border: .0625rem solid rgba(var(--v-theme-secondary), .28); border-radius: 1.5rem; align-items: center; flex: 1 1 auto; flex-direction: column; gap: 1.5rem; overflow: hidden; background: rgb(var(--v-theme-surface)); color: inherit; font: inherit; text-align: center; touch-action: none; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); }
-.passive-card--interactive { cursor: pointer; }
-.passive-card__content { display: flex; width: 100%; min-width: 0; min-height: 0; flex: 1 1 auto; align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem; overflow: hidden; }
-.passive-card .v-progress-linear { width: min(20rem, 100%); flex: 0 0 auto; }
-.review-card__tag-actions { position: absolute; z-index: 3; right: 1.5rem; bottom: 1.25rem; left: 1.5rem; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: .5rem; }
-.review-card__quick-tags { display: flex; grid-column: 1; justify-self: start; gap: .5rem; }
-.review-card__quick-tag.v-chip--variant-outlined { border-color: rgba(var(--v-theme-on-surface), .18); }
-.review-card__tag-menu-button { min-width: 0; grid-column: 3; justify-self: end; }
-.standalone-review-content-next-enter-active,
-.standalone-review-content-next-leave-active,
-.standalone-review-content-previous-enter-active,
-.standalone-review-content-previous-leave-active,
-.standalone-review-content-front-enter-active,
-.standalone-review-content-front-leave-active,
-.standalone-review-content-back-enter-active,
-.standalone-review-content-back-leave-active {
-  transition: opacity 160ms ease, transform 180ms cubic-bezier(.22, 1, .36, 1);
-}
-.standalone-review-content-next-enter-from,
-.standalone-review-content-previous-leave-to { opacity: 0; transform: translateX(1.5rem); }
-.standalone-review-content-next-leave-to,
-.standalone-review-content-previous-enter-from { opacity: 0; transform: translateX(-1.5rem); }
-.standalone-review-content-back-enter-from,
-.standalone-review-content-front-leave-to { opacity: 0; transform: translateY(1.5rem); }
-.standalone-review-content-back-leave-to,
-.standalone-review-content-front-enter-from { opacity: 0; transform: translateY(-1.5rem); }
 .review-navigation { display: grid; width: 100%; max-width: 54.25rem; margin: auto auto 0; padding-top: .25rem; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; justify-items: center; gap: 1rem; }
+.review-navigation--manual { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .review-navigation__control { display: flex; min-width: 0; align-items: center; }
 .grading-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
 .grading-actions > .v-btn:only-child { grid-column: 1 / -1; }
@@ -2144,76 +2020,8 @@ async function leaveRunner() {
     justify-self: auto;
   }
 
-  .review-card-pane {
-    display: contents;
-  }
-
-  .review-card-stack {
-    height: 100%;
-    min-height: 0;
-    grid-column: 1;
-    grid-row: 1 / 5;
-  }
-
-  .review-card-window {
-    height: 100%;
-    min-height: 0;
-  }
-
-  .review-card,
-  .passive-card {
-    height: 100%;
-    min-height: 0;
-  }
-
-  .review-card,
-  .passive-card {
-    padding: clamp(1rem, 3dvh, 1.5rem) 1.5rem;
-    gap: clamp(.75rem, 2dvh, 1.25rem);
-  }
-
-  .passive-card__content {
-    gap: 0;
-  }
-
-  .review-card__tag-actions {
-    position: static;
-    display: flex;
-    width: 100%;
-    max-width: none;
-    padding-left: 1rem;
-    grid-column: 2;
-    grid-row: 3;
-    align-self: end;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    margin-bottom: 4.375rem;
-    border-left: .0625rem solid rgb(var(--v-theme-on-surface) / .12);
-  }
-
-  .review-card__quick-tags {
-    flex-wrap: wrap;
-  }
-
-  .review-card__tag-menu-button {
-    height: 2rem;
-    min-width: 0;
-    padding-inline: .5rem;
-    grid-column: auto;
-    justify-self: auto;
-    font-size: .75rem;
-  }
-
-  .review-card__quick-tag {
-    height: 1.75rem;
-    padding-inline: .5rem;
-    font-size: .75rem;
-  }
-
   .grading-actions,
-  .review-navigation,
-  .review-card-actions {
+  .review-navigation {
     padding-left: 1rem;
     border-left: .0625rem solid rgb(var(--v-theme-on-surface) / .12);
   }
@@ -2244,67 +2052,10 @@ async function leaveRunner() {
     height: clamp(2.75rem, 11dvh, 3.5rem);
   }
 
-  .review-navigation__control:nth-child(2) :deep(.v-btn) {
+  .review-navigation:not(.review-navigation--manual) .review-navigation__control:nth-child(2) :deep(.v-btn) {
     width: clamp(3rem, 13dvh, 4rem);
     height: clamp(3rem, 13dvh, 4rem);
   }
 
-  .review-card-actions {
-    display: grid !important;
-    padding-top: .25rem;
-    grid-column: 2;
-    grid-row: 4;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: .25rem !important;
-  }
-
-  .review-card-actions .v-btn {
-    min-width: 0;
-    min-height: 2.75rem;
-    padding-inline: .5rem;
-  }
-
-  .review-card-actions :deep(.v-btn__content) {
-    overflow: hidden;
-    font-size: .75rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .review-card-image-enter-active,
-  .review-card-image-leave-active,
-  .review-card-image-next-enter-active,
-  .review-card-image-next-leave-active,
-  .review-card-image-previous-enter-active,
-  .review-card-image-previous-leave-active,
-  .review-card-image-front-enter-active,
-  .review-card-image-front-leave-active,
-  .review-card-image-back-enter-active,
-  .review-card-image-back-leave-active,
-  .standalone-review-content-next-enter-active,
-  .standalone-review-content-next-leave-active,
-  .standalone-review-content-previous-enter-active,
-  .standalone-review-content-previous-leave-active,
-  .standalone-review-content-front-enter-active,
-  .standalone-review-content-front-leave-active,
-  .standalone-review-content-back-enter-active,
-  .standalone-review-content-back-leave-active { transition: none; }
-  .review-card-image-next-enter-from,
-  .review-card-image-next-leave-to,
-  .review-card-image-previous-enter-from,
-  .review-card-image-previous-leave-to,
-  .review-card-image-front-enter-from,
-  .review-card-image-front-leave-to,
-  .review-card-image-back-enter-from,
-  .review-card-image-back-leave-to,
-  .standalone-review-content-next-enter-from,
-  .standalone-review-content-next-leave-to,
-  .standalone-review-content-previous-enter-from,
-  .standalone-review-content-previous-leave-to,
-  .standalone-review-content-front-enter-from,
-  .standalone-review-content-front-leave-to,
-  .standalone-review-content-back-enter-from,
-  .standalone-review-content-back-leave-to { opacity: 1; transform: none; }
 }
 </style>

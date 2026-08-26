@@ -3,13 +3,16 @@ import { computed, nextTick, reactive, ref, watch } from 'vue'
 import AppDialog from '@/components/AppDialog.vue'
 import AppForm from '@/components/AppForm.vue'
 import FlashcardAudioSection from '@/components/FlashcardAudioSection.vue'
+import FlashcardDuplicateDialog from '@/components/FlashcardDuplicateDialog.vue'
 import FlashcardImageField from '@/components/FlashcardImageField.vue'
 import FlashcardTagCombobox from '@/components/FlashcardTagCombobox.vue'
+import { findDuplicateFlashcard } from '@/services/flashcardDuplicates'
 import { useFlashcardStore } from '@/stores/flashcards'
 import type {
   Flashcard,
   FlashcardAudioValue,
   FlashcardDraft,
+  FlashcardDuplicateResolution,
   SquareImageSourceValue,
 } from '@/types/domain'
 
@@ -30,6 +33,8 @@ const form = ref()
 const frontField = ref()
 const saving = ref(false)
 const error = ref('')
+const duplicateDialog = ref(false)
+const duplicateCard = ref<Flashcard>()
 const original = ref('')
 const draft = reactive<FlashcardDraft>({ front: '', back: '', transliteration: '', note: '', tags: [] })
 const frontAudio = ref<FlashcardAudioValue>(emptyAudio())
@@ -63,6 +68,8 @@ const canSave = computed(() => (
 watch(() => props.modelValue, async (open) => {
   if (!open) return
   error.value = ''
+  duplicateDialog.value = false
+  duplicateCard.value = undefined
   const card = props.card
   frontAudioRecording.value = false
   backAudioRecording.value = false
@@ -117,28 +124,67 @@ function setAudioRecording(side: 'front' | 'back', recording: boolean) {
 async function save() {
   const result = await form.value?.validate()
   if (!result?.valid || !canSave.value) return
+  if (!isEditing.value) {
+    const sourceCards = isReviewSetCard.value
+      ? store.reviewSetCards[props.reviewSetId!] || []
+      : store.cards
+    duplicateCard.value = findDuplicateFlashcard(sourceCards, draft.front)
+    if (duplicateCard.value) {
+      duplicateDialog.value = true
+      return
+    }
+  }
+  await persistCard({ action: 'duplicate', columns: [] })
+}
+
+async function persistCard(resolution: FlashcardDuplicateResolution) {
+  duplicateDialog.value = false
+  if (resolution.action === 'skip') {
+    emit('update:modelValue', false)
+    return
+  }
   saving.value = true
   error.value = ''
   try {
+    const existing = resolution.action === 'duplicate' ? undefined : duplicateCard.value
+    const replace = resolution.action === 'replace'
+    const update = resolution.action === 'update'
     const cardDraft = {
-      id: draft.id,
-      front: draft.front,
-      back: draft.back,
-      transliteration: draft.transliteration || '',
-      note: draft.note,
-      tags: draft.tags,
+      id: existing?.id || draft.id,
+      front: existing && update ? existing.front : draft.front,
+      back: existing && update && !resolution.columns.includes('back') ? existing.back : draft.back,
+      transliteration: existing && update && !resolution.columns.includes('transliteration')
+        ? existing.transliteration || ''
+        : draft.transliteration || '',
+      note: existing && update && !resolution.columns.includes('note') ? existing.note : draft.note,
+      tags: existing && update && !resolution.columns.includes('tags')
+        ? [...existing.tags]
+        : draft.tags,
     }
+    const resolvedImage = existing
+      ? replace || resolution.columns.includes('image')
+        ? { ...image.value, existingUrl: existing.image, existingSource: existing.imageSource }
+        : undefined
+      : image.value
+    const resolvedAudio = existing
+      ? replace
+        ? {
+            front: { ...frontAudio.value, existingUrl: existing.frontAudio || '' },
+            back: { ...backAudio.value, existingUrl: existing.backAudio || '' },
+          }
+        : { front: existingAudio(existing.frontAudio || ''), back: existingAudio(existing.backAudio || '') }
+      : { front: frontAudio.value, back: backAudio.value }
     const card = isReviewSetCard.value
       ? await store.saveReviewSetCard(
           props.reviewSetId!,
           cardDraft,
-          image.value,
-          { front: frontAudio.value, back: backAudio.value },
+          resolvedImage,
+          resolvedAudio,
         )
       : await store.saveCard(
           cardDraft,
-          image.value,
-          { front: frontAudio.value, back: backAudio.value },
+          resolvedImage,
+          resolvedAudio,
         )
     emit('saved', card)
     emit('update:modelValue', false)
@@ -235,6 +281,14 @@ async function save() {
       </v-card-actions>
     </v-card>
   </AppDialog>
+  <FlashcardDuplicateDialog
+    v-if="duplicateDialog"
+    v-model="duplicateDialog"
+    :front="draft.front"
+    :loading="saving"
+    :tags-available="!isReviewSetCard"
+    @resolve="persistCard"
+  />
 </template>
 
 <style scoped>

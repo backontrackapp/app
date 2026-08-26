@@ -17,6 +17,11 @@ import java.io.IOException;
  */
 final class TtsVolumeBoost {
 
+    interface PlaybackListener {
+        void onStart(String utteranceId);
+        void onDone(String utteranceId);
+    }
+
     // LoudnessEnhancer uses millibels. +13.98 dB is approximately five times the linear amplitude.
     static final int AMPLIFICATION_GAIN_MILLIBELS = 1398;
 
@@ -28,6 +33,7 @@ final class TtsVolumeBoost {
     private MediaPlayer mediaPlayer;
     private LoudnessEnhancer loudnessEnhancer;
     private TransientAudioFocus.Lease audioFocusLease;
+    private PlaybackListener playbackListener;
 
     TtsVolumeBoost(Context context) {
         this.context = context.getApplicationContext();
@@ -68,6 +74,10 @@ final class TtsVolumeBoost {
         else releaseLoudnessEnhancer();
     }
 
+    synchronized void setPlaybackListener(PlaybackListener listener) {
+        playbackListener = listener;
+    }
+
     synchronized void finish(String utteranceId) {
         if (!activeUtteranceId.equals(utteranceId)) return;
         clearPlayback();
@@ -75,6 +85,10 @@ final class TtsVolumeBoost {
 
     synchronized void stop() {
         clearPlayback();
+    }
+
+    synchronized boolean isActive() {
+        return !activeUtteranceId.isEmpty();
     }
 
     static double linearAmplitudeMultiplier(int gainMillibels) {
@@ -111,6 +125,7 @@ final class TtsVolumeBoost {
         audioFocusLease = TransientAudioFocus.acquire(context, speechAudioAttributes());
         try {
             player.start();
+            if (playbackListener != null) playbackListener.onStart(utteranceId);
         } catch (RuntimeException error) {
             finish(utteranceId);
         }
@@ -143,6 +158,7 @@ final class TtsVolumeBoost {
     }
 
     private void clearPlayback() {
+        String finishedUtteranceId = activeUtteranceId;
         activeUtteranceId = "";
         mainHandler.removeCallbacksAndMessages(null);
         releaseLoudnessEnhancer();
@@ -159,6 +175,9 @@ final class TtsVolumeBoost {
             //noinspection ResultOfMethodCallIgnored
             synthesizedAudio.delete();
             synthesizedAudio = null;
+        }
+        if (!finishedUtteranceId.isEmpty() && playbackListener != null) {
+            playbackListener.onDone(finishedUtteranceId);
         }
     }
 

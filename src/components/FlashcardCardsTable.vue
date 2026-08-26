@@ -12,12 +12,14 @@ const props = withDefaults(defineProps<{
   selectable?: boolean
   interactive?: boolean
   surface?: boolean
+  showActionColumn?: boolean
   showLastColumn?: boolean
   rowClass?: (card: Flashcard) => string | undefined
 }>(), {
   selectable: true,
   interactive: true,
   surface: true,
+  showActionColumn: true,
   showLastColumn: true,
 })
 
@@ -99,6 +101,7 @@ onBeforeUnmount(() => tableResizeObserver?.disconnect())
 watch([
   displayedCards,
   () => props.selectable,
+  () => props.showActionColumn,
   () => props.showLastColumn,
   () => props.tags,
 ], () => nextTick(observeTableSize), { deep: true })
@@ -169,6 +172,7 @@ function cardTagNames(card: Flashcard) {
           class="card-library-header__track"
           :class="{
             'card-library-header__track--without-selection': !selectable,
+            'card-library-header__track--without-action-column': !showActionColumn,
             'card-library-header__track--without-last-column': !showLastColumn,
           }"
           :style="headerTrackStyle"
@@ -184,7 +188,7 @@ function cardTagNames(card: Flashcard) {
               @update:model-value="toggleAllSelection(Boolean($event))"
             />
           </div>
-          <div class="card-library-header__cell" aria-hidden="true">
+          <div v-if="showActionColumn" class="card-library-header__cell" aria-hidden="true">
             <slot name="action-column-heading">Card</slot>
           </div>
           <div class="card-library-header__cell card-library-header__image" aria-hidden="true">Image</div>
@@ -207,11 +211,14 @@ function cardTagNames(card: Flashcard) {
         <v-table
           density="compact"
           class="card-library-table"
-          :class="{ 'card-library-table--without-last-column': !showLastColumn }"
+          :class="{
+            'card-library-table--without-action-column': !showActionColumn,
+            'card-library-table--without-last-column': !showLastColumn,
+          }"
         >
           <colgroup>
             <col v-if="selectable" class="card-library-table__select-column">
-            <col class="card-library-table__action-column">
+            <col v-if="showActionColumn" class="card-library-table__action-column">
             <col class="card-library-table__image-column">
             <col class="card-library-table__faces-column">
             <col class="card-library-table__transliteration-column">
@@ -221,7 +228,7 @@ function cardTagNames(card: Flashcard) {
           <thead class="card-library-table__semantic-heading">
             <tr>
               <th v-if="selectable" scope="col" aria-label="Selection" />
-              <th scope="col" class="card-library-table__action-heading">
+              <th v-if="showActionColumn" scope="col" class="card-library-table__action-heading">
                 <slot name="action-column-heading">Card</slot>
               </th>
               <th scope="col" class="card-library-table__image-heading">Image</th>
@@ -270,7 +277,7 @@ function cardTagNames(card: Flashcard) {
                   @update:model-value="toggleCardSelection(card.id, Boolean($event))"
                 />
               </td>
-              <td class="card-library-table__action-cell text-no-wrap">
+              <td v-if="showActionColumn" class="card-library-table__action-cell text-no-wrap">
                 <slot name="action-column" :card="card">
                   <v-icon icon="mdi-card-text-outline" size="18" color="secondary" aria-hidden="true" />
                 </slot>
@@ -356,6 +363,10 @@ function cardTagNames(card: Flashcard) {
 .card-library-header__track--without-selection { grid-template-columns: 3rem 4rem repeat(4, minmax(12rem, 1fr)); }
 .card-library-header__track--without-last-column { width: max(36rem, 100%); grid-template-columns: 3rem 3rem 4rem repeat(2, minmax(12rem, 1fr)); }
 .card-library-header__track--without-selection.card-library-header__track--without-last-column { grid-template-columns: 3rem 4rem repeat(2, minmax(12rem, 1fr)); }
+.card-library-header__track--without-action-column { width: max(69rem, 100%); grid-template-columns: 3rem 4rem repeat(4, minmax(12rem, 1fr)); }
+.card-library-header__track--without-selection.card-library-header__track--without-action-column { grid-template-columns: 4rem repeat(4, minmax(12rem, 1fr)); }
+.card-library-header__track--without-action-column.card-library-header__track--without-last-column { width: max(33rem, 100%); grid-template-columns: 3rem 4rem repeat(2, minmax(12rem, 1fr)); }
+.card-library-header__track--without-selection.card-library-header__track--without-action-column.card-library-header__track--without-last-column { grid-template-columns: 4rem repeat(2, minmax(12rem, 1fr)); }
 .card-library-header__cell { display: flex; min-width: 0; height: 2.25rem; padding: 0 .75rem; align-items: center; color: rgba(var(--v-theme-on-surface), .52); font-size: .64rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
 .card-library-header__select { justify-content: center; padding-right: .25rem; padding-left: .25rem; }
 .card-library-header__image { justify-content: center; }
@@ -363,7 +374,9 @@ function cardTagNames(card: Flashcard) {
 .card-library-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
 .card-library-scroll:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: -.125rem; }
 .card-library-table { min-width: 72rem; max-width: none; background: transparent; }
+.card-library-table--without-action-column { min-width: 69rem; }
 .card-library-table--without-last-column { min-width: 36rem; }
+.card-library-table--without-action-column.card-library-table--without-last-column { min-width: 33rem; }
 .card-library-table :deep(.v-table__wrapper) { overflow: visible; }
 
 .card-library-table__semantic-heading { position: absolute; width: .0625rem; height: .0625rem; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
@@ -402,7 +415,7 @@ function cardTagNames(card: Flashcard) {
 .card-library-table tbody tr:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: -.125rem; }
 .card-library-load-more { display: flex; min-height: 2.75rem; align-items: center; justify-content: center; gap: .5rem; color: rgba(var(--v-theme-on-surface), .52); font-size: .68rem; font-weight: 800; }
 .card-library-pagination :deep(.v-btn) { min-width: 2.75rem; min-height: 2.75rem; }
-.flashcard-table__text { display: -webkit-box; overflow-wrap: anywhere; font-size: .78rem; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.flashcard-table__text { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; font-size: .78rem; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .flashcard-table__faces { display: grid; min-width: 0; gap: .2rem; }
 .flashcard-table__image-frame { display: grid; width: 2.5rem; height: 2.5rem; margin: 0 auto; overflow: hidden; border: .0625rem solid rgba(var(--v-theme-on-surface), .08); border-radius: .35rem; color: rgba(var(--v-theme-on-surface), .42); place-items: center; background: rgba(var(--v-theme-on-surface), .04); }
 .flashcard-table__image { width: 100%; height: 100%; }
@@ -423,5 +436,9 @@ function cardTagNames(card: Flashcard) {
   .card-library-header__track--without-selection { grid-template-columns: 3rem 4rem repeat(4, minmax(12rem, 1fr)); }
   .card-library-header__track--without-last-column { grid-template-columns: 3rem 3rem 4rem repeat(2, minmax(12rem, 1fr)); }
   .card-library-header__track--without-selection.card-library-header__track--without-last-column { grid-template-columns: 3rem 4rem repeat(2, minmax(12rem, 1fr)); }
+  .card-library-header__track--without-action-column { grid-template-columns: 3rem 4rem repeat(4, minmax(12rem, 1fr)); }
+  .card-library-header__track--without-selection.card-library-header__track--without-action-column { grid-template-columns: 4rem repeat(4, minmax(12rem, 1fr)); }
+  .card-library-header__track--without-action-column.card-library-header__track--without-last-column { grid-template-columns: 3rem 4rem repeat(2, minmax(12rem, 1fr)); }
+  .card-library-header__track--without-selection.card-library-header__track--without-action-column.card-library-header__track--without-last-column { grid-template-columns: 4rem repeat(2, minmax(12rem, 1fr)); }
 }
 </style>

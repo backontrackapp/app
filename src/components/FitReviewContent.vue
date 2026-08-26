@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { ref, toRef } from 'vue'
+import SpokenText from '@/components/SpokenText.vue'
 import { useFitLargestWord } from '@/composables/useFitLargestWord'
+import type { FlashcardSpeechWord } from '@/types/domain'
 
 const props = defineProps<{
   text: string
+  language?: string
+  spokenWord?: FlashcardSpeechWord
 }>()
 
 const contentElement = ref<HTMLElement>()
@@ -21,7 +25,14 @@ useFitLargestWord(
 
 <template>
   <span ref="contentElement" class="review-card__content fit-review-content">
-    <strong ref="textElement">{{ text }}</strong>
+    <strong ref="textElement">
+      <SpokenText
+        :text="text"
+        :language="language"
+        :active-start="spokenWord?.start"
+        :active-end="spokenWord?.end"
+      />
+    </strong>
     <span
       ref="measurementElement"
       class="fit-review-content__measurement"

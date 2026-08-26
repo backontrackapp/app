@@ -169,7 +169,6 @@ onBeforeUnmount(() => {
                 v-for="session in group.sessions"
                 :key="session.id"
                 class="recent-run-item"
-                :title="session.name"
                 :aria-label="`Actions for ${session.name}`"
                 @click="openRecentRunActions(session)"
               >
@@ -179,6 +178,7 @@ onBeforeUnmount(() => {
                     :color="recentRunColor(session)"
                   />
                 </template>
+                <span class="text-body-1">{{ session.name }}</span>
                 <span class="recent-run-meta">
                   {{ format(new Date(session.startedAt), 'h:mm a') }} · {{ session.source === 'quick' ? 'Quick' : 'Template' }}
                 </span>

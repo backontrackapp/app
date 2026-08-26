@@ -277,62 +277,56 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
         <v-icon icon="mdi-shoe-print" />
       </div>
 
-      <v-progress-linear
-        v-if="loading"
-        color="secondary"
-        indeterminate
-        rounded
-        class="mt-5"
-      />
+      <v-expand-transition>
+        <div v-if="!loading">
+            <v-select
+            v-model="stepSource"
+            class="mt-5"
+            label="Steps source"
+            :items="stepSources"
+            hide-details
+            >
+            <template v-if="healthConnected" #append-inner>
+                <v-icon
+                icon="mdi-check-circle-outline"
+                color="success"
+                title="Connected"
+                />
+            </template>
+            </v-select>
 
-      <template v-else>
-        <v-select
-          v-model="stepSource"
-          class="mt-5"
-          label="Steps source"
-          :items="stepSources"
-          hide-details
-        >
-          <template v-if="healthConnected" #append-inner>
-            <v-icon
-              icon="mdi-check-circle-outline"
-              color="success"
-              title="Connected"
-            />
-          </template>
-        </v-select>
+            <v-alert
+            v-if="!healthConnected"
+            :type="connectionColor"
+            variant="tonal"
+            :icon="connectionIcon"
+            class="mt-4"
+            >
+            <strong>{{ connectionTitle }}</strong>
+            <p class="mt-1">{{ connectionCopy }}</p>
+            </v-alert>
 
-        <v-alert
-          v-if="!healthConnected"
-          :type="connectionColor"
-          variant="tonal"
-          :icon="connectionIcon"
-          class="mt-4"
-        >
-          <strong>{{ connectionTitle }}</strong>
-          <p class="mt-1">{{ connectionCopy }}</p>
-        </v-alert>
-
-        <div v-if="isAndroidApp" class="settings-actions mt-4">
-          <v-btn
-            v-if="healthStatus.availability === 'available' && !healthStatus.authorized"
-            color="secondary"
-            prepend-icon="mdi-link-variant"
-            :loading="connecting"
-            @click="connectHealthConnect"
-          >
-            Connect Health Connect
-          </v-btn>
-          <v-btn
-            v-else
-            variant="outlined"
-            prepend-icon="mdi-open-in-new"
-            @click="openHealthConnectSettings"
-          >
-            Open Health Connect
-          </v-btn>
+            <div v-if="isAndroidApp" class="settings-actions mt-4">
+            <v-btn
+                v-if="healthStatus.availability === 'available' && !healthStatus.authorized"
+                color="secondary"
+                prepend-icon="mdi-link-variant"
+                :loading="connecting"
+                @click="connectHealthConnect"
+            >
+                Connect Health Connect
+            </v-btn>
+            <v-btn
+                v-else
+                variant="outlined"
+                prepend-icon="mdi-open-in-new"
+                @click="openHealthConnectSettings"
+            >
+                Open Health Connect
+            </v-btn>
+            </div>
         </div>
-      </template>
+      </v-expand-transition>
     </v-card>
 
     <v-card class="surface-card pa-5 pa-sm-6">

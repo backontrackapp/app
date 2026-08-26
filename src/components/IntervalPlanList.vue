@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
-import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { formatIntervalDuration, intervalDuration, intervalStepCount } from '@/services/intervals'
 import { INTERVAL_TEMPLATE_ACTIONS, type IntervalTemplateAction } from '@/services/intervalTemplateActions'
@@ -11,28 +10,16 @@ import type { IntervalTemplate } from '@/types/domain'
 
 const store = useIntervalStore()
 const router = useRouter()
-const pendingDelete = ref<IntervalTemplate>()
 const selectedTemplate = ref<IntervalTemplate>()
 const templateActionsOpen = ref(false)
-const deleting = ref(false)
 const reordering = ref(false)
+const archiveExpanded = ref(false)
+const activeTemplates = computed(() => store.templates.filter(template => !template.archived))
+const archivedTemplates = computed(() => store.templates.filter(template => template.archived))
 
 onMounted(() => {
   if (!store.templates.length) store.load().catch(() => undefined)
 })
-
-async function removeTemplate() {
-  if (!pendingDelete.value) return
-  deleting.value = true
-  try {
-    await store.deleteTemplate(pendingDelete.value.id)
-    pendingDelete.value = undefined
-  } catch {
-    pendingDelete.value = undefined
-  } finally {
-    deleting.value = false
-  }
-}
 
 async function saveTemplateOrder(ordered: IntervalTemplate[]) {
   reordering.value = true
@@ -47,12 +34,12 @@ async function saveTemplateOrder(ordered: IntervalTemplate[]) {
 
 async function reorderByDrag(result: LongPressDragResult) {
   const templatesById = new Map(
-    store.templates.map((template) => [template.id, template]),
+    activeTemplates.value.map((template) => [template.id, template]),
   )
   const ordered = result.orderedIds
     .map((id) => templatesById.get(id))
     .filter((template): template is IntervalTemplate => Boolean(template))
-  if (ordered.length !== store.templates.length) return
+  if (ordered.length !== activeTemplates.value.length) return
   await saveTemplateOrder(ordered)
 }
 
@@ -79,28 +66,22 @@ function duplicateTemplate(template: IntervalTemplate) {
   })
 }
 
-function requestDelete(template: IntervalTemplate) {
-  templateActionsOpen.value = false
-  pendingDelete.value = template
-}
-
 function runTemplateAction(action: IntervalTemplateAction, template: IntervalTemplate) {
   if (action === 'play') return startTemplate(template)
   if (action === 'edit') return editTemplate(template)
-  if (action === 'duplicate') return duplicateTemplate(template)
-  requestDelete(template)
+  return duplicateTemplate(template)
 }
 </script>
 
 <template>
-  <div v-if="store.templates.length" class="interval-plan-list">
+  <div v-if="activeTemplates.length" class="interval-plan-list">
     <v-card
-      v-for="template in store.templates"
+      v-for="template in activeTemplates"
       :key="template.id"
       v-long-press-drag="{
         id: template.id,
         group: 'interval-templates',
-        disabled: store.templates.length < 2 || reordering,
+        disabled: activeTemplates.length < 2 || reordering,
         onDrop: reorderByDrag,
       }"
       class="surface-card pa-4 interval-plan-card"
@@ -127,12 +108,33 @@ function runTemplateAction(action: IntervalTemplateAction, template: IntervalTem
     </v-card>
   </div>
 
-  <v-card v-else-if="store.loaded" class="surface-card pa-8 text-center">
+  <v-card v-else-if="store.loaded && !archivedTemplates.length" class="surface-card pa-8 text-center">
     <v-icon icon="mdi-timer-plus-outline" size="42" class="mb-3" />
     <h2 class="text-h6 font-weight-black">Build your first interval</h2>
     <p class="text-body-2 muted mt-2 mb-5">Combine timed steps and repeat groups for any kind of session.</p>
     <v-btn color="secondary" to="/intervals/new">Create interval</v-btn>
   </v-card>
+
+  <section v-if="archivedTemplates.length" class="mt-4">
+    <v-btn block variant="text" class="archive-heading" :aria-expanded="archiveExpanded" aria-controls="archived-intervals" @click="archiveExpanded = !archiveExpanded">
+      <v-icon icon="mdi-archive-outline" size="small" />
+      <span>Archive</span>
+      <span class="archive-heading__count">{{ archivedTemplates.length }}</span>
+      <v-icon :icon="archiveExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'" size="small" />
+    </v-btn>
+    <v-expand-transition>
+      <div v-show="archiveExpanded" id="archived-intervals">
+        <div class="interval-plan-list mt-2">
+          <v-card v-for="template in archivedTemplates" :key="template.id" class="surface-card pa-4 interval-plan-card" role="link" tabindex="0" :aria-label="`Edit archived interval ${template.name}`" @click="editTemplate(template)" @keydown.enter="editTemplate(template)" @keydown.space.prevent="editTemplate(template)">
+            <div class="interval-plan-card__row d-flex align-start ga-3">
+              <div class="interval-template-icon" :style="{ background: template.color }"><v-icon icon="mdi-archive-outline" size="21" /></div>
+              <div class="interval-plan-details"><h2 class="text-body-1 font-weight-black text-truncate">{{ template.name }}</h2><p class="text-caption muted mt-1">Archived · Open to restore</p></div>
+            </div>
+          </v-card>
+        </div>
+      </div>
+    </v-expand-transition>
+  </section>
 
   <ActionBottomSheet
     v-model="templateActionsOpen"
@@ -154,16 +156,6 @@ function runTemplateAction(action: IntervalTemplateAction, template: IntervalTem
     </template>
   </ActionBottomSheet>
 
-  <ConfirmDialog
-    :model-value="Boolean(pendingDelete)"
-    title="Delete this interval?"
-    message="The reusable interval will be removed. Existing session history will remain."
-    confirm-text="Delete interval"
-    icon="mdi-delete-outline"
-    :loading="deleting"
-    @update:model-value="!$event && (pendingDelete = undefined)"
-    @confirm="removeTemplate"
-  />
 </template>
 
 <style scoped>
@@ -173,5 +165,8 @@ function runTemplateAction(action: IntervalTemplateAction, template: IntervalTem
 .interval-plan-card__row { width: 100%; min-width: 0; }
 .interval-plan-details { overflow: hidden; min-width: 0; flex: 1 1 0; }
 .interval-template-icon { display: grid; width: 2.625rem; height: 2.625rem; flex: 0 0 auto; place-items: center; border-radius: .875rem; color: rgb(var(--v-theme-on-secondary)); }
+.archive-heading { min-height: 2.75rem; }
+.archive-heading :deep(.v-btn__content) { width: 100%; justify-content: flex-start; gap: .5rem; }
+.archive-heading__count { margin-left: auto; color: rgb(var(--v-theme-on-surface) / .54); font-size: .7rem; }
 @media (min-width: 43.75rem) { .interval-plan-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

@@ -2,13 +2,16 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppForm from '@/components/AppForm.vue'
+import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FlashcardCardsManager from '@/components/FlashcardCardsManager.vue'
 import FlashcardTagCombobox from '@/components/FlashcardTagCombobox.vue'
 import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsFields.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
+import { contentRetirementActions, type ContentRetirementActionId } from '@/services/contentRetirementActions'
 import {
   DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
+  DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
   DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
   DEFAULT_FLASHCARD_SESSION_CARDS,
   cardMatchesReviewSet,
@@ -41,7 +44,10 @@ const router = useRouter()
 const store = useFlashcardStore()
 const form = ref()
 const saving = ref(false)
+const archiving = ref(false)
 const deleting = ref(false)
+const archiveDialog = ref(false)
+const archiveActions = ref(false)
 const deleteDialog = ref(false)
 const deleteCardsWithReviewSet = ref(false)
 const error = ref('')
@@ -49,6 +55,11 @@ const ready = ref(false)
 const original = ref('')
 const speechLoading = ref(true)
 const speechSupport = ref<FlashcardSpeechSupport>({ available: false, languages: [] })
+const retirementActions = contentRetirementActions(
+  'Review set',
+  'Hide it from your Review sets while preserving its setup, cards, sharing, and history.',
+  'Permanently remove the saved setup. Completed review history remains.',
+)
 const isEditing = computed(() => Boolean(route.params.id))
 const currentReviewSet = computed(() => store.reviewSets.find(item => item.id === route.params.id))
 const isOwner = computed(() => !isEditing.value || currentReviewSet.value?.accessRole === 'owner')
@@ -63,10 +74,12 @@ const draft = reactive<FlashcardReviewSetDraft>({
   excludedCards: [],
   mode: 'manual',
   cardSides: DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
+  invertFaces: false,
   indefinite: false,
   timeLimitSeconds: 0,
   maxCards: DEFAULT_FLASHCARD_SESSION_CARDS,
   ejectBehavior: 'replace',
+  ejectExcludeAfter: DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
   frontSeconds: 5,
   backSeconds: 5,
   backSpeechRepeatCount: DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
@@ -77,6 +90,7 @@ const draft = reactive<FlashcardReviewSetDraft>({
   sortMode: 'difficult',
   sortDirection: 'asc',
   sortOrder: 0,
+  archived: false,
 })
 const editorReturnTo = computed(() => draft.id
   ? router.resolve({
@@ -95,6 +109,7 @@ function serializedDraft() {
       settings: flashcardReviewSettingsSignature(draft),
       excludedCards,
       sortOrder: draft.sortOrder,
+      archived: draft.archived === true,
     } : {
       settings: flashcardReviewSettingsSignature(draft),
       excludedCards,
@@ -111,10 +126,12 @@ function applyReviewSet(reviewSet: FlashcardReviewSet) {
     excludedCards: [...(reviewSet.excludedCards || [])],
     mode: reviewSet.mode,
     cardSides: reviewSet.cardSides,
+    invertFaces: reviewSet.invertFaces === true,
     indefinite: reviewSet.indefinite,
     timeLimitSeconds: reviewSet.timeLimitSeconds || 0,
     maxCards: reviewSet.maxCards,
     ejectBehavior: reviewSet.ejectBehavior,
+    ejectExcludeAfter: reviewSet.ejectExcludeAfter,
     frontSeconds: reviewSet.frontSeconds,
     backSeconds: reviewSet.backSeconds,
     backSpeechRepeatCount: reviewSet.backSpeechRepeatCount,
@@ -125,6 +142,7 @@ function applyReviewSet(reviewSet: FlashcardReviewSet) {
     sortMode: reviewSet.sortMode,
     sortDirection: reviewSet.sortDirection,
     sortOrder: reviewSet.sortOrder,
+    archived: reviewSet.archived === true,
   })
   original.value = serializedDraft()
   ready.value = true
@@ -162,9 +180,9 @@ const cardTableTags = computed(() => {
   return [...tags.values()]
 })
 const orderedMatchingCards = computed(() => sortFlashcardsForReview(
-  sourceCards.value.filter(card => draft.selectionMode === 'cards'
+  sourceCards.value.filter(card => card.archived !== true && (draft.selectionMode === 'cards'
     ? (draft.includedCards || []).includes(card.id)
-    : cardMatchesTags(card, draft.tags)),
+    : cardMatchesTags(card, draft.tags))),
   draft.sortMode,
   draft.sortDirection,
 ))
@@ -264,18 +282,47 @@ function openNewCard() {
   })
 }
 
-function openCard(card: Flashcard) {
+function openCard(card: Flashcard, cards: Flashcard[]) {
   if (!draft.id || !canEditCards.value) return
   void router.push({
     name: 'flashcard-review-set-card-edit',
     params: { reviewSetId: draft.id, id: card.id },
     query: { returnTo: editorReturnTo.value },
+    state: { flashcardNavigationIds: cards.map(item => item.id) },
   })
 }
 
 function openDeleteDialog() {
   deleteCardsWithReviewSet.value = false
   deleteDialog.value = true
+}
+
+async function setArchived() {
+  if (!draft.id || !isOwner.value) return
+  archiving.value = true
+  error.value = ''
+  try {
+    await store.setReviewSetArchived(draft.id, !draft.archived)
+    archiveDialog.value = false
+    archiveActions.value = false
+    await router.replace('/flashcards')
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : `Could not ${draft.archived ? 'restore' : 'archive'} this Review set.`
+    archiveDialog.value = false
+  } finally {
+    archiving.value = false
+  }
+}
+
+function openRetirementActions() {
+  if (draft.archived) archiveDialog.value = true
+  else archiveActions.value = true
+}
+
+function runRetirementAction(action: ContentRetirementActionId) {
+  archiveActions.value = false
+  if (action === 'archive') void setArchived()
+  else openDeleteDialog()
 }
 
 async function remove() {
@@ -415,7 +462,7 @@ async function remove() {
         >
           <template #action-column-heading><span v-if="canEditCards" class="d-sr-only">Edit</span></template>
           <template #last-column-heading>Tags</template>
-          <template #action-column="{ card }">
+          <template #action-column="{ card, cards }">
             <div
               v-if="canEditCards"
               class="review-set-card-edit"
@@ -429,7 +476,7 @@ async function remove() {
                 variant="text"
                 size="small"
                 :aria-label="`Edit card: ${card.front}`"
-                @click.stop="openCard(card)"
+                @click.stop="openCard(card, cards)"
               />
             </div>
           </template>
@@ -446,20 +493,45 @@ async function remove() {
       :primary-text="isEditing ? 'Save' : 'Create'"
       :loading="saving"
       :primary-disabled="!canSave"
-      :show-delete="isEditing && isOwner"
-      delete-label="Delete Review set"
-      :delete-disabled="deleting"
+      :has-changes="changed"
+      :show-archive="isEditing && isOwner"
+      :archived="draft.archived"
+      :archive-label="draft.archived ? 'Restore Review set' : 'Archive Review set'"
+      :archive-disabled="archiving || deleting"
       @submit="save"
       @cancel="router.back()"
-      @delete="openDeleteDialog"
+      @archive="openRetirementActions"
+    />
+
+    <ActionBottomSheet
+      v-model="archiveActions"
+      title="Archive or delete?"
+      :description="`Choose what to do with ${draft.name || 'this Review set'}.`"
+      aria-label="Archive or permanently delete Review set"
+    >
+      <template v-for="action in retirementActions" :key="action.id">
+        <v-divider v-if="'divider' in action && action.divider" class="my-1" />
+        <v-list-item :prepend-icon="action.icon" :title="action.title" :subtitle="action.subtitle" :base-color="action.color" rounded="lg" :disabled="archiving || deleting" @click="runRetirementAction(action.id)" />
+      </template>
+    </ActionBottomSheet>
+
+    <ConfirmDialog
+      v-model="archiveDialog"
+      title="Restore this Review set?"
+      message="This Review set will return with its previous setup, cards, and sharing access."
+      confirm-text="Restore Review set"
+      confirm-color="secondary"
+      icon="mdi-archive-arrow-up-outline"
+      :loading="archiving"
+      @confirm="setArchived"
     />
 
     <ConfirmDialog
       v-model="deleteDialog"
-      title="Delete this Review set?"
-      message="The saved setup will be removed. Completed review history and its card snapshots will stay."
-      confirm-text="Delete Review set"
-      icon="mdi-delete-outline"
+      title="Delete this Review set permanently?"
+      message="The saved setup will be permanently removed. Completed review history and its card snapshots will stay. This cannot be undone."
+      confirm-text="Delete permanently"
+      icon="mdi-delete-forever-outline"
       :loading="deleting"
       @confirm="remove"
     >

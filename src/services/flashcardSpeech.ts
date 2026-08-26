@@ -1,4 +1,14 @@
-import { Capacitor, registerPlugin } from '@capacitor/core'
+import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core'
+import {
+  beginFlashcardSpeechWordTracking,
+  clearFlashcardSpeechWordTracking,
+  flashcardSpeechTextParts,
+  flashcardSpeechWordTrackingIsActive,
+  speechLanguageUsesPinyin,
+  takePreparedFlashcardSpeechWordTracking,
+  type FlashcardSpeechTextPart,
+  updateFlashcardSpeechWord,
+} from '@/services/spokenText'
 import type {
   BackgroundFlashcardReviewState,
   FlashcardReviewSession,
@@ -6,6 +16,7 @@ import type {
   FlashcardReviewSide,
   FlashcardSpeechLanguage,
   FlashcardSpeechSupport,
+  FlashcardSpeechWord,
 } from '@/types/domain'
 
 interface NativeSpeechSupport {
@@ -14,18 +25,23 @@ interface NativeSpeechSupport {
 }
 
 interface FlashcardSpeechPlugin {
+  addListener?(
+    eventName: 'speechPlayback',
+    listener: (event: { state: 'start' | 'end'; utteranceId: string }) => void,
+  ): Promise<PluginListenerHandle>
   getLanguages(): Promise<NativeSpeechSupport>
   speak(options: {
     text: string
     language: string
     overAmplified: boolean
     backgroundIntervalSpeechKey?: string
-  }): Promise<void>
+  }): Promise<{ utteranceId?: string }>
   playRecording(options: {
     url: string
     backgroundIntervalSpeechKey?: string
   }): Promise<void>
   setOverAmplification(options: { enabled: boolean }): Promise<void>
+  isSpeechActive?(): Promise<{ active: boolean }>
   stopSpeaking(): Promise<void>
   startBackground(options: {
     sessionId: string
@@ -39,6 +55,7 @@ interface FlashcardSpeechPlugin {
     indefinite: boolean
     timeLimitSeconds: number
     cardSides: FlashcardReviewCardSides
+    invertFaces: boolean
     side: FlashcardReviewSide
     remainingMs: number
     frontSeconds: number
@@ -59,6 +76,76 @@ let nativeBackgroundActive = false
 let activeBrowserUtterance: SpeechSynthesisUtterance | undefined
 let activeRecordedAudio: HTMLAudioElement | undefined
 let browserVoiceLoad: Promise<SpeechSynthesisVoice[]> | undefined
+let nativeSpeechPlaybackListener: Promise<PluginListenerHandle> | undefined
+let estimatedSpeechTimers: number[] = []
+let activeNativeSpeechText = ''
+let activeNativeSpeechLanguage = ''
+let activeNativeSpeechUtteranceId = ''
+
+function speechWordRanges(text: string, language: string) {
+  return flashcardSpeechTextParts(text, language)
+    .filter((part): part is FlashcardSpeechTextPart & { wordIndex: number } => part.wordIndex !== undefined)
+}
+
+function clearEstimatedSpeech() {
+  if (typeof window !== 'undefined') {
+    estimatedSpeechTimers.forEach(timer => window.clearTimeout(timer))
+  }
+  estimatedSpeechTimers = []
+}
+
+function speechWordForRange(
+  ranges: Array<FlashcardSpeechTextPart & { wordIndex: number }>,
+  start: number,
+  length = 0,
+): FlashcardSpeechWord | undefined {
+  const end = Math.max(start + length, start + 1)
+  const matches = ranges.filter(range => range.end > start && range.start < end)
+  const first = matches[0] || ranges.find(range => range.start <= start && range.end > start)
+  if (!first) return undefined
+  const last = matches[matches.length - 1] || first
+  return {
+    start: Math.max(start, first.start),
+    end: length > 0 ? Math.min(end, last.end) : first.end,
+    wordStart: first.wordIndex,
+    wordEnd: last.wordIndex + 1,
+  }
+}
+
+function startEstimatedSpeech(text: string, language: string) {
+  clearEstimatedSpeech()
+  const words = speechWordRanges(text, language)
+  if (!flashcardSpeechWordTrackingIsActive() || !words.length || typeof window === 'undefined') return
+  const millisecondsPerWord = speechLanguageUsesPinyin(language) ? 260 : 340
+  words.forEach((word, index) => {
+    estimatedSpeechTimers.push(window.setTimeout(() => {
+      updateFlashcardSpeechWord({
+        start: word.start,
+        end: word.end,
+        wordStart: word.wordIndex,
+        wordEnd: word.wordIndex + 1,
+      })
+    }, index * millisecondsPerWord))
+  })
+  estimatedSpeechTimers.push(window.setTimeout(() => {
+    updateFlashcardSpeechWord(undefined)
+  }, words.length * millisecondsPerWord))
+}
+
+async function ensureNativeSpeechPlaybackListener() {
+  if (nativeSpeechPlaybackListener) return nativeSpeechPlaybackListener
+  if (!NativeFlashcardSpeech.addListener) return undefined
+  nativeSpeechPlaybackListener = NativeFlashcardSpeech.addListener('speechPlayback', event => {
+    if (!activeNativeSpeechUtteranceId || event.utteranceId !== activeNativeSpeechUtteranceId) return
+    if (event.state === 'start') {
+      startEstimatedSpeech(activeNativeSpeechText, activeNativeSpeechLanguage)
+    } else {
+      clearEstimatedSpeech()
+      clearFlashcardSpeechWordTracking()
+    }
+  })
+  return nativeSpeechPlaybackListener
+}
 
 function storedSpeechOverAmplificationIsEnabled() {
   if (typeof localStorage === 'undefined') return false
@@ -221,8 +308,13 @@ export async function speakFlashcardText(
   backgroundIntervalSpeechKey = '',
   audioUrl = '',
 ) {
+  const wordHandler = takePreparedFlashcardSpeechWordTracking()
   const content = text.trim()
   const recording = audioUrl.trim()
+  clearEstimatedSpeech()
+  activeNativeSpeechText = ''
+  activeNativeSpeechLanguage = ''
+  activeNativeSpeechUtteranceId = ''
   if (recording) {
     try {
       if (isNativeAndroid()) {
@@ -233,33 +325,57 @@ export async function speakFlashcardText(
       } else {
         await playFlashcardRecording(recording)
       }
+      clearFlashcardSpeechWordTracking()
       return
     } catch {
       // Fall back to synthesis if a saved recording is temporarily unavailable.
     }
   }
-  if (!content || !language) return
+  if (!content || !language) {
+    clearFlashcardSpeechWordTracking()
+    return
+  }
   if (isNativeAndroid()) {
-    await NativeFlashcardSpeech.speak({
-      text: content,
-      language,
-      overAmplified: speechOverAmplificationEnabled,
-      ...(backgroundIntervalSpeechKey ? { backgroundIntervalSpeechKey } : {}),
-    })
+    clearFlashcardSpeechWordTracking()
+    activeNativeSpeechText = content
+    activeNativeSpeechLanguage = language
+    try {
+      await ensureNativeSpeechPlaybackListener()
+      const result = await NativeFlashcardSpeech.speak({
+        text: content,
+        language,
+        overAmplified: speechOverAmplificationEnabled,
+        ...(backgroundIntervalSpeechKey ? { backgroundIntervalSpeechKey } : {}),
+      })
+      activeNativeSpeechUtteranceId = result?.utteranceId || ''
+      beginFlashcardSpeechWordTracking(wordHandler)
+    } catch (cause) {
+      clearFlashcardSpeechWordTracking()
+      throw cause
+    }
     return
   }
   if (
     typeof window === 'undefined'
     || !('speechSynthesis' in window)
     || typeof window.SpeechSynthesisUtterance === 'undefined'
-  ) throw new Error('Speech synthesis is not available in this browser.')
+  ) {
+    clearFlashcardSpeechWordTracking()
+    throw new Error('Speech synthesis is not available in this browser.')
+  }
 
   const synthesis = window.speechSynthesis
   const voice = browserVoiceForLanguage(await loadBrowserVoices(), language)
-  if (!voice) throw new Error(`No browser voice is available for ${language}.`)
+  if (!voice) {
+    clearFlashcardSpeechWordTracking()
+    throw new Error(`No browser voice is available for ${language}.`)
+  }
   await stopFlashcardSpeech()
+  beginFlashcardSpeechWordTracking(wordHandler)
 
   const utterance = new window.SpeechSynthesisUtterance(content)
+  const wordRanges = speechWordRanges(content, language)
+  let receivedBoundary = false
   utterance.lang = voice.lang
   utterance.voice = voice
   if (speechOverAmplificationEnabled) utterance.volume = 1
@@ -278,15 +394,36 @@ export async function speakFlashcardText(
     const startTimeout = window.setTimeout(() => {
       clearActive()
       synthesis.cancel()
+      clearEstimatedSpeech()
+      clearFlashcardSpeechWordTracking()
       settle(new Error('The browser did not start speech synthesis.'))
     }, 2000)
-    utterance.onstart = () => settle()
+    utterance.onstart = () => {
+      startEstimatedSpeech(content, language)
+      settle()
+    }
+    utterance.onboundary = event => {
+      if (event.name && event.name !== 'word') return
+      if (!receivedBoundary) {
+        receivedBoundary = true
+        clearEstimatedSpeech()
+      }
+      updateFlashcardSpeechWord(speechWordForRange(
+        wordRanges,
+        event.charIndex,
+        event.charLength,
+      ))
+    }
     utterance.onend = () => {
       clearActive()
+      clearEstimatedSpeech()
+      clearFlashcardSpeechWordTracking()
       settle()
     }
     utterance.onerror = event => {
       clearActive()
+      clearEstimatedSpeech()
+      clearFlashcardSpeechWordTracking()
       settle(new Error(`Browser speech synthesis failed: ${event.error}.`))
     }
     activeBrowserUtterance = utterance
@@ -295,6 +432,8 @@ export async function speakFlashcardText(
       synthesis.speak(utterance)
     } catch (cause) {
       clearActive()
+      clearEstimatedSpeech()
+      clearFlashcardSpeechWordTracking()
       settle(cause instanceof Error ? cause : new Error('Browser speech synthesis failed.'))
     }
   })
@@ -340,6 +479,11 @@ async function playFlashcardRecording(url: string) {
 }
 
 export async function stopFlashcardSpeech() {
+  clearEstimatedSpeech()
+  clearFlashcardSpeechWordTracking()
+  activeNativeSpeechText = ''
+  activeNativeSpeechLanguage = ''
+  activeNativeSpeechUtteranceId = ''
   if (activeRecordedAudio) {
     activeRecordedAudio.pause()
     activeRecordedAudio.removeAttribute('src')
@@ -356,6 +500,24 @@ export async function stopFlashcardSpeech() {
       synthesis.cancel()
     }
     activeBrowserUtterance = undefined
+  }
+}
+
+export async function waitForFlashcardSpeechHandoff(
+  refreshProgress?: () => void | Promise<void>,
+) {
+  if (
+    !isNativeAndroid()
+    || typeof document === 'undefined'
+    || !NativeFlashcardSpeech.isSpeechActive
+  ) return
+  while (document.visibilityState === 'visible') {
+    const active = await NativeFlashcardSpeech.isSpeechActive()
+      .then(result => result.active)
+      .catch(() => false)
+    if (!active) return
+    await refreshProgress?.()
+    await new Promise(resolve => window.setTimeout(resolve, 100))
   }
 }
 
@@ -387,6 +549,7 @@ export async function syncBackgroundFlashcardReview(
       indefinite: session.indefinite,
       timeLimitSeconds: session.timeLimitSeconds || 0,
       cardSides: session.cardSides,
+      invertFaces: session.cardSides === 'both' && session.invertFaces === true,
       side,
       remainingMs: Math.max(1, Math.round(remainingMs)),
       frontSeconds: session.frontSeconds,

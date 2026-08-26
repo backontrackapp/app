@@ -103,4 +103,11 @@ public class BackgroundIntervalPlugin extends Plugin {
         getContext().stopService(intent);
         call.resolve();
     }
+
+    @PluginMethod
+    public void isSpeechActive(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("active", BackgroundIntervalService.isSpeechActive());
+        call.resolve(result);
+    }
 }

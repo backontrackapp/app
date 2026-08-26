@@ -6,6 +6,8 @@ Swiping left across the Tasks view advances to the next date, while swiping righ
 
 The task editor's archive action offers a choice between archiving and permanent deletion. Archiving removes a task from its schedule and reminders while preserving its settings, entries, and history. Archived tasks appear in the collapsible Archive section below Not scheduled, where selecting one opens the editor so it can be restored. Permanent deletion removes the task, its program steps, occurrences, entries, and image logs; saved interval and Review sessions remain in history without task attribution.
 
+Archived tasks remain visible in recent task history without an archive tag.
+
 The task action menu includes **Duplicate**, which opens a new task prefilled with the original task's settings. The copy receives an independent name, ordering, and program steps, and is not created until the editor is saved.
 
 Program steps can be duplicated from their expanded editor. The copy is inserted on the following program day with independent completion requirements and opens immediately for editing. Check-off, Interval, and Review set requirements can also have an optional label that identifies the requirement on its task card.
@@ -15,6 +17,8 @@ Removing a program step checks its complete occurrence, entry, Interval-session,
 On mobile, the next incomplete task banner appears only when no incomplete task card is visible between the app bar and bottom navigation. It links to the nearest incomplete task farther down the page.
 
 When a Daily Total log exactly fills the positive amount remaining to its target, the Tasks view asks whether to lock in the total. Locking finishes the task and prevents more changes for that day; skipping leaves it unlocked so more values can still be logged.
+
+Duration-task action menus include **Lock in total**. Locking finishes the task for that day and prevents further timer or amount changes while preserving the day's logged duration and earned progress; the same menu can unlock the total again.
 
 Logged amounts update task progress immediately. Background persistence and synchronization refreshes preserve that optimistic value so totals do not temporarily revert while the save is in flight.
 

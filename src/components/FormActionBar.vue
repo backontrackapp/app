@@ -1,9 +1,13 @@
 <script setup lang="ts">
+import { ref } from 'vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
+
 withDefaults(defineProps<{
   primaryText?: string
   loading?: boolean
   primaryDisabled?: boolean
   cancelDisabled?: boolean
+  hasChanges?: boolean
   showDelete?: boolean
   deleteLabel?: string
   deleteDisabled?: boolean
@@ -17,6 +21,7 @@ withDefaults(defineProps<{
   loading: false,
   primaryDisabled: false,
   cancelDisabled: false,
+  hasChanges: false,
   showDelete: false,
   deleteLabel: 'Delete',
   deleteDisabled: false,
@@ -33,6 +38,13 @@ const emit = defineEmits<{
   delete: []
   archive: []
 }>()
+
+const discardDialog = ref(false)
+
+function discardChanges() {
+  discardDialog.value = false
+  emit('cancel')
+}
 </script>
 
 <template>
@@ -56,7 +68,7 @@ const emit = defineEmits<{
         variant="text"
         type="button"
         :disabled="cancelDisabled || loading"
-        @click="emit('cancel')"
+        @click="hasChanges ? discardDialog = true : emit('cancel')"
       >
         Cancel
       </v-btn>
@@ -71,6 +83,21 @@ const emit = defineEmits<{
         {{ primaryText }}
       </v-btn>
     </div>
+
+    <v-divider v-if="$slots.below" class="form-action-bar__divider my-3" />
+    <div v-if="$slots.below" class="form-action-bar__below">
+      <slot name="below" />
+    </div>
+
+    <ConfirmDialog
+      v-if="hasChanges"
+      v-model="discardDialog"
+      title="Discard changes?"
+      message="Your unsaved changes will be lost."
+      confirm-text="Discard changes"
+      confirm-color="warning"
+      @confirm="discardChanges"
+    />
   </div>
 </template>
 
@@ -94,6 +121,18 @@ const emit = defineEmits<{
   margin: 0 auto;
   align-items: center;
   gap: .5rem;
+}
+
+.form-action-bar__below {
+  width: 100%;
+  max-width: 54.25rem;
+  margin: 0 auto;
+}
+
+.form-action-bar__divider {
+  width: 100%;
+  max-width: 54.25rem;
+  margin: .5rem auto 0;
 }
 
 .form-action-bar__inner > .v-btn {

@@ -258,8 +258,10 @@ export interface IntervalFlashcardReviewSnapshot {
   sortMode: FlashcardReviewSort
   sortDirection: FlashcardReviewSortDirection
   ejectBehavior: FlashcardReviewEjectBehavior
+  ejectExcludeAfter: number
   maxCards: number
   cardSides: FlashcardReviewCardSides
+  invertFaces?: boolean
   frontSeconds: number
   backSeconds: number
   backSpeechRepeatCount: number
@@ -283,6 +285,7 @@ export interface IntervalTemplate {
   definition: IntervalDefinition
   cues: IntervalCueSettings
   sortOrder: number
+  archived?: boolean
 }
 
 export interface IntervalTemplateDraft extends Omit<IntervalTemplate, 'id'> {
@@ -345,7 +348,7 @@ export type FlashcardReviewMode = 'manual' | 'passive'
 export type FlashcardReviewSide = 'front' | 'back'
 export type FlashcardReviewCardSides = 'both' | FlashcardReviewSide
 export type FlashcardBackDisplay = 'back' | 'transliteration'
-export type FlashcardReviewSort = 'difficult' | 'never_reviewed' | 'least_recent' | 'recently_added' | 'random'
+export type FlashcardReviewSort = 'difficult' | 'easiest' | 'never_reviewed' | 'least_recent' | 'recently_added' | 'random'
 export type FlashcardReviewSortDirection = 'asc' | 'desc'
 export type FlashcardReviewEjectBehavior = 'remove' | 'replace' | 'exclude' | 'replace_exclude'
 export type FlashcardReviewStatus = 'running' | 'paused' | 'completed' | 'ended'
@@ -362,10 +365,8 @@ export type FlashcardContextAction =
 export type FlashcardSettingsApplyTarget = 'session' | 'review-set' | 'both'
 export type IntervalSettingsApplyTarget = 'session' | 'interval' | 'both'
 export type RunnerSessionAction =
-  | 'options'
-  | 'settings'
+  | Exclude<FlashcardContextAction, 'toggle_tts'>
   | 'amplification'
-  | 'eject'
   | 'restart'
   | 'end'
 
@@ -438,12 +439,14 @@ export interface Flashcard {
   imageSource: SquareImageSource
   tags: string[]
   tagDetails?: FlashcardTag[]
+  archived?: boolean
   createdAt: string
   updatedAt: string
   lastReviewedAt?: string
   passiveViews: number
   successCount: number
   errorCount: number
+  ejectCount: number
 }
 
 export interface FlashcardDraft {
@@ -460,7 +463,16 @@ export interface FlashcardImportRow {
   back: string
   transliteration?: string
   note: string
+  image?: string
   tags: string[]
+}
+
+export type FlashcardDuplicateAction = 'skip' | 'replace' | 'duplicate' | 'update'
+export type FlashcardDuplicateColumn = 'back' | 'transliteration' | 'note' | 'tags' | 'image'
+
+export interface FlashcardDuplicateResolution {
+  action: FlashcardDuplicateAction
+  columns: FlashcardDuplicateColumn[]
 }
 
 export interface FlashcardCsvParseResult {
@@ -471,10 +483,12 @@ export interface FlashcardCsvParseResult {
 export interface FlashcardReviewSettings {
   mode: FlashcardReviewMode
   cardSides: FlashcardReviewCardSides
+  invertFaces?: boolean
   indefinite: boolean
   timeLimitSeconds?: number
   maxCards: number
   ejectBehavior: FlashcardReviewEjectBehavior
+  ejectExcludeAfter: number
   frontSeconds: number
   backSeconds: number
   backSpeechRepeatCount: number
@@ -538,6 +552,7 @@ export interface FlashcardReviewSet extends FlashcardReviewSettings {
   shareId?: string
   matchingCardCount: number
   sortOrder: number
+  archived?: boolean
   createdAt: string
   updatedAt: string
 }
@@ -594,6 +609,13 @@ export interface FlashcardReviewQueueCard {
   backAudio?: string
   image: string
   tags: string[]
+  ejectCount: number
+}
+
+export interface FlashcardReviewCardQuickTag {
+  name: string
+  color: string
+  selected: boolean
 }
 
 export interface FlashcardReviewSession extends FlashcardReviewSettings {
@@ -646,6 +668,13 @@ export interface FlashcardSpeechSupport {
   languages: FlashcardSpeechLanguage[]
 }
 
+export interface FlashcardSpeechWord {
+  start: number
+  end: number
+  wordStart: number
+  wordEnd: number
+}
+
 export interface BackgroundFlashcardReviewState {
   sessionId: string
   running: boolean
@@ -671,10 +700,12 @@ export interface FlashcardReviewEvent {
 export type AssistantMessageRole = 'user' | 'assistant'
 export type AssistantToolName =
   | 'list_owned_review_sets'
+  | 'list_owned_flashcards'
   | 'get_owned_review_set_cards'
   | 'create_flashcard_review_set'
   | 'add_flashcards_to_review_set'
   | 'update_flashcard_review_set'
+  | 'update_flashcards'
   | 'present_choices'
 
 export interface AssistantMessageItem {
@@ -711,6 +742,15 @@ export type AssistantConversationItem =
   | AssistantToolOutputItem
   | AssistantReasoningItem
 
+export interface AssistantResponsePayload {
+  items: AssistantConversationItem[]
+}
+
+export type AssistantResponseStreamEvent =
+  | { type: 'text_delta'; delta: string }
+  | { type: 'response'; items: AssistantConversationItem[] }
+  | { type: 'error'; message: string }
+
 export interface AssistantFlashcardDraft {
   front: string
   back: string
@@ -729,13 +769,38 @@ export interface AssistantWritePlan {
   convertsTagSelection: boolean
   maxCards: number
   updatedReviewSet?: FlashcardReviewSetDraft
+  updatedCards?: AssistantCardUpdate[]
   changes?: AssistantReviewSetChange[]
+}
+
+export interface AssistantCardUpdate {
+  id: string
+  label: string
+  draft: FlashcardDraft
+  changes: AssistantReviewSetChange[]
 }
 
 export interface AssistantReviewSetChange {
   label: string
   before: string
   after: string
+}
+
+export interface AssistantPlanChangeRow extends AssistantReviewSetChange {
+  id: string
+  item: string
+}
+
+export interface AssistantPlanCardRow extends AssistantFlashcardDraft {
+  id: string
+  source: 'New' | 'Existing'
+}
+
+export type AssistantPlanStatus = 'pending' | 'cancelled' | 'applied'
+
+export interface AssistantPlanEntry {
+  plan: AssistantWritePlan
+  status: AssistantPlanStatus
 }
 
 export interface AssistantChoice {
@@ -778,6 +843,7 @@ export interface TrackingTracker {
   favorableDirection: FavorableDirection
   dailyAggregation: DailyAggregation
   active: boolean
+  archived?: boolean
   sortOrder: number
   color: string
   icon: string
@@ -817,6 +883,7 @@ export interface JournalEntry {
   timezoneOffset: number
   task?: string
   trackers: string[]
+  archived?: boolean
   taskSnapshot: string
   trackerSnapshots: Record<string, string>
   createdAt: string

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import SpokenText from '@/components/SpokenText.vue'
 import { useFitLargestWord } from '@/composables/useFitLargestWord'
 
 const props = withDefaults(defineProps<{
@@ -10,11 +11,27 @@ const props = withDefaults(defineProps<{
   maxSizeRem?: number
   maxLines?: number
   fitWidth?: boolean
+  language?: string
+  activeStart?: number
+  activeEnd?: number
+  activeWordStart?: number
+  activeWordEnd?: number
+  colorizePinyin?: boolean
+  toneSource?: string
+  pinyin?: boolean
 }>(), {
   defaultFontSize: '3.6rem',
   maxSizeRem: 3.6,
   maxLines: 2,
   fitWidth: true,
+  language: '',
+  activeStart: -1,
+  activeEnd: -1,
+  activeWordStart: -1,
+  activeWordEnd: -1,
+  colorizePinyin: false,
+  toneSource: '',
+  pinyin: false,
 })
 
 const partElement = ref<HTMLElement>()
@@ -42,7 +59,17 @@ useFitLargestWord(
     class="fit-response-part"
     :style="{ fontSize: `var(--fit-response-part-size, ${defaultFontSize})` }"
   >
-    {{ text }}
+    <SpokenText
+      :text="text"
+      :language="language"
+      :active-start="activeStart"
+      :active-end="activeEnd"
+      :active-word-start="activeWordStart"
+      :active-word-end="activeWordEnd"
+      :colorize-pinyin="colorizePinyin"
+      :tone-source="toneSource"
+      :pinyin="pinyin"
+    />
     <span
       ref="measurementElement"
       class="fit-response-part__measurement"

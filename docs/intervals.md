@@ -1,8 +1,12 @@
 # Intervals
 
+The interval editor uses one archive/restore action in place of direct deletion. For an active interval, the action asks whether to archive it or delete it permanently. Archiving removes the template from interval plans and new attachment choices while preserving its definition and completed run history. Archived intervals appear in the collapsible Archive section and can be opened to restore or permanently delete. Permanent deletion removes the reusable template while completed runs keep their snapshots.
+
 ## Interval card actions
 
-Selecting an interval card opens its action menu. **Play** is the first action, followed by Edit, Duplicate, and Delete.
+Selecting an interval card opens its action menu. **Play** is the first action, followed by Edit and Duplicate. Archiving or permanently deleting an interval remains available from its editor.
+
+Starting a saved or Quick interval while another interval is active opens a warning instead of resuming the existing run. Confirming ends the active run and continues with the selected interval; cancelling leaves the active run unchanged.
 
 ## Interval sounds
 
@@ -11,5 +15,7 @@ Settings provides a sound choice for each interval type. In addition to packaged
 ## Recent run history
 
 Recent runs are grouped by day, with every group collapsed by default.
+
+Runs created from an interval that has since been archived remain in recent history without an archive tag.
 
 Selecting a recent run opens its action menu. **See details** reopens the saved completion summary; **Delete** asks for confirmation and removes the run from history immediately. Deleting a run also removes any Review history derived from that Interval, but does not reverse task progress already recorded by the completed session.

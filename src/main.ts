@@ -4,14 +4,17 @@ import { App as NativeApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
 import App from './App.vue'
 import { longPressDrag, longPressDrop } from './directives/longPressDrag'
+import { swipeHint } from './directives/swipeHint'
 import { api } from './lib/api'
 import router from './router'
 import { vuetify } from './plugins/vuetify'
 import { preloadIntervalCueAudio } from './services/intervalCues'
 import { installFlashcardNotificationRouting } from './services/flashcardNotificationRouting'
 import { installIntervalNotificationRouting } from './services/intervalNotificationRouting'
+import { installPostGestureClickRecovery } from './services/postGestureClickRecovery'
 import { installMobileKeyboardViewport } from './services/mobileKeyboardViewport'
 import { closeTopOverlay } from './services/overlayStack'
+import { installScreenOrientationPolicy } from './services/screenOrientation'
 import { installSeoMetadata } from './services/seo'
 import { installTaskNotificationRouting } from './services/taskReminders'
 import { startOfflineSync } from './services/offlineSync'
@@ -29,6 +32,7 @@ import './styles/main.scss'
 const nativePlatform = Capacitor.getPlatform()
 
 installSeoMetadata(router)
+installScreenOrientationPolicy(router)
 
 installClientErrorReporting({
   getAuthToken: () => api.authStore.token,
@@ -51,6 +55,7 @@ const app = createApp(App)
   .use(vuetify)
   .directive('long-press-drag', longPressDrag)
   .directive('long-press-drop', longPressDrop)
+  .directive('swipe-hint', swipeHint)
 
 app.config.errorHandler = (cause, _instance, info) => {
   recordJavaScriptError(cause, `vue:${info}`)
@@ -76,6 +81,9 @@ if (nativePlatform === 'android' || nativePlatform === 'ios') {
     if (!isActive) void flushClientErrors()
   })
 }
+
+const removePostGestureClickRecovery = installPostGestureClickRecovery()
+window.addEventListener('pagehide', removePostGestureClickRecovery, { once: true })
 
 if (nativePlatform === 'android') {
   void router.isReady().then(() => {

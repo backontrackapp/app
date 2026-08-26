@@ -44,7 +44,7 @@ const tracking = useTrackingStore()
 const tasks = useTaskStore()
 const intervals = useIntervalStore()
 const { insightFactorId: factorId, insightOutcomeId: outcomeId } = storeToRefs(tracking)
-const reviewSets = ref<Array<Pick<FlashcardReviewSet, 'id' | 'name'>>>([])
+const reviewSets = ref<Array<Pick<FlashcardReviewSet, 'id' | 'name' | 'archived'>>>([])
 const datePreset = ref<DatePreset>('7')
 const rangeStart = ref(format(subDays(new Date(), 6), 'yyyy-MM-dd'))
 const rangeEnd = ref(format(new Date(), 'yyyy-MM-dd'))
@@ -112,7 +112,7 @@ const factorSources = computed<TrackingFactorSource[]>(() => [
     color: task.color || 'rgb(var(--v-theme-info))',
     ...taskInsightProfile(task),
   })),
-  ...intervals.templates.map((template) => ({
+  ...intervals.templates.filter((template) => !template.archived).map((template) => ({
     id: `interval:${template.id}`,
     source: 'interval' as const,
     name: `Interval · ${template.name}`,
@@ -121,7 +121,7 @@ const factorSources = computed<TrackingFactorSource[]>(() => [
     color: template.color,
     ...INTERVAL_INSIGHT_PROFILE,
   })),
-  ...reviewSets.value.map((reviewSet) => ({
+  ...reviewSets.value.filter((reviewSet) => !reviewSet.archived).map((reviewSet) => ({
     id: `review_set:${reviewSet.id}`,
     source: 'review_set' as const,
     name: `Review set · ${reviewSet.name}`,
@@ -187,6 +187,7 @@ onMounted(async () => {
       reviewSets.value = records.map((record) => ({
         id: String(record.id),
         name: String(record.name),
+        archived: record.archived === true,
       }))
     }),
   ]).catch((cause) => {

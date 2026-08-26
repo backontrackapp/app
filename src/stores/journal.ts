@@ -21,6 +21,7 @@ export function mapJournalEntry(record: Record<string, any>): JournalEntry {
     timezoneOffset: Number(record.timezone_offset || 0),
     task: record.task || undefined,
     trackers,
+    archived: record.archived === true,
     taskSnapshot: record.task_snapshot || '',
     trackerSnapshots: trackerSnapshotMap(record.tracker_snapshot, trackers),
     createdAt: record.created_at || '',
@@ -169,6 +170,7 @@ export const useJournalStore = defineStore('journal', () => {
       timezoneOffset: payload.timezone_offset,
       task: draft.task,
       trackers: [...draft.trackers],
+      archived: previous?.archived === true,
       taskSnapshot: previous?.taskSnapshot || '',
       trackerSnapshots: { ...(previous?.trackerSnapshots || {}) },
       createdAt: previous?.createdAt || new Date().toISOString(),
@@ -213,6 +215,22 @@ export const useJournalStore = defineStore('journal', () => {
     useSnackbarStore().showDeletion('Reflection')
   }
 
+  async function setEntryArchived(id: string, archived: boolean) {
+    const entry = entries.value.find(item => item.id === id)
+    if (!entry) throw new Error('Reflection not found.')
+    const previous = entry.archived
+    entry.archived = archived
+    void useTaskStore().syncTaskReminders()
+    try {
+      const record = await api.collection('journal_entries').update(id, { archived })
+      Object.assign(entry, mapJournalEntry(record))
+    } catch (cause) {
+      entry.archived = previous
+      void useTaskStore().syncTaskReminders()
+      throw cause
+    }
+  }
+
   return {
     entries,
     loading,
@@ -224,6 +242,7 @@ export const useJournalStore = defineStore('journal', () => {
     reloadCurrentRange,
     getEntry,
     saveEntry,
+    setEntryArchived,
     deleteEntry,
   }
 })

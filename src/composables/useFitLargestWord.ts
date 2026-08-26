@@ -59,6 +59,8 @@ export function useFitLargestWord(
   let resizeObserver: ResizeObserver | undefined
   let mounted = false
   let eventHost: HTMLElement | undefined
+  let lastFitWidth: number | undefined
+  let lastFitHeight: number | undefined
 
   const fontSizeProperty = options.fontSizeProperty ?? DEFAULT_FITTED_FONT_SIZE_PROPERTY
   const minSizeRem = () => {
@@ -134,10 +136,25 @@ export function useFitLargestWord(
     setFittedFontSize(fittingSize)
   }
 
-  function fit() {
+  function fit(force = false) {
     const hostElement = host()
     const probe = measurement()
     if (!mounted || !hostElement || !probe || !hostElement.clientWidth) return
+
+    const width = hostElement.clientWidth
+    const height = hostElement.clientHeight
+    if (
+      !force
+      && lastFitWidth !== undefined
+      && Math.abs(width - lastFitWidth) < 1
+      && (!options.fitHeight || (
+        lastFitHeight !== undefined
+        && Math.abs(height - lastFitHeight) < 1
+      ))
+    ) return
+
+    lastFitWidth = width
+    lastFitHeight = height
 
     clearInstance()
     if (!fitsWidth()) {
@@ -194,6 +211,7 @@ export function useFitLargestWord(
     Object.assign(probe.style, widestTypography, { fontSize: '100px' })
     probe.textContent = widestWord
     fitListener = ((event: CustomEvent<{ newValue: number }>) => {
+      if (!hostElement.clientWidth) return
       constrainToFit(event.detail.newValue)
       notifyFitComplete()
     }) as EventListener
@@ -219,7 +237,11 @@ export function useFitLargestWord(
   }
 
   function queueFit() {
-    void nextTick(() => fit())
+    void nextTick(() => fit(true))
+  }
+
+  function refit() {
+    fit()
   }
 
   watch(content, queueFit, { flush: 'post' })
@@ -227,16 +249,18 @@ export function useFitLargestWord(
   onMounted(() => {
     mounted = true
     eventHost = host()
-    eventHost?.addEventListener(REFIT_TEXT_CONTENT_EVENT, fit)
+    eventHost?.addEventListener(REFIT_TEXT_CONTENT_EVENT, refit)
     queueFit()
-    void document.fonts?.ready.then(() => {
-      if (mounted) fit()
-    })
+    if (document.fonts?.status !== 'loaded') {
+      void document.fonts?.ready.then(() => {
+        if (mounted) fit(true)
+      })
+    }
   })
 
   onBeforeUnmount(() => {
     mounted = false
-    eventHost?.removeEventListener(REFIT_TEXT_CONTENT_EVENT, fit)
+    eventHost?.removeEventListener(REFIT_TEXT_CONTENT_EVENT, refit)
     eventHost = undefined
     clearInstance()
     targetElements().forEach((element) => {

@@ -113,6 +113,10 @@ final class FlashcardRecordingPlayer {
         if (cancellation != null) cancellation.run();
     }
 
+    synchronized boolean isActive() {
+        return player != null;
+    }
+
     private File writeDataUrl(String source) throws IOException {
         int comma = source.indexOf(',');
         String metadata = comma < 0 ? "" : source.substring(0, comma).toLowerCase();

@@ -189,6 +189,7 @@ class PhoneSpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
 @objc(AppBridgeViewController)
 class AppBridgeViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
+        supportedOrientations = [UIInterfaceOrientation.portrait.rawValue]
         bridge?.registerPluginType(PhoneSpeechRecognitionPlugin.self)
     }
 }
@@ -202,6 +203,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         BackgroundRunnerPlugin.registerBackgroundTask()
         BackgroundRunnerPlugin.handleApplicationDidFinishLaunching(launchOptions: launchOptions)
         return true
+    }
+
+    func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        guard let bridgeViewController = self.window?.rootViewController as? CAPBridgeViewController else {
+            return .portrait
+        }
+        return UIInterfaceOrientationMask(rawValue: UInt(bridgeViewController.supportedInterfaceOrientations.rawValue))
     }
 
     func applicationWillResignActive(_ application: UIApplication) {

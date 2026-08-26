@@ -62,6 +62,7 @@ const props = withDefaults(defineProps<{
   firstCardLabel?: string
   showSearchFilter?: boolean
   tableSurface?: boolean
+  showActionColumn?: boolean
   showLastColumn?: boolean
   rowClass?: (card: Flashcard) => string | undefined
 }>(), {
@@ -80,13 +81,14 @@ const props = withDefaults(defineProps<{
   firstCardLabel: 'Add your first card',
   showSearchFilter: true,
   tableSurface: true,
+  showActionColumn: true,
   showLastColumn: true,
   defaultReviewSetName: '',
 })
 
 const emit = defineEmits<{
   'add-card': []
-  'open-card': [card: Flashcard]
+  'open-card': [card: Flashcard, cards: Flashcard[]]
   'update:filteredCount': [count: number]
 }>()
 
@@ -155,6 +157,7 @@ const selectedCards = computed(() => {
 const selectedCardsHaveTags = computed(() => selectedCards.value.some(card => card.tags.length > 0))
 const customReviewSets = computed(() => (store.reviewSets || []).filter(set => (
   set.accessRole === 'owner'
+  && !set.archived
   && set.selectionMode === 'cards'
   && set.id !== props.sourceReviewSetId
 )))
@@ -238,6 +241,10 @@ function openBulkTagAction(action: FlashcardBulkTagAction) {
   bulkTagIds.value = []
   bulkError.value = ''
   bulkTagSheetOpen.value = true
+}
+
+function openCard(card: Flashcard) {
+  emit('open-card', card, [...filteredCards.value])
 }
 
 function chooseBulkAction(action: FlashcardBulkAction | FlashcardSelectionAction) {
@@ -377,7 +384,9 @@ async function injectSelectedCardsIntoReviewSet() {
       })
     }
   } catch (cause) {
-    bulkError.value = cause instanceof Error
+    bulkError.value = cause instanceof Error && cause.name === 'AbortError'
+      ? ''
+      : cause instanceof Error
       ? cause.message
       : 'Could not save the selected cards to a Review set.'
   } finally {
@@ -463,15 +472,16 @@ async function injectSelectedCardsIntoReviewSet() {
       :selectable="selectable"
       :interactive="interactive"
       :surface="tableSurface"
+      :show-action-column="showActionColumn"
       :show-last-column="showLastColumn"
       :row-class="rowClass"
-      @open-card="emit('open-card', $event)"
+      @open-card="openCard"
     >
       <template v-if="$slots['action-column-heading']" #action-column-heading>
         <slot name="action-column-heading" />
       </template>
       <template v-if="$slots['action-column']" #action-column="{ card }">
-        <slot name="action-column" :card="card" />
+        <slot name="action-column" :card="card" :cards="filteredCards" />
       </template>
       <template v-if="$slots['last-column-heading']" #last-column-heading>
         <slot name="last-column-heading" />

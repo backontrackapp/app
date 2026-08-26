@@ -29,6 +29,7 @@ const copyDialog = ref(false)
 const leaveDialog = ref(false)
 const working = ref(false)
 const reorderingReviewSets = ref(false)
+const archiveExpanded = ref(false)
 const notice = ref('')
 const recentWeekStart = ref(startOfWeek(new Date(), { weekStartsOn: 1 }))
 const expandedRecentReviewDays = ref(new Set<string>())
@@ -36,8 +37,9 @@ const selectedRecentReview = ref<FlashcardReviewHistoryItem>()
 const recentReviewActionsOpen = ref(false)
 const deleteRecentReviewDialog = ref(false)
 const recentReviewWorking = ref(false)
-const ownedReviewSets = computed(() => store.reviewSets.filter(set => set.accessRole === 'owner'))
-const sharedReviewSets = computed(() => store.reviewSets.filter(set => set.accessRole !== 'owner'))
+const ownedReviewSets = computed(() => store.reviewSets.filter(set => set.accessRole === 'owner' && !set.archived))
+const archivedReviewSets = computed(() => store.reviewSets.filter(set => set.accessRole === 'owner' && set.archived))
+const sharedReviewSets = computed(() => store.reviewSets.filter(set => set.accessRole !== 'owner' && !set.archived))
 const selectedActions = computed(() => selectedReviewSet.value
   ? FLASHCARD_REVIEW_SET_ACTIONS[selectedReviewSet.value.accessRole]
   : [])
@@ -57,12 +59,6 @@ onMounted(() => {
     intervalStore.load({ reconcileActiveSession: false }),
   ]).catch(() => undefined)
 })
-
-function tagName(reviewSet: FlashcardReviewSet, id: string) {
-  return reviewSet.tagDetails.find(tag => tag.id === id)?.name
-    || store.tags.find(tag => tag.id === id)?.name
-    || 'Removed tag'
-}
 
 function recentReviewColor(session: FlashcardReviewHistoryItem) {
   return session.status === 'completed' ? 'success' : 'warning'
@@ -180,15 +176,6 @@ async function leaveSelectedSet() {
 async function openReviewSet(reviewSet: FlashcardReviewSet) {
   startError.value = ''
   try {
-    const active = store.activeSession
-    if (active) {
-      await router.push({
-        name: 'flashcard-review-runner',
-        params: { sessionId: active.id },
-        query: { autoplay: '1' },
-      })
-      return
-    }
     await router.push({
       name: 'flashcard-review-set-runner',
       params: { reviewSetId: reviewSet.id },
@@ -233,6 +220,32 @@ async function reorderReviewSets(result: LongPressDragResult) {
     </v-alert>
 
     <div class="flashcards-action-stack page-action-area page-action-area--route-slide">
+      <v-card
+        v-if="store.activeSession"
+        class="active-review pa-5"
+        color="secondary"
+      >
+        <div class="active-review__inner">
+          <div class="min-width-0">
+            <span class="active-review__label">{{ store.activeSession.status === 'paused' ? 'Paused' : 'In progress' }}</span>
+            <strong class="active-review__name text-truncate">{{ store.activeSession.name }}</strong>
+          </div>
+          <v-btn
+            class="mobile-large-action"
+            color="primary"
+            size="large"
+            append-icon="mdi-arrow-right"
+            :to="{
+              name: 'flashcard-review-runner',
+              params: { sessionId: store.activeSession.id },
+              query: { autoplay: '1' },
+            }"
+          >
+            Resume
+          </v-btn>
+        </div>
+      </v-card>
+
       <section class="card-library-action-bar">
         <div
           class="card-library-summary"
@@ -268,32 +281,6 @@ async function reorderReviewSets(result: LongPressDragResult) {
           </div>
         </div>
       </section>
-
-      <v-card
-        v-if="store.activeSession"
-        class="active-review pa-5"
-        color="secondary"
-      >
-        <div class="active-review__inner">
-          <div class="min-width-0">
-            <span class="active-review__label">{{ store.activeSession.status === 'paused' ? 'Paused' : 'In progress' }}</span>
-            <strong class="active-review__name text-truncate">{{ store.activeSession.name }}</strong>
-          </div>
-          <v-btn
-            class="mobile-large-action"
-            color="primary"
-            size="large"
-            append-icon="mdi-arrow-right"
-            :to="{
-              name: 'flashcard-review-runner',
-              params: { sessionId: store.activeSession.id },
-              query: { autoplay: '1' },
-            }"
-          >
-            Resume
-          </v-btn>
-        </div>
-      </v-card>
     </div>
 
     <section>
@@ -384,25 +371,35 @@ async function reorderReviewSets(result: LongPressDragResult) {
                   <v-icon icon="mdi-card-multiple-outline" size="small" />
                   <span>{{ reviewSetCardCount(reviewSet) }} cards/session</span>
                 </span>
-                <span
-                  v-for="tag in reviewSet.tags"
-                  :key="tag"
-                  class="review-set__meta-item"
-                >
-                  <v-icon icon="mdi-tag-outline" size="small" />
-                  <span>{{ tagName(reviewSet, tag) }}</span>
-                </span>
               </div>
             </div>
           </div>
         </v-card>
       </div>
-      <v-card v-else-if="store.loaded" class="surface-card pa-7 text-center">
+      <v-card v-else-if="store.loaded && !archivedReviewSets.length" class="surface-card pa-7 text-center">
         <v-icon icon="mdi-cards-playing-outline" size="40" color="secondary" />
         <h3 class="text-h6 font-weight-black mt-3">Build your first Review set</h3>
         <p class="text-body-2 muted mt-2 mb-5">Choose which tags to review and how the cards should move.</p>
         <v-btn color="secondary" :to="{ name: 'flashcard-review-set-new' }">Create Review set</v-btn>
       </v-card>
+
+      <section v-if="archivedReviewSets.length" class="mt-4">
+        <v-btn block variant="text" class="archive-heading" :aria-expanded="archiveExpanded" aria-controls="archived-review-sets" @click="archiveExpanded = !archiveExpanded">
+          <v-icon icon="mdi-archive-outline" size="small" />
+          <span>Archive</span>
+          <span class="archive-heading__count">{{ archivedReviewSets.length }}</span>
+          <v-icon :icon="archiveExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'" size="small" />
+        </v-btn>
+        <v-expand-transition>
+          <div v-show="archiveExpanded" id="archived-review-sets">
+            <div class="review-set-list mt-2">
+              <v-card v-for="reviewSet in archivedReviewSets" :key="reviewSet.id" class="review-set surface-card pa-4" role="link" tabindex="0" :aria-label="`Edit archived Review set ${reviewSet.name}`" @click="router.push({ name: 'flashcard-review-set-edit', params: { id: reviewSet.id } })" @keydown.enter="router.push({ name: 'flashcard-review-set-edit', params: { id: reviewSet.id } })" @keydown.space.prevent="router.push({ name: 'flashcard-review-set-edit', params: { id: reviewSet.id } })">
+                <div class="d-flex align-center ga-3"><v-icon icon="mdi-archive-outline" color="warning" /><div class="min-width-0"><h3 class="text-body-1 font-weight-black text-truncate">{{ reviewSet.name }}</h3><p class="text-caption muted mt-1">Archived · Open to restore</p></div></div>
+              </v-card>
+            </div>
+          </div>
+        </v-expand-transition>
+      </section>
     </section>
 
     <section v-if="sharedReviewSets.length">
@@ -462,10 +459,6 @@ async function reorderReviewSets(result: LongPressDragResult) {
                   <v-icon icon="mdi-card-multiple-outline" size="small" />
                   <span>{{ reviewSetCardCount(reviewSet) }} cards/session</span>
                 </span>
-                <span v-for="tag in reviewSet.tags" :key="tag" class="review-set__meta-item">
-                  <v-icon icon="mdi-tag-outline" size="small" />
-                  <span>{{ tagName(reviewSet, tag) }}</span>
-                </span>
               </div>
             </div>
           </div>
@@ -515,7 +508,6 @@ async function reorderReviewSets(result: LongPressDragResult) {
                     v-for="session in group.sessions"
                     :key="session.id"
                     class="recent-review-item"
-                    :title="session.name"
                     :aria-label="`Actions for ${session.name}`"
                     @click="openRecentReviewActions(session)"
                   >
@@ -525,6 +517,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
                         :color="recentReviewColor(session)"
                       />
                     </template>
+                    <span class="text-body-1">{{ session.name }}</span>
                     <span class="recent-review-meta">
                       {{ format(new Date(session.startedAt), 'h:mm a') }} · {{ session.sourceLabel }}
                     </span>
@@ -660,6 +653,9 @@ async function reorderReviewSets(result: LongPressDragResult) {
 .card-library-summary__actions :deep(.v-btn) { width: 100%; }
 .review-set-list { display: grid; gap: .75rem; }
 .review-set { overflow: hidden; cursor: pointer; }
+.archive-heading { min-height: 2.75rem; }
+.archive-heading :deep(.v-btn__content) { width: 100%; justify-content: flex-start; gap: .5rem; }
+.archive-heading__count { margin-left: auto; color: rgb(var(--v-theme-on-surface) / .54); font-size: .7rem; }
 .review-set:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .1875rem; }
 .review-set__main { min-width: 0; }
 .review-set__heading { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; }

@@ -163,7 +163,7 @@ export function parseFlashcardCsv(input: string): FlashcardCsvParseResult {
   if (!parsed.records.length) return { rows: [], errors: ['Add a CSV header and at least one card.'] }
 
   const headers = recordHeaders(parsed.records[parsed.headerIndex])
-  const allowedHeaders = new Set(['front', 'back', 'transliteration', 'note', 'tags'])
+  const allowedHeaders = new Set(['front', 'back', 'transliteration', 'note', 'image', 'tags'])
   const unknownHeaders = headers.filter(header => header && !allowedHeaders.has(header))
   const duplicateHeaders = headers.filter((header, index) => header && headers.indexOf(header) !== index)
   const errors: string[] = []
@@ -174,6 +174,7 @@ export function parseFlashcardCsv(input: string): FlashcardCsvParseResult {
   const backIndex = headers.indexOf('back')
   const transliterationIndex = headers.indexOf('transliteration')
   const noteIndex = headers.indexOf('note')
+  const imageIndex = headers.indexOf('image')
   const tagsIndex = headers.indexOf('tags')
   if (frontIndex < 0) errors.push('The front header is required.')
   if (backIndex < 0) errors.push('The back header is required.')
@@ -191,6 +192,7 @@ export function parseFlashcardCsv(input: string): FlashcardCsvParseResult {
       ? (record.fields[transliterationIndex] || '').trim()
       : ''
     const note = noteIndex >= 0 ? (record.fields[noteIndex] || '').trim() : ''
+    const image = imageIndex >= 0 ? (record.fields[imageIndex] || '').trim() : ''
     const tags = tagsIndex >= 0 ? distinctTags(record.fields[tagsIndex] || '') : []
     if (!front || !back) {
       errors.push(`Line ${record.line}: front and back are required.`)
@@ -208,6 +210,14 @@ export function parseFlashcardCsv(input: string): FlashcardCsvParseResult {
       errors.push(`Line ${record.line}: note must be 2,000 characters or fewer.`)
       continue
     }
+    if (image && !/^https?:\/\/[^\s]+$/i.test(image)) {
+      errors.push(`Line ${record.line}: image must be a complete HTTP or HTTPS URL.`)
+      continue
+    }
+    if (image.length > 2048) {
+      errors.push(`Line ${record.line}: image must be 2,048 characters or fewer.`)
+      continue
+    }
     if (tags.some(tag => tag.length > 50)) {
       errors.push(`Line ${record.line}: tag names must be 50 characters or fewer.`)
       continue
@@ -217,6 +227,7 @@ export function parseFlashcardCsv(input: string): FlashcardCsvParseResult {
       back,
       ...(transliteration ? { transliteration } : {}),
       note,
+      ...(imageIndex >= 0 ? { image } : {}),
       tags,
     })
   }

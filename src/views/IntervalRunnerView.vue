@@ -8,7 +8,6 @@ import AppDialog from '@/components/AppDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FlashcardCardDialog from '@/components/FlashcardCardDialog.vue'
 import FlashcardContextActions from '@/components/FlashcardContextActions.vue'
-import FlashcardResponseText from '@/components/FlashcardResponseText.vue'
 import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsFields.vue'
 import AppForm from '@/components/AppForm.vue'
 import IntervalSettingsFields from '@/components/IntervalSettingsFields.vue'
@@ -16,10 +15,12 @@ import IntervalTypeIcon from '@/components/IntervalTypeIcon.vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
 import RunnerStartScreen from '@/components/RunnerStartScreen.vue'
 import RunnerSessionActions from '@/components/RunnerSessionActions.vue'
+import ReviewSetCard from '@/components/ReviewSetCard.vue'
 import {
   nativeBackgroundIntervalIsActive,
   stopBackgroundInterval,
   syncBackgroundInterval,
+  waitForBackgroundIntervalSpeech,
 } from '@/services/backgroundInterval'
 import {
   flashcardSpeechOverAmplificationIsEnabled,
@@ -27,20 +28,23 @@ import {
   speakFlashcardText,
   stopFlashcardSpeech,
   toggleFlashcardSpeechOverAmplification,
+  waitForFlashcardSpeechHandoff,
 } from '@/services/flashcardSpeech'
 import {
   cardMatchesTags,
   createIntervalFlashcardReviewSnapshot,
+  DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
   flashcardEjectExcludes,
+  flashcardEjectReachesExclusionThreshold,
   flashcardEjectLoadsNext,
   flashcardReviewActionFromSwipe,
   intervalFlashcardEjectionOffsetMs,
   intervalFlashcardNavigationOffsetMs,
   intervalFlashcardPhase,
   intervalFlashcardSideOffsetMs,
-  flashcardTextFontSize,
   flashcardReviewSettingsAreValid,
   flashcardReviewSettingsSignature,
+  flashcardTagToggleUpdate,
   FLASHCARD_SETTINGS_APPLY_MENU_ITEMS,
   INTERVAL_FLASHCARD_QUICK_TAGS,
   updateFlashcardReviewExclusions,
@@ -76,6 +80,8 @@ import {
 } from '@/services/intervals'
 import { toDateKey } from '@/services/schedule'
 import { intervalRunnerSessionMenuItems } from '@/services/runnerSessionActions'
+import { confirmSwipeHint, REVIEW_SET_CARD_SWIPE_HINT } from '@/services/swipeHints'
+import { prepareFlashcardSpeechWordTracking } from '@/services/spokenText'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
 import { showSavedSnackbar } from '@/stores/snackbar'
@@ -86,6 +92,7 @@ import type {
   FlashcardReviewSettings,
   FlashcardSettingsApplyTarget,
   FlashcardSpeechSupport,
+  FlashcardSpeechWord,
   FlashcardTag,
   IntervalDefinition,
   IntervalFlashcardReviewSnapshot,
@@ -134,7 +141,19 @@ const pendingRepetitionStart = ref<
 >()
 const repetitionError = ref('')
 const attributionSheet = ref(false)
-const activeSessionSheet = ref(false)
+const replaceActiveSessionDialog = ref(false)
+const replacingActiveSession = ref(false)
+const activeSessionName = ref('')
+const pendingActiveSessionStart = ref<
+  | { kind: 'request' }
+  | {
+      kind: 'template'
+      taskId?: string
+      programStepId?: string
+      programStepCompletionId?: string
+      repetitions?: number
+    }
+>()
 const flashcardContextSheet = ref(false)
 const openingFlashcardContext = ref(false)
 const flashcardNavigating = ref(false)
@@ -154,12 +173,15 @@ const flashcardSettingsError = ref('')
 const flashcardSettingsOriginal = ref('')
 const flashcardSpeechLoading = ref(false)
 const flashcardSpeechSupport = ref<FlashcardSpeechSupport>({ available: false, languages: [] })
+const spokenFlashcardWord = ref<FlashcardSpeechWord>()
 const flashcardSettingsDraft = reactive<FlashcardReviewSettings>({
   mode: 'passive',
   cardSides: 'both',
+  invertFaces: false,
   indefinite: true,
   maxCards: 1,
   ejectBehavior: 'remove',
+  ejectExcludeAfter: DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
   frontSeconds: 5,
   backSeconds: 5,
   backSpeechRepeatCount: 1,
@@ -260,17 +282,21 @@ const flashcardReviewElapsedMs = computed(() => {
 const flashcardPhase = computed(() => session.value?.flashcardReview
   ? intervalFlashcardPhase(session.value.flashcardReview, flashcardReviewElapsedMs.value)
   : undefined)
-const intervalFlashcardTransitionKey = computed(() => flashcardPhase.value
-  ? `${flashcardPhase.value.card.id}:${flashcardPhase.value.side}`
-  : '')
+const flashcardReviewSet = computed(() => flashcardStore.reviewSets
+  .find(item => item.id === session.value?.flashcardReview?.reviewSet))
+const flashcardBackDisplay = computed(() => {
+  const review = session.value?.flashcardReview
+  return flashcardReviewSet.value?.backDisplay === 'transliteration'
+    || review?.backDisplay === 'transliteration'
+    ? 'transliteration'
+    : 'back'
+})
 const flashcardContextDisabled = computed(() => Boolean(
   isTemplatePreview.value
   || syncing.value
   || openingFlashcardContext.value
   || flashcardNavigating.value,
 ))
-const flashcardReviewSet = computed(() => flashcardStore.reviewSets
-  .find(item => item.id === session.value?.flashcardReview?.reviewSet))
 const canManageIntervalCards = computed(() => Boolean(
   flashcardReviewSet.value && flashcardReviewSet.value.accessRole !== 'readonly',
 ))
@@ -321,6 +347,12 @@ const intervalFlashcardSource = computed(() => {
 })
 const currentFlashcardRecord = computed(() => intervalFlashcardSource.value
   .find(card => card.id === flashcardPhase.value?.card.id))
+const displayedIntervalFlashcard = computed(() => {
+  const queuedCard = flashcardPhase.value?.card
+  const sourceTransliteration = currentFlashcardRecord.value?.transliteration
+  if (!queuedCard || queuedCard.transliteration || !sourceTransliteration) return queuedCard
+  return { ...queuedCard, transliteration: sourceTransliteration }
+})
 const canTagCurrentFlashcard = computed(() => Boolean(
   !isTemplatePreview.value
   && flashcardReviewSet.value?.accessRole === 'owner'
@@ -471,7 +503,7 @@ watch([
   () => flashcardReviewPlaybackEnabled.value,
   () => flashcardPhase.value?.key,
 ], () => {
-  void speakCurrentFlashcardSide()
+  if (!flashcardNavigating.value) void speakCurrentFlashcardSide()
 }, { flush: 'post' })
 
 watch([
@@ -479,14 +511,17 @@ watch([
   () => flashcardPhase.value?.side,
 ], ([cardId, side], [previousCardId, previousSide]) => {
   if (!cardId || !side || !previousCardId || !previousSide) return
+  const cardChanged = cardId !== previousCardId
+  const sideChanged = side !== previousSide
+  if (cardChanged || sideChanged) spokenFlashcardWord.value = undefined
   if (intervalFlashcardTransitionDirection.value) return
 
-  if (cardId !== previousCardId) {
+  if (cardChanged) {
     intervalFlashcardTransitionDirection.value = 'next'
-  } else if (side !== previousSide) {
+  } else if (sideChanged) {
     intervalFlashcardTransitionDirection.value = side
   }
-})
+}, { flush: 'sync' })
 
 watch(flashcardContextSheet, (open, wasOpen) => {
   if (wasOpen && !open) void finishFlashcardContext()
@@ -602,6 +637,7 @@ onMounted(async () => {
       error.value = 'That interval session could not be found.'
       return
     }
+    await ensureIntervalFlashcardSource()
     displayRemainingMs.value = session.value.runtime.remainingMs
     await tick()
     animationFrame = window.requestAnimationFrame(updateProgressFrame)
@@ -643,7 +679,7 @@ onBeforeUnmount(() => {
   void stopFlashcardSpeech()
 })
 
-async function speakCurrentFlashcardSide() {
+async function speakCurrentFlashcardSide(allowPaused = false) {
   const item = session.value
   const review = item?.flashcardReview
   const phase = flashcardPhase.value
@@ -651,10 +687,11 @@ async function speakCurrentFlashcardSide() {
   if (reconcilingVisibilitySpeech) return
   if (document.visibilityState !== 'visible') return
   if (
-    item?.status !== 'running'
+    !item
+    || (!allowPaused && item.status !== 'running')
     || !review?.speechEnabled
-    || review.speechPaused
-    || !flashcardReviewPlaybackEnabled.value
+    || (!allowPaused && review.speechPaused)
+    || (!allowPaused && !flashcardReviewPlaybackEnabled.value)
     || !phase
     || !key
   ) {
@@ -671,9 +708,16 @@ async function speakCurrentFlashcardSide() {
     const text = phase.side === 'front' ? phase.card.front : phase.card.back
     const language = phase.side === 'front' ? review.frontLanguage : review.backLanguage
     const audio = (phase.side === 'front' ? phase.card.frontAudio : phase.card.backAudio) || ''
+    prepareFlashcardSpeechWordTracking(word => {
+      const current = flashcardPhase.value
+      if (current?.key === phase.key && session.value?.id === item.id) {
+        spokenFlashcardWord.value = word
+      }
+    })
     if (audio) await speakFlashcardText(text, language, phase.key, audio)
     else await speakFlashcardText(text, language, phase.key)
   } catch {
+    spokenFlashcardWord.value = undefined
     // Speech is optional during intervals; timer playback continues without an inline warning.
   }
 }
@@ -878,6 +922,13 @@ async function handleVisibility() {
     const backgroundWasActive = nativeBackgroundIntervalIsActive()
     reconcilingVisibilitySpeech = backgroundWasActive
     try {
+      if (backgroundWasActive) {
+        await Promise.all([
+          waitForFlashcardSpeechHandoff(),
+          waitForBackgroundIntervalSpeech(),
+        ])
+        if (document.visibilityState !== 'visible') return
+      }
       wakeLock = await requestIntervalWakeLock()
       await tick()
       if (backgroundWasActive && flashcardPhase.value) {
@@ -1061,23 +1112,12 @@ async function resume() {
   wakeLock = await requestIntervalWakeLock()
 }
 
-async function requestStartTemplate() {
+async function requestStartTemplate(replaceActive = false) {
   const active = store.activeSession
-  if (active) {
-    if (
-      originTaskId.value
-      && active.task === originTaskId.value
-      && (active.programStep || '') === originProgramStepId.value
-      && (active.programStepCompletion || '') === originProgramStepCompletionId.value
-    ) {
-      await router.replace({
-        name: 'interval-runner',
-        params: { sessionId: active.id },
-        query: { from: route.query.from, autoplay: '1' },
-      })
-    } else {
-      activeSessionSheet.value = true
-    }
+  if (active && !replaceActive) {
+    activeSessionName.value = active.name
+    pendingActiveSessionStart.value = { kind: 'request' }
+    replaceActiveSessionDialog.value = true
     return
   }
   if (!originTaskId.value && eligibleTaskProgress.value.length) {
@@ -1096,9 +1136,24 @@ async function startTemplate(
   programStepId?: string,
   programStepCompletionId?: string,
   repetitions?: number,
+  replaceActive = false,
 ) {
   const item = previewSession.value
   if (!item || starting.value) return
+  if (store.activeSession && !replaceActive) {
+    activeSessionName.value = store.activeSession.name
+    pendingActiveSessionStart.value = {
+      kind: 'template',
+      taskId,
+      programStepId,
+      programStepCompletionId,
+      repetitions,
+    }
+    attributionSheet.value = false
+    repetitionDialog.value = false
+    replaceActiveSessionDialog.value = true
+    return
+  }
   const repetitionSettings = intervalGlobalRepetitionSettings(item.definition)
   if (repetitionSettings.enabled && repetitions === undefined) {
     selectedRepetitions.value = repetitionSettings.defaultCount
@@ -1155,7 +1210,15 @@ async function startTemplate(
       repetitionDialog.value = false
       repetitionDefinition.value = undefined
       pendingRepetitionStart.value = undefined
-      activeSessionSheet.value = true
+      pendingActiveSessionStart.value = {
+        kind: 'template',
+        taskId,
+        programStepId,
+        programStepCompletionId,
+        repetitions,
+      }
+      activeSessionName.value = started.name
+      replaceActiveSessionDialog.value = true
       return
     }
     playCurrentStepCue(started)
@@ -1206,18 +1269,33 @@ function cancelRepetitionStart() {
   repetitionError.value = ''
 }
 
-async function resumeActiveSession() {
-  const active = store.activeSession
-  if (!active) return
-  activeSessionSheet.value = false
-  await router.replace({
-    name: 'interval-runner',
-    params: { sessionId: active.id },
-    query: {
-      ...(route.query.from === 'tasks' ? { from: 'tasks' } : {}),
-      autoplay: '1',
-    },
-  })
+async function replaceActiveSession() {
+  if (replacingActiveSession.value) return
+  replacingActiveSession.value = true
+  error.value = ''
+  try {
+    await store.endActiveSession()
+    await stopBackgroundInterval()
+    await stopFlashcardSpeech()
+    replaceActiveSessionDialog.value = false
+    const pending = pendingActiveSessionStart.value
+    pendingActiveSessionStart.value = undefined
+    if (pending?.kind === 'template') {
+      await startTemplate(
+        pending.taskId,
+        pending.programStepId,
+        pending.programStepCompletionId,
+        pending.repetitions,
+        true,
+      )
+    } else {
+      await requestStartTemplate(true)
+    }
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not end the active interval.'
+  } finally {
+    replacingActiveSession.value = false
+  }
 }
 
 async function advanceCurrent(item: IntervalSession) {
@@ -1416,6 +1494,10 @@ async function navigateIntervalFlashcard(
       ),
     })
     if (updated?.status === 'running') await syncNativeTimer(updated)
+    if (updated) {
+      await nextTick()
+      await speakCurrentFlashcardSide(true)
+    }
   } catch (cause) {
     intervalFlashcardTransitionDirection.value = undefined
     error.value = cause instanceof Error ? cause.message : 'Could not navigate this Review set.'
@@ -1455,6 +1537,10 @@ async function showIntervalFlashcardSide(
       ),
     })
     if (updated?.status === 'running') await syncNativeTimer(updated)
+    if (updated) {
+      await nextTick()
+      await speakCurrentFlashcardSide(true)
+    }
   } catch (cause) {
     intervalFlashcardTransitionDirection.value = undefined
     error.value = cause instanceof Error ? cause.message : 'Could not flip this flashcard.'
@@ -1540,6 +1626,7 @@ function finishIntervalFlashcardSwipe(event: PointerEvent) {
   )
   suppressNextIntervalFlashcardClick()
   if (responseConsumedGesture) return
+  confirmSwipeHint(REVIEW_SET_CARD_SWIPE_HINT.id)
   if (gesture.action === 'previous' || gesture.action === 'next') {
     void navigateIntervalFlashcard(gesture.action, gesture.transition)
   } else {
@@ -1613,6 +1700,7 @@ function snapshotCard(card: Flashcard) {
     backAudio: card.backAudio,
     image: card.image,
     tags: [...card.tags],
+    ejectCount: card.ejectCount,
   }
 }
 
@@ -1667,8 +1755,12 @@ async function toggleIntervalFlashcardTag(tag: FlashcardTag | { name: string }) 
   flashcardTagSaving.value = 'id' in tag ? tag.id : tag.name
   try {
     const resolvedTag = 'id' in tag ? tag : await flashcardStore.createTag(tag.name)
-    const action = intervalFlashcardHasTag(resolvedTag.id) ? 'remove_tags' : 'add_tags'
-    const updatedCards = await flashcardStore.bulkUpdateCards(action, [cardId], [resolvedTag.id])
+    const update = flashcardTagToggleUpdate(
+      flashcardPhase.value?.card.tags || [],
+      resolvedTag,
+      flashcardStore.tags,
+    )
+    const updatedCards = await flashcardStore.bulkUpdateCards(update.action, [cardId], update.values)
     const updatedCard = updatedCards.find(card => card.id === cardId)
     if (!updatedCard) throw new Error('The flashcard could not be updated.')
     await saveIntervalFlashcard(updatedCard)
@@ -1705,6 +1797,7 @@ async function ejectIntervalFlashcard() {
   const reviewSet = flashcardReviewSet.value
   const previousExcludedCards = [...(reviewSet?.excludedCards || [])]
   try {
+    const ejectCount = await flashcardStore.recordCardEject(review.reviewSet, cardId)
     const cards = review.cards.filter(card => card.id !== cardId)
     const reserveCardIds = [...(review.reserveCardIds || [])]
     const maxCards = review.maxCards || review.cards.length
@@ -1712,6 +1805,7 @@ async function ejectIntervalFlashcard() {
       await ensureIntervalFlashcardSource()
       while (reserveCardIds.length && cards.length < maxCards) {
         const replacementId = reserveCardIds.shift()!
+        if (cards.some(card => card.id === replacementId)) continue
         const replacement = intervalFlashcardSource.value.find(card => card.id === replacementId)
         if (!replacement) continue
         cards.push({
@@ -1722,11 +1816,19 @@ async function ejectIntervalFlashcard() {
           note: replacement.note,
           frontAudio: replacement.frontAudio,
           backAudio: replacement.backAudio,
+          image: replacement.image,
           tags: [...replacement.tags],
+          ejectCount: replacement.ejectCount,
         })
       }
     }
-    if (flashcardEjectExcludes(review.ejectBehavior)) {
+    if (
+      flashcardEjectExcludes(review.ejectBehavior)
+      && flashcardEjectReachesExclusionThreshold(
+        ejectCount,
+        review.ejectExcludeAfter,
+      )
+    ) {
       if (!reviewSet) throw new Error('The Review set for this session is no longer available.')
         await flashcardStore.saveReviewSetPreferences(reviewSet.id, {
           ...reviewSet,
@@ -1745,6 +1847,7 @@ async function ejectIntervalFlashcard() {
         review,
         flashcardReviewElapsedMs.value,
         cardId,
+        cards,
       ),
     })
     playFlashcardEjectCue()
@@ -1799,9 +1902,11 @@ async function openFlashcardSettings() {
   Object.assign(flashcardSettingsDraft, {
     mode: 'passive',
     cardSides: review.cardSides,
+    invertFaces: review.invertFaces === true,
     indefinite: true,
     maxCards: review.maxCards || review.cards.length,
     ejectBehavior: review.ejectBehavior || 'remove',
+    ejectExcludeAfter: review.ejectExcludeAfter || DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
     frontSeconds: review.frontSeconds,
     backSeconds: review.backSeconds,
     backSpeechRepeatCount: review.backSpeechRepeatCount,
@@ -1849,8 +1954,10 @@ async function saveFlashcardSettings(target: FlashcardSettingsApplyTarget = 'ses
       const settings = {
         ...context.reviewSet,
         cardSides: flashcardSettingsDraft.cardSides,
+        invertFaces: flashcardSettingsDraft.invertFaces === true,
         maxCards: flashcardSettingsDraft.maxCards,
         ejectBehavior: flashcardSettingsDraft.ejectBehavior,
+        ejectExcludeAfter: flashcardSettingsDraft.ejectExcludeAfter,
         frontSeconds: flashcardSettingsDraft.frontSeconds,
         backSeconds: flashcardSettingsDraft.backSeconds,
         backSpeechRepeatCount: flashcardSettingsDraft.backSpeechRepeatCount,
@@ -2007,7 +2114,7 @@ async function runAgain(repetitions?: number) {
         primary-label="Start interval"
         cancel-label="Cancel interval"
         :busy="starting"
-        @start="requestStartTemplate"
+        @start="requestStartTemplate()"
         @cancel="router.replace(returnTo)"
       />
 
@@ -2230,157 +2337,52 @@ async function runAgain(repetitions?: number) {
             </template>
           </footer>
 
-          <div
+          <ReviewSetCard
             v-if="flashcardPhase && session.flashcardReview"
-            class="interval-review-card"
-            :class="{
-              'interval-review-card--playback-paused': !flashcardReviewPlaybackEnabled,
-              'interval-review-card--disabled': flashcardContextDisabled,
-            }"
-            role="button"
-            :tabindex="flashcardContextDisabled ? -1 : 0"
-            :aria-disabled="flashcardContextDisabled"
-            :aria-label="flashcardReviewPlaybackEnabled
-              ? `${session.flashcardReview.name}, ${flashcardPhase.side}, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`
-              : `${session.flashcardReview.name} paused for this step, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`"
-            @pointerdown.capture="beginIntervalFlashcardSwipe"
-            @pointermove.capture="moveIntervalFlashcardSwipe"
-            @pointerup.capture="finishIntervalFlashcardSwipe"
-            @pointercancel.capture="cancelIntervalFlashcardSwipe"
-            @lostpointercapture.capture="cancelIntervalFlashcardSwipe"
-            @click="openFlashcardContext"
-            @keydown.enter.self="openFlashcardContext"
-            @keydown.space.self.prevent="openFlashcardContext"
-          >
-            <transition
-              :name="intervalFlashcardTransitionDirection
-                ? `interval-flashcard-${intervalFlashcardTransitionDirection}`
-                : undefined"
-            >
-              <img
-                v-if="flashcardPhase.card.image"
-                :key="flashcardPhase.card.id"
-                :src="flashcardPhase.card.image"
-                alt=""
-                class="interval-review-card__image"
-              />
-            </transition>
-            <div class="interval-review-card__main">
-              <div class="interval-review-card__content">
-                <div class="interval-review-card__heading">
-                  <span class="interval-review-card__set">
-                    <v-icon icon="mdi-cards-outline" size="17" />
-                    <span class="text-truncate">{{ session.flashcardReview.name }}</span>
-                    <span class="interval-review-card__count">
-                      ({{ flashcardPhase.cardIndex + 1 }} of {{ session.flashcardReview.cards.length }})
-                    </span>
-                  </span>
-                  <div class="interval-review-card__meta">
-                    <small>
-                      <v-icon
-                        v-if="!flashcardReviewPlaybackEnabled"
-                        icon="mdi-pause-circle-outline"
-                        size="14"
-                      />
-                      {{ flashcardReviewPlaybackEnabled ? (flashcardPhase.side === 'front' ? 'Front' : 'Back') : 'Paused' }}
-                    </small>
-                  </div>
-                </div>
-                <div class="interval-review-card__face-window">
-                  <transition
-                    :name="intervalFlashcardTransitionDirection
-                      ? `interval-flashcard-${intervalFlashcardTransitionDirection}`
-                      : undefined"
-                    @after-enter="finishIntervalFlashcardTransition"
-                  >
-                    <div :key="intervalFlashcardTransitionKey" class="interval-review-card__faces">
-                      <strong
-                        :class="{
-                          'interval-review-card__face--hidden': flashcardPhase.side !== 'front',
-                        }"
-                        :aria-hidden="flashcardPhase.side !== 'front' ? 'true' : undefined"
-                        :style="{
-                          fontSize: flashcardTextFontSize(
-                            flashcardPhase.card.front,
-                            'face',
-                            'compact',
-                          ),
-                        }"
-                      >
-                        {{ flashcardPhase.card.front }}
-                      </strong>
-                      <FlashcardResponseText
-                        :class="{
-                          'interval-review-card__face--hidden': flashcardPhase.side !== 'back',
-                        }"
-                        :aria-hidden="flashcardPhase.side !== 'back' ? 'true' : undefined"
-                        :back="flashcardPhase.card.back"
-                        :transliteration="flashcardPhase.card.transliteration"
-                        :note="flashcardPhase.card.note"
-                        :back-display="session.flashcardReview.backDisplay || 'back'"
-                        show-transliteration
-                        density="compact"
-                      />
-                    </div>
-                  </transition>
-                </div>
-              </div>
-            </div>
-            <footer class="interval-review-card__tag-actions" aria-label="Flashcard tags">
-              <v-btn
-                class="interval-review-card__tag-control interval-review-card__eject-button"
-                size="x-small"
-                variant="text"
-                icon="mdi-eject-outline"
-                aria-label="Eject current flashcard"
-                title="Eject current flashcard"
-                :loading="flashcardEjecting"
-                :disabled="isTemplatePreview || syncing || flashcardEjecting"
-                @click.stop="ejectIntervalFlashcard"
-              />
-              <div class="interval-review-card__quick-tags">
-                <v-chip
-                  v-for="tag in intervalQuickTags"
-                  :key="tag.name"
-                  class="interval-review-card__tag-control interval-review-card__quick-tag"
-                  :data-tag-name="tag.name"
-                  size="x-small"
-                  label
-                  :color="tag.selected ? tag.color : undefined"
-                  :variant="tag.selected ? 'flat' : 'outlined'"
-                  :prepend-icon="tag.selected ? 'mdi-check' : 'mdi-tag-outline'"
-                  :disabled="!canTagCurrentFlashcard"
-                  :aria-pressed="tag.selected"
-                  :aria-label="`${tag.selected ? 'Remove' : 'Add'} ${tag.name} tag`"
-                  @click.stop="toggleIntervalFlashcardTag({ name: tag.name })"
-                >
-                  {{ tag.name }}
-                </v-chip>
-              </div>
-              <v-btn
-                class="interval-review-card__tag-control interval-review-card__tag-menu-button"
-                size="x-small"
-                variant="text"
-                prepend-icon="mdi-tag-multiple-outline"
-                :disabled="!canTagCurrentFlashcard || !intervalSelectableTags.length"
-                @click.stop="openFlashcardTagSheet"
-              >
-                Tags
-              </v-btn>
-            </footer>
-            <v-progress-linear
-              class="interval-review-card__progress"
-              :model-value="flashcardPhase.progress"
-              color="info"
-              bg-color="white"
-              :bg-opacity="0.14"
-              height="5"
-              rounded
-              :aria-label="flashcardReviewPlaybackEnabled
-                ? `${Math.round(flashcardPhase.progress)}% through the ${flashcardPhase.side}`
-                : `Review set paused at ${Math.round(flashcardPhase.progress)}% through the ${flashcardPhase.side}`"
-            />
-          </div>
+            dense
+            :card="displayedIntervalFlashcard || flashcardPhase.card"
+            :side="flashcardPhase.side"
+            :card-sides="session.flashcardReview.cardSides"
+            :invert-faces="session.flashcardReview.invertFaces"
+            :back-display="flashcardBackDisplay"
+            :disabled="flashcardContextDisabled"
+            :transition-direction="intervalFlashcardTransitionDirection"
+            :set-name="session.flashcardReview.name"
+            :card-position="flashcardPhase.cardIndex + 1"
+            :card-count="session.flashcardReview.cards.length"
+            :paused="!flashcardReviewPlaybackEnabled"
+            :speech-enabled="session.flashcardReview.speechEnabled"
+            :speech-language="flashcardPhase.side === 'front'
+              ? session.flashcardReview.frontLanguage
+              : session.flashcardReview.backLanguage"
+            :spoken-word="spokenFlashcardWord"
+            :progress="flashcardPhase.progress"
+            progress-color="info"
+            :progress-aria-label="flashcardReviewPlaybackEnabled
+              ? `${Math.round(flashcardPhase.progress)}% through the ${flashcardPhase.side}`
+              : `Review set paused at ${Math.round(flashcardPhase.progress)}% through the ${flashcardPhase.side}`"
+            show-tag-actions
+            :quick-tags="intervalQuickTags"
+            :can-tag="canTagCurrentFlashcard"
+            :has-selectable-tags="intervalSelectableTags.length > 0"
+            ejectable
+            :ejecting="flashcardEjecting"
+            :eject-disabled="isTemplatePreview || syncing || flashcardEjecting"
+            @pointer-down="beginIntervalFlashcardSwipe"
+            @pointer-move="moveIntervalFlashcardSwipe"
+            @pointer-up="finishIntervalFlashcardSwipe"
+            @pointer-cancel="cancelIntervalFlashcardSwipe"
+            @lost-pointer-capture="cancelIntervalFlashcardSwipe"
+            @activate="openFlashcardContext"
+            @after-enter="finishIntervalFlashcardTransition"
+            @eject="ejectIntervalFlashcard"
+            @toggle-tag="toggleIntervalFlashcardTag({ name: $event })"
+            @open-tags="openFlashcardTagSheet"
+            @previous="navigateIntervalFlashcard('previous', $event)"
+            @next="navigateIntervalFlashcard('next', $event)"
+            @flip="showIntervalFlashcardSide"
+            @toggle-playback="session.status === 'paused' ? resume() : pause()"
+          />
 
         </div>
       </div>
@@ -2695,20 +2697,16 @@ async function runAgain(repetitions?: number) {
       />
     </ActionBottomSheet>
 
-    <ActionBottomSheet
-      v-model="activeSessionSheet"
-      title="Interval already running"
-      aria-label="Active interval actions"
-    >
-      <div class="px-2 py-3">
-        <p class="text-body-2 muted mb-4">
-          {{ store.activeSession?.name || 'Another interval' }} is already in progress. Its task attachment will not be changed.
-        </p>
-        <v-btn block color="secondary" prepend-icon="mdi-play" @click="resumeActiveSession">
-          Resume active interval
-        </v-btn>
-      </div>
-    </ActionBottomSheet>
+    <ConfirmDialog
+      v-model="replaceActiveSessionDialog"
+      title="End the active interval?"
+      :message="`${activeSessionName || 'Another interval'} is already in progress. End it and start ${previewSession?.name || 'this interval'} instead?`"
+      confirm-text="End and continue"
+      confirm-color="warning"
+      icon="mdi-alert-outline"
+      :loading="replacingActiveSession || starting"
+      @confirm="replaceActiveSession"
+    />
   </main>
 </template>
 
@@ -2800,67 +2798,6 @@ async function runAgain(repetitions?: number) {
 .runner-task-link { margin-top: .45rem; color: rgb(var(--v-theme-secondary)); font-size: .76rem; font-weight: 800; }
 .runner-position { display: none; }
 .runner-step { min-width: 0; max-width: 40rem; margin-top: .5rem; font-size: clamp(2rem, 10vw, 4.5rem); font-weight: 900; line-height: 1; }
-.interval-review-card { position: relative; width: min(100%, 34rem); overflow: hidden; border: .0625rem solid rgba(var(--v-theme-on-surface), .08); border-radius: .75rem; background: rgba(var(--v-theme-on-surface), .055); box-shadow: none; color: inherit; cursor: pointer; font: inherit; text-align: left; touch-action: none; }
-.interval-review-card:focus-visible { outline: .1875rem solid rgba(var(--v-theme-secondary), .72); outline-offset: -.1875rem; }
-.interval-review-card--disabled { cursor: default; }
-.interval-review-card__image { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .52; pointer-events: none; filter: brightness(.38) saturate(.8); }
-.interval-review-card__main { display: block; width: 100%; color: inherit; font: inherit; text-align: left; touch-action: none; }
-.interval-review-card--playback-paused { border-style: dashed; background: rgba(var(--v-theme-on-surface), .025); opacity: .72; }
-.interval-review-card :deep(.v-ripple__container) { z-index: 2; }
-.interval-review-card__content { position: relative; z-index: 1; display: flex; box-sizing: border-box; min-height: 8.5rem; padding: 1rem; align-items: center; justify-content: flex-start; flex-direction: column; gap: .65rem; text-align: center; }
-.interval-review-card__heading { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; }
-.interval-review-card__meta { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: .75rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
-.interval-review-card__meta small { display: inline-flex; align-items: center; gap: .25rem; }
-.interval-review-card__set { display: flex; min-width: 0; max-width: 75%; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-align: left; text-transform: uppercase; }
-.interval-review-card__set > .text-truncate { min-width: 0; flex: 1 1 auto; }
-.interval-review-card__count { flex: 0 0 auto; }
-.interval-review-card__content small { color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
-.interval-review-card__face-window { display: grid; width: 100%; min-height: 0; overflow: hidden; flex: 1 1 auto; }
-.interval-review-card__faces { display: grid; width: 100%; min-height: 0; grid-area: 1 / 1; place-items: center; }
-.interval-review-card__faces > * { grid-area: 1 / 1; max-width: 100%; }
-.interval-flashcard-next-enter-active,
-.interval-flashcard-next-leave-active,
-.interval-flashcard-previous-enter-active,
-.interval-flashcard-previous-leave-active,
-.interval-flashcard-front-enter-active,
-.interval-flashcard-front-leave-active,
-.interval-flashcard-back-enter-active,
-.interval-flashcard-back-leave-active {
-  transition: opacity 160ms ease, transform 180ms cubic-bezier(.22, 1, .36, 1);
-}
-.interval-flashcard-next-enter-from,
-.interval-flashcard-previous-leave-to {
-  opacity: 0;
-  transform: translateX(1.5rem);
-}
-.interval-flashcard-next-leave-to,
-.interval-flashcard-previous-enter-from {
-  opacity: 0;
-  transform: translateX(-1.5rem);
-}
-.interval-flashcard-back-enter-from,
-.interval-flashcard-front-leave-to {
-  opacity: 0;
-  transform: translateY(1.5rem);
-}
-.interval-flashcard-back-leave-to,
-.interval-flashcard-front-enter-from {
-  opacity: 0;
-  transform: translateY(-1.5rem);
-}
-.interval-review-card__face--hidden { visibility: hidden; }
-.interval-review-card__content strong { overflow-wrap: anywhere; font-size: clamp(1.05rem, 4.5vw, 1.5rem); line-height: 1.3; white-space: pre-wrap; }
-.interval-review-card :deep(.flashcard-response-text__supporting) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.interval-review-card__tag-actions { position: relative; z-index: 1; display: grid; padding: 0 1rem .75rem; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: .3rem; }
-.interval-review-card__quick-tags { display: flex; grid-column: 2; justify-self: center; gap: .3rem; }
-.interval-review-card__tag-control { height: 1.5rem !important; min-height: 1.5rem !important; font-size: .625rem; }
-.interval-review-card__eject-button { min-width: 1.5rem; padding: 0; grid-column: 1; justify-self: start; }
-.interval-review-card__quick-tag { --v-chip-height: 1.5rem; }
-.interval-review-card__quick-tag.v-chip--variant-outlined { border-color: rgba(var(--v-theme-on-surface), .18); }
-.interval-review-card__tag-menu-button { min-width: 0; padding-inline: .65rem; grid-column: 3; justify-self: end; }
-.interval-review-card :deep(.v-progress-linear) { border-radius: 0; }
-.interval-review-card__progress { position: relative; z-index: 1; transition: none; }
-.interval-review-card__progress :deep(.v-progress-linear__determinate) { opacity: .3; transition: none; }
 .runner-progress {
   display: flex;
   width: 100%;
@@ -3009,9 +2946,6 @@ async function runAgain(repetitions?: number) {
     padding-bottom: max(2rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
   }
 
-  .interval-review-card__content {
-    height: 9.5rem;
-  }
 }
 
 @media (orientation: landscape) and (max-height: 700px) {
@@ -3115,40 +3049,6 @@ async function runAgain(repetitions?: number) {
 
   .interval-review-card {
     flex: 0 0 auto;
-  }
-
-  .interval-review-card__content {
-    min-height: 7.25rem;
-    padding: .65rem;
-  }
-
-  .interval-review-card__tag-actions {
-    padding: 0 .65rem .5rem;
-  }
-
-  .interval-review-card__heading,
-  .interval-review-card__meta {
-    gap: .5rem;
-  }
-
-  .interval-review-card__content strong {
-    display: -webkit-box;
-    overflow: hidden;
-    font-size: clamp(.9rem, 2.5dvh, 1.2rem);
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
-  }
-
-  .interval-review-card :deep(.flashcard-response-text--compact) {
-    max-height: none;
-  }
-
-  .interval-review-card :deep(.flashcard-response-text__supporting) {
-    display: -webkit-box;
-    text-overflow: clip;
-    white-space: pre-wrap;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
   }
 
   .runner-progress {
@@ -3382,36 +3282,6 @@ async function runAgain(repetitions?: number) {
     flex-direction: column;
   }
 
-  .runner-stage--with-review .interval-review-card__main {
-    display: flex;
-    min-height: 0;
-    flex: 1 1 auto;
-    overflow: hidden;
-  }
-
-  .runner-stage--with-review .interval-review-card__content {
-    width: 100%;
-    min-height: 0;
-    padding: clamp(.5rem, 2dvh, 1rem);
-    flex: 1 1 auto;
-    gap: clamp(.35rem, 1.5dvh, .65rem);
-  }
-
-  .runner-stage--with-review .interval-review-card__face-window,
-  .runner-stage--with-review .interval-review-card__faces {
-    height: 100%;
-  }
-
-  .runner-stage--with-review .interval-review-card__faces {
-    align-items: center;
-    justify-items: center;
-  }
-
-  .runner-stage--with-review .interval-review-card__tag-actions,
-  .runner-stage--with-review .interval-review-card__progress {
-    flex: 0 0 auto;
-  }
-
   .runner-page--finished {
     display: grid;
     place-items: center;
@@ -3482,29 +3352,6 @@ async function runAgain(repetitions?: number) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .interval-flashcard-next-enter-active,
-  .interval-flashcard-next-leave-active,
-  .interval-flashcard-previous-enter-active,
-  .interval-flashcard-previous-leave-active,
-  .interval-flashcard-front-enter-active,
-  .interval-flashcard-front-leave-active,
-  .interval-flashcard-back-enter-active,
-  .interval-flashcard-back-leave-active {
-    transition: none;
-  }
-
-  .interval-flashcard-next-enter-from,
-  .interval-flashcard-next-leave-to,
-  .interval-flashcard-previous-enter-from,
-  .interval-flashcard-previous-leave-to,
-  .interval-flashcard-front-enter-from,
-  .interval-flashcard-front-leave-to,
-  .interval-flashcard-back-enter-from,
-  .interval-flashcard-back-leave-to {
-    opacity: 1;
-    transform: none;
-  }
-
   .runner-completion-enter-active,
   .runner-completion-leave-active {
     transition: opacity 160ms ease;

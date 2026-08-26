@@ -4,13 +4,16 @@ import LabeledSlider from '@/components/LabeledSlider.vue'
 import TimerWheelPicker from '@/components/TimerWheelPicker.vue'
 import {
   DEFAULT_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
+  DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
   FLASHCARD_REVIEW_CARD_SIDE_OPTIONS,
   FLASHCARD_REVIEW_SORT_OPTIONS,
   MAX_FLASHCARD_BACK_SPEECH_REPEATS,
   MAX_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
   MAX_FLASHCARD_SESSION_CARDS,
+  MAX_FLASHCARD_EJECT_EXCLUDE_AFTER,
   MIN_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
   MIN_FLASHCARD_BACK_SPEECH_REPEATS,
+  MIN_FLASHCARD_EJECT_EXCLUDE_AFTER,
   flashcardEjectBehavior,
   flashcardEjectExcludes,
   flashcardEjectLoadsNext,
@@ -68,6 +71,12 @@ const ejectExcludes = computed({
     )
   },
 })
+const ejectExcludeAfter = computed({
+  get: () => settings.value.ejectExcludeAfter || DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
+  set: (value: number) => {
+    settings.value.ejectExcludeAfter = Number(value)
+  },
+})
 const cardLimit = computed(() => {
   const minimum = Math.min(
     MAX_FLASHCARD_SESSION_CARDS,
@@ -102,6 +111,11 @@ const customMaxCardsVisible = computed(() => (
 ))
 const selectedCardSides = computed(() => FLASHCARD_REVIEW_CARD_SIDE_OPTIONS
   .find(option => option.value === settings.value.cardSides)!)
+const selectedCardSidesHint = computed(() => (
+  settings.value.cardSides === 'both' && settings.value.invertFaces
+    ? 'Show the back first, then the front.'
+    : selectedCardSides.value.hint
+))
 const timeLimitEnabled = computed({
   get: () => (settings.value.timeLimitSeconds || 0) > 0,
   set: (enabled: boolean) => {
@@ -135,6 +149,14 @@ const speechLanguages = computed(() => speechLanguageOptions([
 watch(cardLimit, ({ minimum, maximum }) => {
   if (settings.value.maxCards < minimum) settings.value.maxCards = minimum
   if (settings.value.maxCards > maximum) settings.value.maxCards = maximum
+}, { immediate: true })
+
+watch(() => settings.value.ejectExcludeAfter, (value) => {
+  if (
+    !Number.isInteger(value)
+    || value < MIN_FLASHCARD_EJECT_EXCLUDE_AFTER
+    || value > MAX_FLASHCARD_EJECT_EXCLUDE_AFTER
+  ) settings.value.ejectExcludeAfter = DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER
 }, { immediate: true })
 
 function updateMode(mode: 'manual' | 'passive') {
@@ -172,7 +194,7 @@ function updateSpeechEnabled(enabled: boolean | null) {
         <p class="mode-hint mt-3" aria-live="polite">
           <v-icon icon="mdi-information-outline" size="18" />
           <span v-if="settings.mode === 'manual' && settings.cardSides === 'both'">
-            Reveal the back when you're ready, then mark the card as a success or error.
+            Reveal the {{ settings.invertFaces ? 'front' : 'back' }} when you're ready, then mark the card as a success or error.
           </span>
           <span v-else-if="settings.mode === 'manual'">
             Grade each card immediately after viewing its selected face.
@@ -254,8 +276,26 @@ function updateSpeechEnabled(enabled: boolean | null) {
       </v-btn-toggle>
       <p class="mode-hint mt-3" aria-live="polite">
         <v-icon icon="mdi-information-outline" size="18" />
-        {{ selectedCardSides.hint }}
+        {{ selectedCardSidesHint }}
       </p>
+
+      <v-expand-transition>
+        <div v-if="settings.cardSides === 'both'">
+          <div class="setting-row mt-5">
+            <div>
+              <strong>Invert front and back</strong>
+              <p>Start each card on the back, then show the front</p>
+            </div>
+            <v-switch
+              v-model="settings.invertFaces"
+              color="secondary"
+              hide-details="auto"
+              inset
+              aria-label="Invert front and back faces"
+            />
+          </div>
+        </div>
+      </v-expand-transition>
 
       <v-expand-transition>
         <div v-if="settings.cardSides !== 'front' && !interval">
@@ -454,43 +494,71 @@ function updateSpeechEnabled(enabled: boolean | null) {
         <label class="field-label">Eject button behavior</label>
         <div v-if="vuetifyDefaultsAvailable" class="eject-behavior-options mt-2">
           <v-checkbox
-            v-model="ejectLoadsNext"
-            color="secondary"
-            hide-details="auto"
-          >
-            <template #label>
-              <span class="eject-behavior-option py-2">
-                <strong>Load the next card.</strong>
-                <small>Keep the active list filled from the rest of the Review set.</small>
-              </span>
-            </template>
-          </v-checkbox>
-          <v-checkbox
             v-model="ejectExcludes"
             color="secondary"
             hide-details="auto"
           >
             <template #label>
               <span class="eject-behavior-option py-2">
-                <strong>Exclude card.</strong>
-                <small>Prevent the ejected card from appearing in future sessions.</small>
+                <strong>Exclude after {{ ejectExcludeAfter }} {{ ejectExcludeAfter === 1 ? 'ejection' : 'ejections' }}.</strong>
+                <small>Count card ejections, then prevent the card from appearing in future sessions.</small>
+              </span>
+            </template>
+          </v-checkbox>
+          <v-expand-transition>
+            <div v-if="ejectExcludes">
+              <div class="ml-10 mb-3">
+                <LabeledSlider
+                  v-model="ejectExcludeAfter"
+                  title="Ejections before exclusion"
+                  :min="MIN_FLASHCARD_EJECT_EXCLUDE_AFTER"
+                  :max="MAX_FLASHCARD_EJECT_EXCLUDE_AFTER"
+                  :value-label="ejectExcludeAfter"
+                  :aria-label="`Exclude a card after ${ejectExcludeAfter} ejections`"
+                />
+              </div>
+            </div>
+          </v-expand-transition>
+          <v-checkbox
+            v-model="ejectLoadsNext"
+            color="secondary"
+            hide-details="auto"
+          >
+            <template #label>
+              <span class="eject-behavior-option py-2">
+                <strong>Inject a new card.</strong>
+                <small>Keep the active list filled from the rest of the Review set.</small>
               </span>
             </template>
           </v-checkbox>
         </div>
         <div v-else class="eject-behavior-options mt-2">
           <label class="eject-behavior-native-option">
-            <input v-model="ejectLoadsNext" type="checkbox">
-            <span class="eject-behavior-option py-2">
-              <strong>Load the next card.</strong>
-              <small>Keep the active list filled from the rest of the Review set.</small>
-            </span>
-          </label>
-          <label class="eject-behavior-native-option">
             <input v-model="ejectExcludes" type="checkbox">
             <span class="eject-behavior-option py-2">
-              <strong>Exclude card.</strong>
-              <small>Prevent the ejected card from appearing in future sessions.</small>
+              <strong>Exclude after {{ ejectExcludeAfter }} {{ ejectExcludeAfter === 1 ? 'ejection' : 'ejections' }}.</strong>
+              <small>Count card ejections, then prevent the card from appearing in future sessions.</small>
+            </span>
+          </label>
+          <v-expand-transition>
+            <div v-if="ejectExcludes">
+              <div class="ml-10 mb-3">
+                <LabeledSlider
+                  v-model="ejectExcludeAfter"
+                  title="Ejections before exclusion"
+                  :min="MIN_FLASHCARD_EJECT_EXCLUDE_AFTER"
+                  :max="MAX_FLASHCARD_EJECT_EXCLUDE_AFTER"
+                  :value-label="ejectExcludeAfter"
+                  :aria-label="`Exclude a card after ${ejectExcludeAfter} ejections`"
+                />
+              </div>
+            </div>
+          </v-expand-transition>
+          <label class="eject-behavior-native-option">
+            <input v-model="ejectLoadsNext" type="checkbox">
+            <span class="eject-behavior-option py-2">
+              <strong>Inject a new card.</strong>
+              <small>Keep the active list filled from the rest of the Review set.</small>
             </span>
           </label>
         </div>

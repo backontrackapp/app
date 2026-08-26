@@ -2,6 +2,7 @@ import type {
   Flashcard,
   FlashcardBulkAction,
   FlashcardBulkSwapColumn,
+  FlashcardReviewQueueCard,
   FlashcardReviewSession,
   FlashcardReviewSet,
   FlashcardReviewCardSides,
@@ -11,6 +12,7 @@ import type {
   FlashcardReviewSort,
   FlashcardSelectionAction,
   FlashcardSettingsApplyTarget,
+  FlashcardTag,
   IntervalFlashcardReviewSnapshot,
 } from '@/types/domain'
 
@@ -24,11 +26,42 @@ export const MIN_FLASHCARD_BACK_SPEECH_REPEATS = 1
 export const MAX_FLASHCARD_BACK_SPEECH_REPEATS = 5
 export const DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS = 1
 export const DEFAULT_FLASHCARD_REVIEW_CARD_SIDES: FlashcardReviewCardSides = 'both'
+export const MIN_FLASHCARD_EJECT_EXCLUDE_AFTER = 1
+export const MAX_FLASHCARD_EJECT_EXCLUDE_AFTER = 20
+export const DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER = 3
 
 export const INTERVAL_FLASHCARD_QUICK_TAGS = [
   { name: 'easy', color: 'success' },
   { name: 'hard', color: 'error' },
 ] as const
+
+export function flashcardTagToggleUpdate(
+  currentTagIds: readonly string[],
+  selectedTag: FlashcardTag,
+  availableTags: readonly FlashcardTag[],
+): { action: 'add_tags' | 'remove_tags' | 'set_tags'; values: string[] } {
+  if (currentTagIds.includes(selectedTag.id)) {
+    return { action: 'remove_tags', values: [selectedTag.id] }
+  }
+
+  const quickTagNames = new Set(
+    INTERVAL_FLASHCARD_QUICK_TAGS.map(tag => tag.name.toLocaleLowerCase()),
+  )
+  if (!quickTagNames.has(selectedTag.name.toLocaleLowerCase())) {
+    return { action: 'add_tags', values: [selectedTag.id] }
+  }
+
+  const quickTagIds = new Set(availableTags
+    .filter(tag => quickTagNames.has(tag.name.toLocaleLowerCase()))
+    .map(tag => tag.id))
+  return {
+    action: 'set_tags',
+    values: [
+      ...currentTagIds.filter(tagId => !quickTagIds.has(tagId)),
+      selectedTag.id,
+    ],
+  }
+}
 
 export const FLASHCARD_REVIEW_CARD_SIDE_OPTIONS: Array<{
   title: string
@@ -156,6 +189,22 @@ export function flashcardEjectBehavior(
   return 'remove'
 }
 
+export function normalizeFlashcardEjectExcludeAfter(value: unknown) {
+  const count = Number(value)
+  if (!Number.isInteger(count)) return DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER
+  return Math.min(
+    MAX_FLASHCARD_EJECT_EXCLUDE_AFTER,
+    Math.max(MIN_FLASHCARD_EJECT_EXCLUDE_AFTER, count),
+  )
+}
+
+export function flashcardEjectReachesExclusionThreshold(
+  ejectCount: number,
+  ejectExcludeAfter: number,
+) {
+  return ejectCount >= normalizeFlashcardEjectExcludeAfter(ejectExcludeAfter)
+}
+
 export function updateFlashcardReviewExclusions(
   excludedCards: readonly string[],
   action: FlashcardSelectionAction,
@@ -170,10 +219,12 @@ export function flashcardReviewSettingsSignature(settings: FlashcardReviewSettin
   return JSON.stringify({
     mode: settings.mode,
     cardSides: settings.cardSides,
+    invertFaces: settings.cardSides === 'both' && settings.invertFaces === true,
     indefinite: settings.indefinite,
     timeLimitSeconds: settings.mode === 'passive' ? settings.timeLimitSeconds || 0 : 0,
     maxCards: settings.maxCards,
     ejectBehavior: settings.ejectBehavior || 'remove',
+    ejectExcludeAfter: normalizeFlashcardEjectExcludeAfter(settings.ejectExcludeAfter),
     frontSeconds: settings.frontSeconds,
     backSeconds: settings.backSeconds,
     backSpeechRepeatCount: settings.backSpeechRepeatCount,
@@ -193,6 +244,9 @@ export function flashcardReviewSettingsAreValid(
   return Number.isInteger(settings.maxCards)
     && settings.maxCards >= minCards
     && settings.maxCards <= MAX_FLASHCARD_SESSION_CARDS
+    && Number.isInteger(settings.ejectExcludeAfter)
+    && settings.ejectExcludeAfter >= MIN_FLASHCARD_EJECT_EXCLUDE_AFTER
+    && settings.ejectExcludeAfter <= MAX_FLASHCARD_EJECT_EXCLUDE_AFTER
     && Number.isInteger(settings.backSpeechRepeatCount)
     && settings.backSpeechRepeatCount >= MIN_FLASHCARD_BACK_SPEECH_REPEATS
     && settings.backSpeechRepeatCount <= MAX_FLASHCARD_BACK_SPEECH_REPEATS
@@ -308,7 +362,8 @@ export const FLASHCARD_REVIEW_SORT_OPTIONS: Array<{
   value: FlashcardReviewSort
   subtitle: string
 }> = [
-  { title: 'Most difficult', value: 'difficult', subtitle: 'Cards with the highest error rate first' },
+  { title: 'Most difficult', value: 'difficult', subtitle: 'Hard-tagged cards, then highest error rates' },
+  { title: 'Easiest', value: 'easiest', subtitle: 'Easy-tagged cards, then lowest error rates' },
   { title: 'Never reviewed first', value: 'never_reviewed', subtitle: 'Start with cards you have not seen yet' },
   { title: 'Least recently reviewed', value: 'least_recent', subtitle: 'Return to the cards waiting longest' },
   { title: 'Recently added', value: 'recently_added', subtitle: 'Newest cards first' },
@@ -397,17 +452,18 @@ export function sessionAccuracy(
   return attempts ? Math.round(session.successCount / attempts * 100) : undefined
 }
 
-export function cardMatchesTags(card: Pick<Flashcard, 'tags'>, selectedTags: string[]) {
-  return !selectedTags.length || card.tags.some(tag => selectedTags.includes(tag))
+export function cardMatchesTags(card: Pick<Flashcard, 'tags' | 'archived'>, selectedTags: string[]) {
+  return card.archived !== true
+    && (!selectedTags.length || card.tags.some(tag => selectedTags.includes(tag)))
 }
 
 export function cardMatchesReviewSet(
-  card: Pick<Flashcard, 'id' | 'tags'>,
+  card: Pick<Flashcard, 'id' | 'tags' | 'archived'>,
   reviewSet: Pick<FlashcardReviewSet, 'selectionMode' | 'includedCards' | 'tags'>,
 ) {
-  return reviewSet.selectionMode === 'cards'
+  return card.archived !== true && (reviewSet.selectionMode === 'cards'
     ? (reviewSet.includedCards || []).includes(card.id)
-    : cardMatchesTags(card, reviewSet.tags)
+    : cardMatchesTags(card, reviewSet.tags))
 }
 
 export function cardMatchesSearch(
@@ -446,6 +502,12 @@ function compareText(left: string, right: string) {
   return left < right ? -1 : left > right ? 1 : 0
 }
 
+function flashcardHasNamedTag(card: Flashcard, name: string) {
+  const normalizedName = name.toLocaleLowerCase()
+  return card.tags.some(tag => tag.toLocaleLowerCase() === normalizedName)
+    || (card.tagDetails || []).some(tag => tag.name.toLocaleLowerCase() === normalizedName)
+}
+
 export function sortFlashcardsForReview(
   cards: Flashcard[],
   sortMode: FlashcardReviewSort,
@@ -479,8 +541,25 @@ export function sortFlashcardsForReview(
         return left.lastReviewedAt ? 1 : -1
       }
       return !left.lastReviewedAt
-        ? compareText(right.createdAt, left.createdAt)
-        : compareText(left.lastReviewedAt, right.lastReviewedAt || '')
+          ? compareText(right.createdAt, left.createdAt)
+          : compareText(left.lastReviewedAt, right.lastReviewedAt || '')
+    }
+
+    const priorityTag = sortMode === 'easiest' ? 'easy' : 'hard'
+    const leftHasPriorityTag = flashcardHasNamedTag(left, priorityTag)
+    const rightHasPriorityTag = flashcardHasNamedTag(right, priorityTag)
+    if (leftHasPriorityTag !== rightHasPriorityTag) return leftHasPriorityTag ? -1 : 1
+
+    if (sortMode === 'easiest') {
+      const leftDifficulty = flashcardDifficulty(left)
+      const rightDifficulty = flashcardDifficulty(right)
+      if ((leftDifficulty === undefined) !== (rightDifficulty === undefined)) {
+        return leftDifficulty === undefined ? 1 : -1
+      }
+      return (leftDifficulty || 0) - (rightDifficulty || 0)
+        || left.errorCount - right.errorCount
+        || compareText(left.lastReviewedAt || '', right.lastReviewedAt || '')
+        || compareText(left.id, right.id)
     }
 
     const leftDifficulty = flashcardDifficulty(left) ?? -1
@@ -525,6 +604,7 @@ export function flashcardReviewQueueState(
       backAudio: card.backAudio,
       image: card.image,
       tags: [...card.tags],
+      ejectCount: card.ejectCount,
     }))
   const queue = candidates.slice(0, reviewSet.maxCards)
   return {
@@ -552,10 +632,12 @@ export function createFlashcardReviewPreviewSession(
     name: reviewSet.name,
     mode: reviewSet.mode,
     cardSides: reviewSet.cardSides,
+    invertFaces: reviewSet.cardSides === 'both' && reviewSet.invertFaces === true,
     indefinite: reviewSet.mode === 'passive' && reviewSet.indefinite,
     timeLimitSeconds: reviewSet.mode === 'passive' ? reviewSet.timeLimitSeconds || 0 : 0,
     maxCards: reviewSet.maxCards,
     ejectBehavior: reviewSet.ejectBehavior || 'remove',
+    ejectExcludeAfter: normalizeFlashcardEjectExcludeAfter(reviewSet.ejectExcludeAfter),
     sortMode: reviewSet.sortMode,
     sortDirection: reviewSet.sortDirection,
     tags: [...reviewSet.tags],
@@ -600,8 +682,10 @@ export function createIntervalFlashcardReviewSnapshot(
     sortMode: reviewSet.sortMode,
     sortDirection: reviewSet.sortDirection,
     ejectBehavior: reviewSet.ejectBehavior || 'remove',
+    ejectExcludeAfter: normalizeFlashcardEjectExcludeAfter(reviewSet.ejectExcludeAfter),
     maxCards: reviewSet.maxCards,
     cardSides: reviewSet.cardSides,
+    invertFaces: reviewSet.cardSides === 'both' && reviewSet.invertFaces === true,
     frontSeconds: effectiveSeconds.front,
     backSeconds: effectiveSeconds.back,
     backSpeechRepeatCount: reviewSet.mode === 'passive' && reviewSet.speechEnabled
@@ -646,8 +730,16 @@ export function flashcardReviewShowsSide(
   return cardSides === 'both' || cardSides === side
 }
 
-export function firstFlashcardReviewSide(cardSides: FlashcardReviewCardSides): FlashcardReviewSide {
-  return cardSides === 'back' ? 'back' : 'front'
+export function firstFlashcardReviewSide(
+  cardSides: FlashcardReviewCardSides,
+  invertFaces = false,
+): FlashcardReviewSide {
+  if (cardSides === 'back' || (cardSides === 'both' && invertFaces)) return 'back'
+  return 'front'
+}
+
+export function otherFlashcardReviewSide(side: FlashcardReviewSide): FlashcardReviewSide {
+  return side === 'front' ? 'back' : 'front'
 }
 
 function intervalFlashcardCardDurationMs(review: IntervalFlashcardReviewSnapshot) {
@@ -691,14 +783,25 @@ export function intervalFlashcardEjectionOffsetMs(
   review: IntervalFlashcardReviewSnapshot,
   elapsedMs: number,
   ejectedCardId: string,
+  remainingCards: FlashcardReviewQueueCard[],
 ) {
   const currentPhase = intervalFlashcardPhase(review, elapsedMs)
-  const remainingCards = review.cards.filter(card => card.id !== ejectedCardId)
   if (!currentPhase || !remainingCards.length) {
     return Number.isFinite(review.playbackOffsetMs) ? review.playbackOffsetMs! : 0
   }
 
-  const nextCardIndex = currentPhase.cardIndex % remainingCards.length
+  const ejectedCardIndex = review.cards.findIndex(card => card.id === ejectedCardId)
+  const originalCardIds = new Set(review.cards.map(card => card.id))
+  const remainingCardIds = new Set(remainingCards.map(card => card.id))
+  const orderedCandidates = ejectedCardIndex >= 0
+    ? [
+        ...review.cards.slice(ejectedCardIndex + 1),
+        ...remainingCards.filter(card => !originalCardIds.has(card.id)),
+        ...review.cards.slice(0, ejectedCardIndex),
+      ]
+    : remainingCards
+  const nextCardId = orderedCandidates.find(card => remainingCardIds.has(card.id))?.id
+  const nextCardIndex = Math.max(0, remainingCards.findIndex(card => card.id === nextCardId))
   const remainingReview = { ...review, cards: remainingCards }
   return nextCardIndex * intervalFlashcardCardDurationMs(remainingReview) - elapsedMs
 }
@@ -716,9 +819,11 @@ export function intervalFlashcardSideOffsetMs(
   const cardDurationMs = intervalFlashcardCardDurationMs(review)
   const playbackElapsedMs = intervalFlashcardPlaybackElapsedMs(review, elapsedMs)
   const currentAbsoluteCardIndex = Math.floor(playbackElapsedMs / cardDurationMs)
-  const sideOffsetMs = side === 'back' && flashcardReviewShowsSide(review.cardSides, 'front')
+  const firstSide = firstFlashcardReviewSide(review.cardSides, review.invertFaces)
+  const firstSideDurationMs = firstSide === 'front'
     ? Math.max(1000, review.frontSeconds * 1000)
-    : 0
+    : flashcardBackDurationMs(review.backSeconds, review.backSpeechRepeatCount)
+  const sideOffsetMs = side === firstSide ? 0 : firstSideDurationMs
 
   return currentAbsoluteCardIndex * cardDurationMs + sideOffsetMs - elapsedMs
 }
@@ -728,8 +833,6 @@ export function intervalFlashcardPhase(
   elapsedMs: number,
 ): IntervalFlashcardPhase | undefined {
   if (!review.cards.length) return undefined
-  const showsFront = flashcardReviewShowsSide(review.cardSides, 'front')
-  const showsBack = flashcardReviewShowsSide(review.cardSides, 'back')
   const frontMs = Math.max(1000, review.frontSeconds * 1000)
   const baseBackMs = Math.max(1000, review.backSeconds * 1000)
   const backMs = flashcardBackDurationMs(review.backSeconds, review.backSpeechRepeatCount)
@@ -738,10 +841,12 @@ export function intervalFlashcardPhase(
   const absoluteCardIndex = Math.floor(safeElapsedMs / cardDurationMs)
   const cardIndex = absoluteCardIndex % review.cards.length
   const elapsedInCard = safeElapsedMs % cardDurationMs
-  const side: FlashcardReviewSide = showsFront && elapsedInCard < frontMs ? 'front' : 'back'
-  const sideElapsedMs = side === 'front'
-    ? elapsedInCard
-    : elapsedInCard - (showsFront ? frontMs : 0)
+  const firstSide = firstFlashcardReviewSide(review.cardSides, review.invertFaces)
+  const firstSideDurationMs = firstSide === 'front' ? frontMs : backMs
+  const side = elapsedInCard < firstSideDurationMs
+    ? firstSide
+    : otherFlashcardReviewSide(firstSide)
+  const sideElapsedMs = side === firstSide ? elapsedInCard : elapsedInCard - firstSideDurationMs
   const sideDurationMs = side === 'front' ? frontMs : backMs
   const backSpeechRepeatIndex = side === 'back'
     ? Math.min(

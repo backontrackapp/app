@@ -302,10 +302,12 @@ final class CuratedReviewSetCatalog
         return [
             'mode' => $mode,
             'cardSides' => in_array($row['card_sides'] ?? '', ['both', 'front', 'back'], true) ? $row['card_sides'] : 'both',
+            'invertFaces' => $boolean('invert_faces', false),
             'indefinite' => $mode === 'passive' && $boolean('indefinite', false),
             'timeLimitSeconds' => $mode === 'passive' ? $timeLimitSeconds : 0,
             'maxCards' => max(1, min(100, $integer('max_cards', 20))),
             'ejectBehavior' => in_array($row['eject_behavior'] ?? '', ['remove', 'replace', 'exclude', 'replace_exclude'], true) ? $row['eject_behavior'] : 'replace',
+            'ejectExcludeAfter' => max(1, min(20, $integer('eject_exclude_after', 3))),
             'frontSeconds' => max(1, min(60, $integer('front_seconds', 5))),
             'backSeconds' => max(1, min(60, $integer('back_seconds', 5))),
             'backSpeechRepeatCount' => max(1, min(5, $integer('back_speech_repeat_count', 1))),
@@ -315,7 +317,7 @@ final class CuratedReviewSetCatalog
             'speechEnabled' => $boolean('speech_enabled', false),
             'frontLanguage' => '',
             'backLanguage' => '',
-            'sortMode' => in_array($row['sort_mode'] ?? '', ['difficult', 'never_reviewed', 'least_recent', 'recently_added', 'random'], true) ? $row['sort_mode'] : 'difficult',
+            'sortMode' => in_array($row['sort_mode'] ?? '', ['difficult', 'easiest', 'never_reviewed', 'least_recent', 'recently_added', 'random'], true) ? $row['sort_mode'] : 'difficult',
             'sortDirection' => ($row['sort_direction'] ?? '') === 'desc' ? 'desc' : 'asc',
         ];
     }

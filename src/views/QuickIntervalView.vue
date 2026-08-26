@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
 import TimerWheelPicker from '@/components/TimerWheelPicker.vue'
+import { stopBackgroundInterval } from '@/services/backgroundInterval'
 import {
   changeSelectionFeedback,
   endSelectionFeedback,
@@ -21,6 +23,9 @@ import type { QuickIntervalDraft, QuickIntervalSettings } from '@/types/domain'
 const router = useRouter()
 const store = useIntervalStore()
 const starting = ref(false)
+const replaceActiveSessionDialog = ref(false)
+const replacingActiveSession = ref(false)
+const activeSessionName = ref('')
 const restoring = ref(true)
 const error = ref('')
 const includeRest = ref(false)
@@ -66,7 +71,7 @@ onMounted(async () => {
   }
 })
 
-async function start() {
+async function start(replaceActive = false) {
   if (draft.workSeconds <= 0 || !Number.isInteger(draft.rounds) || draft.rounds <= 0) {
     error.value = 'Add a positive work duration and at least one round.'
     return
@@ -78,9 +83,14 @@ async function start() {
   starting.value = true
   error.value = ''
   try {
+    if (!store.loaded) await store.load()
+    if (store.activeSession && !replaceActive) {
+      activeSessionName.value = store.activeSession.name
+      replaceActiveSessionDialog.value = true
+      return
+    }
     await store.rememberQuickIntervalSettings(quickSettings.value)
     await prepareIntervalCues(draft.cues)
-    if (!store.sessions.length) await store.load()
     const session = await store.startSession({
       name: 'Quick interval',
       source: 'quick',
@@ -96,6 +106,22 @@ async function start() {
     error.value = cause instanceof Error ? cause.message : 'Could not start the interval.'
   } finally {
     starting.value = false
+  }
+}
+
+async function replaceActiveSession() {
+  if (replacingActiveSession.value) return
+  replacingActiveSession.value = true
+  error.value = ''
+  try {
+    await store.endActiveSession()
+    await stopBackgroundInterval()
+    replaceActiveSessionDialog.value = false
+    await start(true)
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not end the active interval.'
+  } finally {
+    replacingActiveSession.value = false
   }
 }
 </script>
@@ -160,8 +186,19 @@ async function start() {
 
     <v-card class="quick-summary page-action-area pa-5" color="secondary">
       <div><span>Total time</span><strong>{{ formatIntervalDuration(totalDuration) }}</strong></div>
-      <v-btn color="primary" size="large" append-icon="mdi-play" :loading="starting || restoring" @click="start">Start</v-btn>
+      <v-btn color="primary" size="large" append-icon="mdi-play" :loading="starting || restoring" @click="start()">Start</v-btn>
     </v-card>
+
+    <ConfirmDialog
+      v-model="replaceActiveSessionDialog"
+      title="End the active interval?"
+      :message="`${activeSessionName || 'Another interval'} is already in progress. End it and start this Quick interval instead?`"
+      confirm-text="End and continue"
+      confirm-color="warning"
+      icon="mdi-alert-outline"
+      :loading="replacingActiveSession || starting"
+      @confirm="replaceActiveSession"
+    />
   </main>
 </template>
 
