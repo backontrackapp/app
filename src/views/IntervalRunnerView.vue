@@ -500,7 +500,7 @@ watch([
   () => flashcardReviewPlaybackEnabled.value,
   () => flashcardPhase.value?.key,
 ], () => {
-  void speakCurrentFlashcardSide()
+  if (!flashcardNavigating.value) void speakCurrentFlashcardSide()
 }, { flush: 'post' })
 
 watch([
@@ -673,7 +673,7 @@ onBeforeUnmount(() => {
   void stopFlashcardSpeech()
 })
 
-async function speakCurrentFlashcardSide() {
+async function speakCurrentFlashcardSide(allowPaused = false) {
   const item = session.value
   const review = item?.flashcardReview
   const phase = flashcardPhase.value
@@ -681,10 +681,11 @@ async function speakCurrentFlashcardSide() {
   if (reconcilingVisibilitySpeech) return
   if (document.visibilityState !== 'visible') return
   if (
-    item?.status !== 'running'
+    !item
+    || (!allowPaused && item.status !== 'running')
     || !review?.speechEnabled
-    || review.speechPaused
-    || !flashcardReviewPlaybackEnabled.value
+    || (!allowPaused && review.speechPaused)
+    || (!allowPaused && !flashcardReviewPlaybackEnabled.value)
     || !phase
     || !key
   ) {
@@ -1487,6 +1488,10 @@ async function navigateIntervalFlashcard(
       ),
     })
     if (updated?.status === 'running') await syncNativeTimer(updated)
+    if (updated) {
+      await nextTick()
+      await speakCurrentFlashcardSide(true)
+    }
   } catch (cause) {
     intervalFlashcardTransitionDirection.value = undefined
     error.value = cause instanceof Error ? cause.message : 'Could not navigate this Review set.'
@@ -1526,6 +1531,10 @@ async function showIntervalFlashcardSide(
       ),
     })
     if (updated?.status === 'running') await syncNativeTimer(updated)
+    if (updated) {
+      await nextTick()
+      await speakCurrentFlashcardSide(true)
+    }
   } catch (cause) {
     intervalFlashcardTransitionDirection.value = undefined
     error.value = cause instanceof Error ? cause.message : 'Could not flip this flashcard.'

@@ -358,8 +358,11 @@ watch([
   () => currentCard.value?.id,
   currentSpeechSide,
   passiveSpeechRepeatIndex,
-], () => {
-  void speakCurrentSide()
+], ([, status, , cardId, side], [, previousStatus, , previousCardId, previousSide]) => {
+  const navigatedWhilePaused = status === 'paused'
+    && previousStatus === 'paused'
+    && (cardId !== previousCardId || side !== previousSide)
+  if (!navigatedWhilePaused) void speakCurrentSide()
 }, { flush: 'post' })
 
 watch(() => currentCard.value?.id, (cardId, previousCardId) => {
@@ -641,16 +644,30 @@ async function navigateLeft(
   transitionDirection: ReviewCardTransitionDirection = 'front',
 ) {
   if (!session.value || !canNavigateCards.value || busy.value) return
+  const speakAfterNavigation = session.value.status === 'paused'
   reviewCardTransitionDirection.value = transitionDirection
-  if (!await performAction('previous')) reviewCardTransitionDirection.value = undefined
+  if (!await performAction('previous')) {
+    reviewCardTransitionDirection.value = undefined
+  } else if (speakAfterNavigation) {
+    lastSpokenKey = ''
+    await nextTick()
+    await speakCurrentSide(true)
+  }
 }
 
 async function navigateRight(
   transitionDirection: ReviewCardTransitionDirection = 'back',
 ) {
   if (!session.value || !canNavigateCards.value || busy.value) return
+  const speakAfterNavigation = session.value.status === 'paused'
   reviewCardTransitionDirection.value = transitionDirection
-  if (!await performAction('next')) reviewCardTransitionDirection.value = undefined
+  if (!await performAction('next')) {
+    reviewCardTransitionDirection.value = undefined
+  } else if (speakAfterNavigation) {
+    lastSpokenKey = ''
+    await nextTick()
+    await speakCurrentSide(true)
+  }
 }
 
 async function performAction(
@@ -1077,7 +1094,7 @@ function cancelReviewCardSwipe(event: PointerEvent) {
   if (manualSwipeStart?.pointerId === event.pointerId) manualSwipeStart = undefined
 }
 
-function showReviewCardSide(
+async function showReviewCardSide(
   side: FlashcardReviewSide,
   transitionDirection: ReviewCardTransitionDirection = side === 'back' ? 'next' : 'previous',
 ) {
@@ -1090,17 +1107,23 @@ function showReviewCardSide(
     || busy.value
   ) return
 
+  const speakAfterNavigation = value.status === 'paused'
   reviewCardTransitionDirection.value = transitionDirection
   lastSpokenKey = ''
   if (value.mode === 'manual') {
     revealed.value = side !== firstReviewSide.value
-    return
+  } else {
+    passiveSide.value = side
+    passiveRemainingMs.value = passiveDurationMs.value
+    savePassiveState()
+    void syncNativeBackground()
   }
 
-  passiveSide.value = side
-  passiveRemainingMs.value = passiveDurationMs.value
-  savePassiveState()
-  void syncNativeBackground()
+  if (speakAfterNavigation) {
+    await nextTick()
+    await stopFlashcardSpeech()
+    await speakCurrentSide(true)
+  }
 }
 
 function handlePassiveCardTap() {
