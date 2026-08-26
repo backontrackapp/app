@@ -379,12 +379,13 @@ watch([
   const sideChanged = side !== previousSide
   if (reviewCardTransitionDirection.value) return
 
+  if (cardChanged || sideChanged) spokenWord.value = undefined
   if (cardChanged) {
     reviewCardTransitionDirection.value = 'back'
   } else if (sideChanged) {
     reviewCardTransitionDirection.value = side === 'back' ? 'next' : 'previous'
   }
-})
+}, { flush: 'sync' })
 
 function scheduleReviewContentFit() {
   void nextTick(() => {

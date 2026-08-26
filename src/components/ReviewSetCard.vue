@@ -157,6 +157,15 @@ function cloneBuffer(buffer: ReviewCardBuffer): ReviewCardBuffer {
   }
 }
 
+function clearBufferedSpokenWords() {
+  const [first, second] = cardBuffers.value
+  if (!first.spokenWord && !second.spokenWord) return
+  cardBuffers.value = [
+    { ...first, spokenWord: undefined },
+    { ...second, spokenWord: undefined },
+  ]
+}
+
 function copyBufferToBoth(buffer: ReviewCardBuffer, active = activeBufferIndex.value) {
   const background = active === 0 ? 1 : 0
   const next: [ReviewCardBuffer, ReviewCardBuffer] = [...cardBuffers.value]
@@ -213,7 +222,12 @@ function prepareBufferTransition(buffer: ReviewCardBuffer) {
   })
 }
 
-watch(bufferTarget, (target) => {
+watch(bufferTarget, (nextTarget, previousTarget) => {
+  const target = bufferKey(previousTarget) === bufferKey(nextTarget)
+    ? nextTarget
+    : { ...nextTarget, spokenWord: undefined }
+  if (target !== nextTarget) clearBufferedSpokenWords()
+
   const incoming = incomingBufferIndex.value
   if (bufferPhase.value !== 'idle' && incoming !== undefined) {
     if (bufferKey(cardBuffers.value[incoming]) === bufferKey(target)) {

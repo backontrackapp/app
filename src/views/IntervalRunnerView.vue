@@ -510,6 +510,9 @@ watch([
   if (!cardId || !side || !previousCardId || !previousSide) return
   if (intervalFlashcardTransitionDirection.value) return
 
+  const cardChanged = cardId !== previousCardId
+  const sideChanged = side !== previousSide
+  if (cardChanged || sideChanged) spokenFlashcardWord.value = undefined
   if (cardId !== previousCardId) {
     intervalFlashcardTransitionDirection.value = 'next'
   } else if (side !== previousSide) {
