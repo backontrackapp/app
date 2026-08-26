@@ -344,37 +344,6 @@ async function loadVisibleWeekEntries() {
     >
       <section>
         <div class="section-heading">
-          <h2>Things you did</h2>
-          <v-btn
-            size="small"
-            variant="text"
-            prepend-icon="mdi-plus"
-            :to="{ path: '/tracking/new', query: { role: 'factor' } }"
-          >
-            New
-          </v-btn>
-        </div>
-        <div v-if="factors.length" class="tracker-grid">
-          <TrackingTrackerCard
-            v-for="tracker in factors"
-            :key="tracker.id"
-            v-long-press-drag="{
-              id: tracker.id,
-              group: 'factor-trackers',
-              handle: '.tracker-card__action',
-              disabled: factors.length < 2 || updatingStatus || reorderingTrackers,
-              onDrop: reorderVisibleTrackers,
-            }"
-            :tracker="tracker"
-            :logged="loggedTrackerIds.has(tracker.id)"
-            @actions="openTrackerActions"
-          />
-        </div>
-        <p v-else class="tracker-section-empty muted py-4 text-center">No things tracked yet.</p>
-      </section>
-
-      <section>
-        <div class="section-heading">
           <h2>How you felt</h2>
           <v-btn
             size="small"
@@ -402,6 +371,37 @@ async function loadVisibleWeekEntries() {
           />
         </div>
         <p v-else class="tracker-section-empty muted py-4 text-center">No feelings tracked yet.</p>
+      </section>
+
+      <section>
+        <div class="section-heading">
+          <h2>Things you did</h2>
+          <v-btn
+            size="small"
+            variant="text"
+            prepend-icon="mdi-plus"
+            :to="{ path: '/tracking/new', query: { role: 'factor' } }"
+          >
+            New
+          </v-btn>
+        </div>
+        <div v-if="factors.length" class="tracker-grid">
+          <TrackingTrackerCard
+            v-for="tracker in factors"
+            :key="tracker.id"
+            v-long-press-drag="{
+              id: tracker.id,
+              group: 'factor-trackers',
+              handle: '.tracker-card__action',
+              disabled: factors.length < 2 || updatingStatus || reorderingTrackers,
+              onDrop: reorderVisibleTrackers,
+            }"
+            :tracker="tracker"
+            :logged="loggedTrackerIds.has(tracker.id)"
+            @actions="openTrackerActions"
+          />
+        </div>
+        <p v-else class="tracker-section-empty muted py-4 text-center">No things tracked yet.</p>
       </section>
 
       <section v-if="archivedTrackers.length" class="mt-4">
