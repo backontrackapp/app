@@ -38,6 +38,9 @@ importers:
       '@capacitor/network':
         specifier: 8.0.1
         version: 8.0.1(@capacitor/core@8.4.2)
+      '@capacitor/screen-orientation':
+        specifier: 8.0.1
+        version: 8.0.1(@capacitor/core@8.4.2)
       '@mdi/font':
         specifier: ^7.4.47
         version: 7.4.47
@@ -708,6 +711,11 @@ packages:
 
   '@capacitor/network@8.0.1':
     resolution: {integrity: sha512-9xK/FHFmzKGanB6BdoSZOzXk8vF0OFVQSQ4PAsIrzAzLuXHryO317qy8dcHVpgxYeuZq2noI0My9z1DvVDi/9w==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
+
+  '@capacitor/screen-orientation@8.0.1':
+    resolution: {integrity: sha512-DPz/1YGmlAUDMg2ON+AGJp1eFn9IfVNP9VKI5zIU+jD5xAZ4JGxUDlY9MDCvEPQs7UCD53NduJpqvqhcnb32Kw==}
     peerDependencies:
       '@capacitor/core': '>=8.0.0'
 
@@ -4970,6 +4978,10 @@ snapshots:
       '@capacitor/core': 8.4.2
 
   '@capacitor/network@8.0.1(@capacitor/core@8.4.2)':
+    dependencies:
+      '@capacitor/core': 8.4.2
+
+  '@capacitor/screen-orientation@8.0.1(@capacitor/core@8.4.2)':
     dependencies:
       '@capacitor/core': 8.4.2
 

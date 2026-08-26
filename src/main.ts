@@ -14,6 +14,7 @@ import { installIntervalNotificationRouting } from './services/intervalNotificat
 import { installPostGestureClickRecovery } from './services/postGestureClickRecovery'
 import { installMobileKeyboardViewport } from './services/mobileKeyboardViewport'
 import { closeTopOverlay } from './services/overlayStack'
+import { installScreenOrientationPolicy } from './services/screenOrientation'
 import { installSeoMetadata } from './services/seo'
 import { installTaskNotificationRouting } from './services/taskReminders'
 import { startOfflineSync } from './services/offlineSync'
@@ -31,6 +32,7 @@ import './styles/main.scss'
 const nativePlatform = Capacitor.getPlatform()
 
 installSeoMetadata(router)
+installScreenOrientationPolicy(router)
 
 installClientErrorReporting({
   getAuthToken: () => api.authStore.token,
