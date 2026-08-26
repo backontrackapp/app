@@ -47,6 +47,10 @@ interface DragGesture {
   layoutTransitionBounds?: Map<HTMLElement, DOMRect>
   autoScrollFrame?: number
   horizontalScrollElement?: HTMLElement
+  horizontalScrollSnapType?: {
+    value: string
+    priority: string
+  }
   sourceDropZone?: DropState
   activeDropZone?: DropState
   fromIndex: number
@@ -580,6 +584,28 @@ function horizontalScrollContainer(element: HTMLElement) {
   return undefined
 }
 
+function suspendHorizontalScrollSnap(gesture: DragGesture) {
+  const container = gesture.horizontalScrollElement
+  if (!container) return
+  gesture.horizontalScrollSnapType = {
+    value: container.style.getPropertyValue('scroll-snap-type'),
+    priority: container.style.getPropertyPriority('scroll-snap-type'),
+  }
+  container.style.setProperty('scroll-snap-type', 'none', 'important')
+}
+
+function restoreHorizontalScrollSnap(gesture: DragGesture) {
+  const container = gesture.horizontalScrollElement
+  const original = gesture.horizontalScrollSnapType
+  if (!container || !original) return
+  if (original.value) {
+    container.style.setProperty('scroll-snap-type', original.value, original.priority)
+  } else {
+    container.style.removeProperty('scroll-snap-type')
+  }
+  gesture.horizontalScrollSnapType = undefined
+}
+
 function horizontalAutoScrollAmount(gesture: DragGesture) {
   const container = gesture.horizontalScrollElement
   if (!container) return 0
@@ -659,6 +685,7 @@ function activateDrag(state: DragState) {
   gesture.fromIndex = sourceItems.findIndex((candidate) => candidate.element === state.element)
   gesture.horizontalSlots = hasHorizontalSlots(sourceItems)
   gesture.horizontalScrollElement = horizontalScrollContainer(state.element)
+  suspendHorizontalScrollSnap(gesture)
   gesture.active = true
   gesture.sourceBounds = state.element.getBoundingClientRect()
   gesture.originalDisplay = state.element.style.display
@@ -741,6 +768,7 @@ function finishGesture(state: DragState, drop: boolean) {
   gesture.placeholder?.remove()
   state.element.style.display = gesture.originalDisplay
   state.element.setAttribute('aria-grabbed', 'false')
+  restoreHorizontalScrollSnap(gesture)
   document.body.classList.remove('long-press-drag-active')
   state.gesture = undefined
 
