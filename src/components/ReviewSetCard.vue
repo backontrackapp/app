@@ -559,8 +559,9 @@ defineExpose({ refitContent })
             <v-icon icon="mdi-volume-high" size="1.125rem" /> Tap to replay
           </span>
           <span
-            v-else-if="displayedBuffer.cardSides === 'both' && !displayedBuffer.revealed"
+            v-else-if="displayedBuffer.cardSides === 'both'"
             class="review-card__hint"
+            :class="{ 'text-disabled': displayedBuffer.revealed }"
           >
             <v-icon icon="mdi-gesture-tap" size="1.125rem" /> Tap to reveal
           </span>
@@ -717,7 +718,8 @@ defineExpose({ refitContent })
 .review-card__content { position: absolute; display: flex; inset: 0; width: 100%; height: 100%; min-height: 0; max-height: 100%; align-items: center; align-self: stretch; justify-content: center; flex-direction: column; font-size: var(--fit-review-content-size, 3.6rem); }
 .review-card__answer { position: absolute; display: flex; inset: 0; width: 100%; height: 100%; min-width: 0; min-height: 0; max-height: 100%; align-items: center; justify-content: center; flex-direction: column; gap: .45rem; }
 .review-card__front-reference { max-width: 30rem; overflow-wrap: anywhere; color: rgba(var(--v-theme-on-surface), .48); font-size: clamp(.72rem, 2.2vw, .88rem); line-height: 1.4; white-space: pre-wrap; }
-.review-card__hint { display: flex; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .48); font-size: .72rem; font-weight: 800; }
+.review-card__hint { display: flex; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .48); font-size: .72rem; font-weight: 800; transition: opacity 200ms ease; }
+.review-card__hint.text-disabled { opacity: .2; }
 .passive-card { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); padding: 2rem 2rem 5.5rem; border: .0625rem solid rgba(var(--v-theme-secondary), .28); border-radius: 1.5rem; align-items: center; flex: 1 1 auto; flex-direction: column; gap: 1.5rem; overflow: hidden; background: rgb(var(--v-theme-surface)); color: inherit; font: inherit; text-align: center; touch-action: none; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); }
 .passive-card--interactive { cursor: pointer; }
 .passive-card__content { display: flex; width: 100%; min-width: 0; min-height: 0; flex: 1 1 auto; align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem; }
@@ -823,6 +825,7 @@ defineExpose({ refitContent })
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .review-card__hint,
   .review-card-buffer--incoming,
   .review-card-buffer--outgoing { transition: none; }
 }
