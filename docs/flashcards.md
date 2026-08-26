@@ -98,6 +98,8 @@ The standalone review header reports the current card's position within the live
 
 ## Standalone review motion
 
+Starting a Review set while another review is active opens a warning instead of resuming the existing session. Confirming ends the active review and continues to the selected Review set; cancelling leaves the active review unchanged.
+
 Automatic and manual standalone Review set changes use the same directional model: previous and next cards move down and up, while front and back faces move right and left. An incoming card resets to its configured first face before its content is rendered, so advancing from a back does not expose the next card's back during the handoff. Motion is limited to the card value, answer, and note; the face label, replay or reveal hint, card surface, and passive progress remain stationary. Reduced-motion preferences replace the content without directional movement.
 
 On desktop, standalone and dense Interval Review set keyboard controls remain available regardless of which non-editable element has focus. Up and Down move to the previous and next card, either horizontal arrow flips the current face, Backspace ejects the current card, and Space toggles pause or play. Text fields, selectors, and editable content retain their normal keyboard behavior. The shared Review set card owns the document listener and removes it when the card component is destroyed.

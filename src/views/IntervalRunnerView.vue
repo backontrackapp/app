@@ -139,7 +139,19 @@ const pendingRepetitionStart = ref<
 >()
 const repetitionError = ref('')
 const attributionSheet = ref(false)
-const activeSessionSheet = ref(false)
+const replaceActiveSessionDialog = ref(false)
+const replacingActiveSession = ref(false)
+const activeSessionName = ref('')
+const pendingActiveSessionStart = ref<
+  | { kind: 'request' }
+  | {
+      kind: 'template'
+      taskId?: string
+      programStepId?: string
+      programStepCompletionId?: string
+      repetitions?: number
+    }
+>()
 const flashcardContextSheet = ref(false)
 const openingFlashcardContext = ref(false)
 const flashcardNavigating = ref(false)
@@ -1093,23 +1105,12 @@ async function resume() {
   wakeLock = await requestIntervalWakeLock()
 }
 
-async function requestStartTemplate() {
+async function requestStartTemplate(replaceActive = false) {
   const active = store.activeSession
-  if (active) {
-    if (
-      originTaskId.value
-      && active.task === originTaskId.value
-      && (active.programStep || '') === originProgramStepId.value
-      && (active.programStepCompletion || '') === originProgramStepCompletionId.value
-    ) {
-      await router.replace({
-        name: 'interval-runner',
-        params: { sessionId: active.id },
-        query: { from: route.query.from, autoplay: '1' },
-      })
-    } else {
-      activeSessionSheet.value = true
-    }
+  if (active && !replaceActive) {
+    activeSessionName.value = active.name
+    pendingActiveSessionStart.value = { kind: 'request' }
+    replaceActiveSessionDialog.value = true
     return
   }
   if (!originTaskId.value && eligibleTaskProgress.value.length) {
@@ -1128,9 +1129,24 @@ async function startTemplate(
   programStepId?: string,
   programStepCompletionId?: string,
   repetitions?: number,
+  replaceActive = false,
 ) {
   const item = previewSession.value
   if (!item || starting.value) return
+  if (store.activeSession && !replaceActive) {
+    activeSessionName.value = store.activeSession.name
+    pendingActiveSessionStart.value = {
+      kind: 'template',
+      taskId,
+      programStepId,
+      programStepCompletionId,
+      repetitions,
+    }
+    attributionSheet.value = false
+    repetitionDialog.value = false
+    replaceActiveSessionDialog.value = true
+    return
+  }
   const repetitionSettings = intervalGlobalRepetitionSettings(item.definition)
   if (repetitionSettings.enabled && repetitions === undefined) {
     selectedRepetitions.value = repetitionSettings.defaultCount
@@ -1187,7 +1203,15 @@ async function startTemplate(
       repetitionDialog.value = false
       repetitionDefinition.value = undefined
       pendingRepetitionStart.value = undefined
-      activeSessionSheet.value = true
+      pendingActiveSessionStart.value = {
+        kind: 'template',
+        taskId,
+        programStepId,
+        programStepCompletionId,
+        repetitions,
+      }
+      activeSessionName.value = started.name
+      replaceActiveSessionDialog.value = true
       return
     }
     playCurrentStepCue(started)
@@ -1238,18 +1262,33 @@ function cancelRepetitionStart() {
   repetitionError.value = ''
 }
 
-async function resumeActiveSession() {
-  const active = store.activeSession
-  if (!active) return
-  activeSessionSheet.value = false
-  await router.replace({
-    name: 'interval-runner',
-    params: { sessionId: active.id },
-    query: {
-      ...(route.query.from === 'tasks' ? { from: 'tasks' } : {}),
-      autoplay: '1',
-    },
-  })
+async function replaceActiveSession() {
+  if (replacingActiveSession.value) return
+  replacingActiveSession.value = true
+  error.value = ''
+  try {
+    await store.endActiveSession()
+    await stopBackgroundInterval()
+    await stopFlashcardSpeech()
+    replaceActiveSessionDialog.value = false
+    const pending = pendingActiveSessionStart.value
+    pendingActiveSessionStart.value = undefined
+    if (pending?.kind === 'template') {
+      await startTemplate(
+        pending.taskId,
+        pending.programStepId,
+        pending.programStepCompletionId,
+        pending.repetitions,
+        true,
+      )
+    } else {
+      await requestStartTemplate(true)
+    }
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not end the active interval.'
+  } finally {
+    replacingActiveSession.value = false
+  }
 }
 
 async function advanceCurrent(item: IntervalSession) {
@@ -2048,7 +2087,7 @@ async function runAgain(repetitions?: number) {
         primary-label="Start interval"
         cancel-label="Cancel interval"
         :busy="starting"
-        @start="requestStartTemplate"
+        @start="requestStartTemplate()"
         @cancel="router.replace(returnTo)"
       />
 
@@ -2631,20 +2670,16 @@ async function runAgain(repetitions?: number) {
       />
     </ActionBottomSheet>
 
-    <ActionBottomSheet
-      v-model="activeSessionSheet"
-      title="Interval already running"
-      aria-label="Active interval actions"
-    >
-      <div class="px-2 py-3">
-        <p class="text-body-2 muted mb-4">
-          {{ store.activeSession?.name || 'Another interval' }} is already in progress. Its task attachment will not be changed.
-        </p>
-        <v-btn block color="secondary" prepend-icon="mdi-play" @click="resumeActiveSession">
-          Resume active interval
-        </v-btn>
-      </div>
-    </ActionBottomSheet>
+    <ConfirmDialog
+      v-model="replaceActiveSessionDialog"
+      title="End the active interval?"
+      :message="`${activeSessionName || 'Another interval'} is already in progress. End it and start ${previewSession?.name || 'this interval'} instead?`"
+      confirm-text="End and continue"
+      confirm-color="warning"
+      icon="mdi-alert-outline"
+      :loading="replacingActiveSession || starting"
+      @confirm="replaceActiveSession"
+    />
   </main>
 </template>
 

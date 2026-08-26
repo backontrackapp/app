@@ -6,6 +6,8 @@ The interval editor uses one archive/restore action in place of direct deletion.
 
 Selecting an interval card opens its action menu. **Play** is the first action, followed by Edit and Duplicate. Archiving or permanently deleting an interval remains available from its editor.
 
+Starting a saved or Quick interval while another interval is active opens a warning instead of resuming the existing run. Confirming ends the active run and continues with the selected interval; cancelling leaves the active run unchanged.
+
 ## Interval sounds
 
 Settings provides a sound choice for each interval type. In addition to packaged cues and a silent option, **Speak Step Name** uses text-to-speech to announce the interval step's title when that step begins. Its preview announces the interval type name. The first step is cued when a saved, quick, or repeated interval starts, and each later step is cued when the run advances; navigating backward remains silent. Spoken step names also work while an interval runs in the background on Android.

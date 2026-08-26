@@ -176,15 +176,6 @@ async function leaveSelectedSet() {
 async function openReviewSet(reviewSet: FlashcardReviewSet) {
   startError.value = ''
   try {
-    const active = store.activeSession
-    if (active) {
-      await router.push({
-        name: 'flashcard-review-runner',
-        params: { sessionId: active.id },
-        query: { autoplay: '1' },
-      })
-      return
-    }
     await router.push({
       name: 'flashcard-review-set-runner',
       params: { reviewSetId: reviewSet.id },

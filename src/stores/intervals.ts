@@ -518,6 +518,28 @@ export const useIntervalStore = defineStore('intervals', () => {
     ))
   }
 
+  async function endActiveSession() {
+    const active = activeSession.value
+    if (!active) return undefined
+    const now = new Date()
+    const result = active.status === 'running'
+      ? reconcileIntervalRuntime(active.definition, active.runtime, now)
+      : { runtime: { ...active.runtime }, completed: false }
+    const runtime = {
+      ...result.runtime,
+      stepStartedAt: undefined,
+      updatedAt: now.toISOString(),
+    }
+    const changes = {
+      runtime,
+      elapsedSeconds: Math.round(runtime.accumulatedMs / 1000),
+      endedAt: now.toISOString(),
+    }
+    return result.completed
+      ? completeSession(active.id, changes)
+      : endSession(active.id, changes)
+  }
+
   async function finishSessionOptimistically(
     sessionId: string,
     status: Extract<IntervalSessionStatus, 'completed' | 'ended'>,
@@ -694,6 +716,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     updateSessionFlashcardReview,
     completeSession,
     endSession,
+    endActiveSession,
     reconcileActiveSession,
     mirrorRuntime,
     loadQuickIntervalSettings,

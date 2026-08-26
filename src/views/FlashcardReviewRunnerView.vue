@@ -76,6 +76,9 @@ const reviewCardTransitionDirection = ref<ReviewCardTransitionDirection>()
 const reviewCardPane = ref<InstanceType<typeof ReviewSetCard>>()
 const sessionActionsSheet = ref(false)
 const endDialog = ref(false)
+const replaceActiveReviewDialog = ref(false)
+const replacingActiveReview = ref(false)
+const activeReviewName = ref('')
 const cardTagSaving = ref('')
 const cardEditorDialog = ref(false)
 const cardEditorCard = ref<Flashcard>()
@@ -746,9 +749,14 @@ async function pauseReview(markVisibilityPause: boolean) {
   await performAction('pause')
 }
 
-async function startPreviewReview() {
+async function startPreviewReview(replaceActive = false) {
   const preview = previewSession.value
   if (!preview?.reviewSet || busy.value) return
+  if (store.activeSession && !replaceActive) {
+    activeReviewName.value = store.activeSession.name
+    replaceActiveReviewDialog.value = true
+    return
+  }
   sessionActionsSheet.value = false
   busy.value = true
   error.value = ''
@@ -790,6 +798,22 @@ async function startPreviewReview() {
     error.value = cause instanceof Error ? cause.message : 'Could not start this review.'
   } finally {
     busy.value = false
+  }
+}
+
+async function replaceActiveReview() {
+  const active = store.activeSession
+  if (replacingActiveReview.value) return
+  replacingActiveReview.value = true
+  error.value = ''
+  try {
+    if (active) await store.act(active.id, 'end', active.elapsedSeconds)
+    replaceActiveReviewDialog.value = false
+    await startPreviewReview(true)
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not end the active review.'
+  } finally {
+    replacingActiveReview.value = false
   }
 }
 
@@ -1540,7 +1564,7 @@ async function leaveRunner() {
         primary-label="Start review"
         cancel-label="Cancel review"
         :busy="busy"
-        @start="startPreviewReview"
+        @start="startPreviewReview()"
         @cancel="leaveRunner"
       />
 
@@ -1807,6 +1831,16 @@ async function leaveRunner() {
       </v-card>
     </AppDialog>
 
+    <ConfirmDialog
+      v-model="replaceActiveReviewDialog"
+      title="End the active review?"
+      :message="`${activeReviewName || 'Another review'} is already in progress. End it and start ${previewSession?.name || 'this review'} instead?`"
+      confirm-text="End and continue"
+      confirm-color="warning"
+      icon="mdi-alert-outline"
+      :loading="replacingActiveReview || busy"
+      @confirm="replaceActiveReview"
+    />
     <ConfirmDialog
       v-model="endDialog"
       title="End this review?"
