@@ -86,7 +86,7 @@ final class Schema
                     'front_language' => self::text(35),
                     'back_language' => self::text(35),
                     'sort_mode' => self::choice([
-                        'difficult', 'never_reviewed', 'least_recent', 'recently_added', 'random',
+                        'difficult', 'easiest', 'never_reviewed', 'least_recent', 'recently_added', 'random',
                     ], true),
                     'sort_direction' => self::choice(['asc', 'desc'], true),
                     'sort_order' => self::integer(0),
@@ -298,7 +298,7 @@ final class Schema
                     'max_cards_snapshot' => self::integer(1, 100),
                     'eject_behavior_snapshot' => self::choice(['remove', 'replace', 'exclude', 'replace_exclude'], true),
                     'sort_snapshot' => self::choice([
-                        'difficult', 'never_reviewed', 'least_recent', 'recently_added', 'random',
+                        'difficult', 'easiest', 'never_reviewed', 'least_recent', 'recently_added', 'random',
                     ], true),
                     'sort_direction_snapshot' => self::choice(['asc', 'desc'], true),
                     'tags_snapshot' => self::jsonArray(5000),

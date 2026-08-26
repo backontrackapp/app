@@ -316,7 +316,7 @@ final class CuratedReviewSetCatalog
             'speechEnabled' => $boolean('speech_enabled', false),
             'frontLanguage' => '',
             'backLanguage' => '',
-            'sortMode' => in_array($row['sort_mode'] ?? '', ['difficult', 'never_reviewed', 'least_recent', 'recently_added', 'random'], true) ? $row['sort_mode'] : 'difficult',
+            'sortMode' => in_array($row['sort_mode'] ?? '', ['difficult', 'easiest', 'never_reviewed', 'least_recent', 'recently_added', 'random'], true) ? $row['sort_mode'] : 'difficult',
             'sortDirection' => ($row['sort_direction'] ?? '') === 'desc' ? 'desc' : 'asc',
         ];
     }

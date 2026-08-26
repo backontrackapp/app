@@ -5247,6 +5247,7 @@ final class Api
         array &$cards,
         string $sortMode,
         string $sortDirection = 'asc',
+        array $tagIds = [],
     ): void
     {
         if ($sortMode === 'random') {
@@ -5257,7 +5258,8 @@ final class Api
             return;
         }
 
-        usort($cards, static function (array $left, array $right) use ($sortMode): int {
+        $priorityTagId = (string) ($tagIds[$sortMode === 'easiest' ? 'easy' : 'hard'] ?? '');
+        usort($cards, static function (array $left, array $right) use ($sortMode, $priorityTagId): int {
             $leftCreated = (string) ($left['created_at'] ?? '');
             $rightCreated = (string) ($right['created_at'] ?? '');
             $leftReviewed = (string) ($left['last_reviewed_at'] ?? '');
@@ -5282,10 +5284,37 @@ final class Api
                     : strcmp($leftReviewed, $rightReviewed);
             }
 
+            $hasPriorityTag = static function (array $card) use ($priorityTagId): bool {
+                if ($priorityTagId === '') {
+                    return false;
+                }
+                $tags = $card['tags'] ?? [];
+                if (is_string($tags)) {
+                    $tags = json_decode($tags, true);
+                }
+                return is_array($tags) && in_array($priorityTagId, $tags, true);
+            };
+            $leftHasPriorityTag = $hasPriorityTag($left);
+            $rightHasPriorityTag = $hasPriorityTag($right);
+            if ($leftHasPriorityTag !== $rightHasPriorityTag) {
+                return $leftHasPriorityTag ? -1 : 1;
+            }
+
             $leftAttempts = (int) $left['success_count'] + (int) $left['error_count'];
             $rightAttempts = (int) $right['success_count'] + (int) $right['error_count'];
-            $leftDifficulty = $leftAttempts > 0 ? (int) $left['error_count'] / $leftAttempts : -1;
-            $rightDifficulty = $rightAttempts > 0 ? (int) $right['error_count'] / $rightAttempts : -1;
+            $leftDifficulty = $leftAttempts > 0 ? (int) $left['error_count'] / $leftAttempts : null;
+            $rightDifficulty = $rightAttempts > 0 ? (int) $right['error_count'] / $rightAttempts : null;
+            if ($sortMode === 'easiest') {
+                if (($leftDifficulty === null) !== ($rightDifficulty === null)) {
+                    return $leftDifficulty === null ? 1 : -1;
+                }
+                return (($leftDifficulty ?? 0) <=> ($rightDifficulty ?? 0))
+                    ?: ((int) $left['error_count'] <=> (int) $right['error_count'])
+                    ?: strcmp($leftReviewed, $rightReviewed)
+                    ?: strcmp((string) $left['id'], (string) $right['id']);
+            }
+            $leftDifficulty ??= -1;
+            $rightDifficulty ??= -1;
             return ($rightDifficulty <=> $leftDifficulty)
                 ?: ((int) $right['error_count'] <=> (int) $left['error_count'])
                 ?: strcmp($leftReviewed, $rightReviewed)
@@ -5356,7 +5385,12 @@ final class Api
 
         $sortMode = (string) $reviewSet['sort_mode'];
         $sortDirection = (string) ($reviewSet['sort_direction'] ?? 'asc');
-        $this->sortFlashcardsForReview($cards, $sortMode, $sortDirection);
+        $this->sortFlashcardsForReview(
+            $cards,
+            $sortMode,
+            $sortDirection,
+            $this->flashcardTagIdMap($sourceOwner),
+        );
         $allQueue = array_map(function (array $card): array {
             $tags = $this->decodeJsonColumn($card['tags'] ?? '[]');
             return [

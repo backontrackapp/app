@@ -281,7 +281,7 @@ final class AssistantService
                 'back_language' => ['type' => ['string', 'null']],
                 'sort_mode' => [
                     'type' => ['string', 'null'],
-                    'enum' => ['difficult', 'never_reviewed', 'least_recent', 'recently_added', 'random', null],
+                    'enum' => ['difficult', 'easiest', 'never_reviewed', 'least_recent', 'recently_added', 'random', null],
                 ],
                 'sort_direction' => ['type' => ['string', 'null'], 'enum' => ['asc', 'desc', null]],
             ], [

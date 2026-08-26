@@ -339,7 +339,8 @@ export const FLASHCARD_REVIEW_SORT_OPTIONS: Array<{
   value: FlashcardReviewSort
   subtitle: string
 }> = [
-  { title: 'Most difficult', value: 'difficult', subtitle: 'Cards with the highest error rate first' },
+  { title: 'Most difficult', value: 'difficult', subtitle: 'Hard-tagged cards, then highest error rates' },
+  { title: 'Easiest', value: 'easiest', subtitle: 'Easy-tagged cards, then lowest error rates' },
   { title: 'Never reviewed first', value: 'never_reviewed', subtitle: 'Start with cards you have not seen yet' },
   { title: 'Least recently reviewed', value: 'least_recent', subtitle: 'Return to the cards waiting longest' },
   { title: 'Recently added', value: 'recently_added', subtitle: 'Newest cards first' },
@@ -478,6 +479,12 @@ function compareText(left: string, right: string) {
   return left < right ? -1 : left > right ? 1 : 0
 }
 
+function flashcardHasNamedTag(card: Flashcard, name: string) {
+  const normalizedName = name.toLocaleLowerCase()
+  return card.tags.some(tag => tag.toLocaleLowerCase() === normalizedName)
+    || (card.tagDetails || []).some(tag => tag.name.toLocaleLowerCase() === normalizedName)
+}
+
 export function sortFlashcardsForReview(
   cards: Flashcard[],
   sortMode: FlashcardReviewSort,
@@ -513,6 +520,23 @@ export function sortFlashcardsForReview(
       return !left.lastReviewedAt
         ? compareText(right.createdAt, left.createdAt)
         : compareText(left.lastReviewedAt, right.lastReviewedAt || '')
+    }
+
+    const priorityTag = sortMode === 'easiest' ? 'easy' : 'hard'
+    const leftHasPriorityTag = flashcardHasNamedTag(left, priorityTag)
+    const rightHasPriorityTag = flashcardHasNamedTag(right, priorityTag)
+    if (leftHasPriorityTag !== rightHasPriorityTag) return leftHasPriorityTag ? -1 : 1
+
+    if (sortMode === 'easiest') {
+      const leftDifficulty = flashcardDifficulty(left)
+      const rightDifficulty = flashcardDifficulty(right)
+      if ((leftDifficulty === undefined) !== (rightDifficulty === undefined)) {
+        return leftDifficulty === undefined ? 1 : -1
+      }
+      return (leftDifficulty || 0) - (rightDifficulty || 0)
+        || left.errorCount - right.errorCount
+        || compareText(left.lastReviewedAt || '', right.lastReviewedAt || '')
+        || compareText(left.id, right.id)
     }
 
     const leftDifficulty = flashcardDifficulty(left) ?? -1

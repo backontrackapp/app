@@ -437,8 +437,10 @@ onMounted(async () => {
     } else {
       throw new Error('This review could not be found.')
     }
-    const autoplay = route.query.autoplay === '1' && session.value?.status === 'paused'
-    if (autoplay) {
+    const autoResume = !isReviewSetPreview.value
+      && session.value?.status === 'paused'
+      && (session.value.mode === 'manual' || route.query.autoplay === '1')
+    if (autoResume) {
       await resumeReview()
     } else {
       const restoredBackground = await reconcileBackgroundReview()
@@ -845,7 +847,7 @@ async function resumeReview() {
 async function openSessionActions() {
   const value = session.value
   if (!value || busy.value || isFinished.value) return
-  resumeAfterSessionActions = value.status === 'running'
+  resumeAfterSessionActions = value.mode === 'passive' && value.status === 'running'
   if (resumeAfterSessionActions) await pauseReview(false)
   if (session.value?.id === value.id && !isFinished.value) sessionActionsSheet.value = true
   else resumeAfterSessionActions = false
@@ -1281,7 +1283,8 @@ function copySessionSettings(value: FlashcardReviewSession) {
 async function openSessionSettings() {
   const value = session.value
   if (!value || busy.value) return
-  resumeAfterSessionSettings = resumeAfterSessionSettings || value.status === 'running'
+  resumeAfterSessionSettings = resumeAfterSessionSettings
+    || (value.mode === 'passive' && value.status === 'running')
   if (resumeAfterSessionSettings) await pauseReview(false)
   if (!session.value || isFinished.value) return
   copySessionSettings(session.value)
@@ -1300,7 +1303,10 @@ async function closeSessionSettings() {
   sessionSettingsApplyMenu.value = false
   sessionSettingsDialog.value = false
   sessionSettingsError.value = ''
-  if (resumeAfterSessionSettings && session.value?.status === 'paused') {
+  if (
+    session.value?.status === 'paused'
+    && (resumeAfterSessionSettings || session.value.mode === 'manual')
+  ) {
     await resumeReview()
   }
   resumeAfterSessionSettings = false
@@ -1351,7 +1357,8 @@ function applySessionSettingsTo(target: FlashcardSettingsApplyTarget) {
 
 async function openCardEditor(action: 'add' | 'edit') {
   if (!session.value || busy.value || !canManageCurrentCard.value) return
-  resumeAfterCardEditor = resumeAfterCardEditor || session.value.status === 'running'
+  resumeAfterCardEditor = resumeAfterCardEditor
+    || (session.value.mode === 'passive' && session.value.status === 'running')
   if (resumeAfterCardEditor) await pauseReview(false)
   try {
     if (currentReviewSet.value && currentReviewSet.value.accessRole !== 'owner') {
@@ -1665,7 +1672,8 @@ async function leaveRunner() {
           @previous="navigateLeft"
           @next="navigateRight"
           @flip="showReviewCardSide"
-          @toggle-playback="session.status === 'paused' ? resumeReview() : pauseReview(false)"
+          @toggle-playback="session.mode === 'passive'
+            && (session.status === 'paused' ? resumeReview() : pauseReview(false))"
         />
 
         <div v-if="session.mode === 'manual'" class="grading-actions">
@@ -1704,7 +1712,11 @@ async function leaveRunner() {
           </template>
         </div>
 
-        <footer class="review-navigation" aria-label="Review navigation">
+        <footer
+          class="review-navigation"
+          :class="{ 'review-navigation--manual': session.mode === 'manual' }"
+          aria-label="Review navigation"
+        >
           <div class="review-navigation__control">
             <v-btn
               icon="mdi-skip-previous"
@@ -1715,7 +1727,7 @@ async function leaveRunner() {
               @click="navigateLeft"
             />
           </div>
-          <div class="review-navigation__control">
+          <div v-if="session.mode === 'passive'" class="review-navigation__control">
             <v-btn
               :icon="session.status === 'paused' ? 'mdi-play' : 'mdi-pause'"
               color="secondary"
@@ -1913,6 +1925,7 @@ async function leaveRunner() {
 .runner-meta__card-count { justify-self: center; }
 .runner-meta__elapsed { justify-self: end; }
 .review-navigation { display: grid; width: 100%; max-width: 54.25rem; margin: auto auto 0; padding-top: .25rem; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; justify-items: center; gap: 1rem; }
+.review-navigation--manual { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .review-navigation__control { display: flex; min-width: 0; align-items: center; }
 .grading-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
 .grading-actions > .v-btn:only-child { grid-column: 1 / -1; }
@@ -2036,7 +2049,7 @@ async function leaveRunner() {
     height: clamp(2.75rem, 11dvh, 3.5rem);
   }
 
-  .review-navigation__control:nth-child(2) :deep(.v-btn) {
+  .review-navigation:not(.review-navigation--manual) .review-navigation__control:nth-child(2) :deep(.v-btn) {
     width: clamp(3rem, 13dvh, 4rem);
     height: clamp(3rem, 13dvh, 4rem);
   }

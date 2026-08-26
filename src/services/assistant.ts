@@ -426,7 +426,7 @@ export function assistantWritePlan(
     }
     draft.sortMode = nullableChoice(
       call.arguments.sort_mode,
-      ['difficult', 'never_reviewed', 'least_recent', 'recently_added', 'random'],
+      ['difficult', 'easiest', 'never_reviewed', 'least_recent', 'recently_added', 'random'],
       'card order',
     ) ?? draft.sortMode
     draft.sortDirection = nullableChoice(call.arguments.sort_direction, ['asc', 'desc'], 'sort direction')

@@ -454,6 +454,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         : existing?.image || '',
       imageSource: imageChanged ? image?.source || 'none' : existing?.imageSource || 'none',
       tags: [...draft.tags],
+      tagDetails: tags.value.filter(tag => draft.tags.includes(tag.id)),
       createdAt: existing?.createdAt || now,
       updatedAt: now,
       lastReviewedAt: existing?.lastReviewedAt,
@@ -761,6 +762,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         if (action === 'add_tags') card.tags = [...new Set([...card.tags, ...uniqueValues])]
         if (action === 'remove_tags') card.tags = card.tags.filter(tag => !uniqueValues.includes(tag))
         if (action === 'clear_tags') card.tags = []
+        if (['set_tags', 'add_tags', 'remove_tags', 'clear_tags'].includes(action)) {
+          card.tagDetails = tags.value.filter(tag => card.tags.includes(tag.id))
+        }
         if (swapColumns.length === 2) {
           swapFlashcardColumns(card, swapColumns as [FlashcardBulkSwapColumn, FlashcardBulkSwapColumn])
         }
