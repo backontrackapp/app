@@ -26,12 +26,33 @@ const props = withDefaults(defineProps<{
 const parts = computed(() => props.pinyin
   ? pinyinTextParts(props.text)
   : flashcardSpeechTextParts(props.text, props.language))
+const partGroups = computed(() => {
+  const groups: Array<{
+    parts: typeof parts.value
+    unbroken: boolean
+  }> = []
+
+  parts.value.forEach((part) => {
+    const unbroken = props.pinyin && part.wordIndex !== undefined
+    const previousGroup = groups.at(-1)
+    if (unbroken && previousGroup?.unbroken) previousGroup.parts.push(part)
+    else groups.push({ parts: [part], unbroken })
+  })
+
+  return groups
+})
 const toneSourceWords = computed(() => pinyinTextParts(props.toneSource)
   .filter(part => part.wordIndex !== undefined))
 
 function partTone(part: (typeof parts.value)[number]) {
   if (!props.colorizePinyin || part.wordIndex === undefined) return undefined
   return pinyinTone(toneSourceWords.value[part.wordIndex]?.value || part.value)
+}
+
+function partIsPunctuation(part: (typeof parts.value)[number]) {
+  return props.colorizePinyin
+    && part.wordIndex === undefined
+    && /\p{P}/u.test(part.value)
 }
 
 function partIsActive(part: (typeof parts.value)[number]) {
@@ -49,24 +70,35 @@ function partIsActive(part: (typeof parts.value)[number]) {
 <template>
   <span class="spoken-text" :aria-label="text">
     <span
-      v-for="part in parts"
-      :key="part.start"
-      :class="[
-        'spoken-text__part',
-        {
-          'spoken-text__part--word': part.wordIndex !== undefined,
-          'spoken-text__part--active': partIsActive(part),
-          [`spoken-text__part--tone-${partTone(part)}`]: partTone(part) !== undefined,
-        },
-      ]"
-      aria-hidden="true"
-    >{{ part.value }}</span>
+      v-for="group in partGroups"
+      :key="group.parts[0]?.start"
+      :class="{ 'spoken-text__unbroken': group.unbroken }"
+    >
+      <span
+        v-for="part in group.parts"
+        :key="part.start"
+        :class="[
+          'spoken-text__part',
+          {
+            'spoken-text__part--word': part.wordIndex !== undefined,
+            'spoken-text__part--punctuation': partIsPunctuation(part),
+            'spoken-text__part--active': partIsActive(part),
+            [`spoken-text__part--tone-${partTone(part)}`]: partTone(part) !== undefined,
+          },
+        ]"
+        aria-hidden="true"
+      >{{ part.value }}</span>
+    </span>
   </span>
 </template>
 
 <style scoped>
 .spoken-text {
   white-space: inherit;
+}
+
+.spoken-text__unbroken {
+  white-space: nowrap;
 }
 
 .spoken-text__part--word {
@@ -86,7 +118,8 @@ function partIsActive(part: (typeof parts.value)[number]) {
 .spoken-text__part--tone-2 { color: rgb(var(--v-theme-success)); }
 .spoken-text__part--tone-3 { color: rgb(var(--v-theme-warning)); }
 .spoken-text__part--tone-4 { color: rgb(var(--v-theme-error)); }
-.spoken-text__part--tone-5 { color: rgba(var(--v-theme-on-surface), .72); }
+.spoken-text__part--tone-5,
+.spoken-text__part--punctuation { color: rgba(var(--v-theme-on-surface), .72); }
 
 @media (prefers-reduced-motion: reduce) {
   .spoken-text__part--word { transition: color 160ms ease; }
