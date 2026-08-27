@@ -600,7 +600,7 @@ function leave() {
 
 @media (orientation: portrait) {
   .task-timer-page {
-    padding-bottom: max(2rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
+    padding-bottom: max(1rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
   }
 }
 

@@ -2005,19 +2005,13 @@ async function leaveRunner() {
   }
 
   .runner-meta {
-    display: flex;
+    display: grid;
     padding-left: 1rem;
     grid-column: 2;
     grid-row: 1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     align-items: center;
-    justify-content: space-between;
-    flex-direction: row;
     gap: .375rem;
-  }
-
-  .runner-meta__card-count,
-  .runner-meta__elapsed {
-    justify-self: auto;
   }
 
   .grading-actions,

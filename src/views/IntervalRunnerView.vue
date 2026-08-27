@@ -93,7 +93,6 @@ import type {
   FlashcardSettingsApplyTarget,
   FlashcardSpeechSupport,
   FlashcardSpeechWord,
-  FlashcardTag,
   IntervalDefinition,
   IntervalFlashcardReviewSnapshot,
   IntervalRuntimeState,
@@ -158,7 +157,6 @@ const flashcardContextSheet = ref(false)
 const openingFlashcardContext = ref(false)
 const flashcardNavigating = ref(false)
 const intervalFlashcardTransitionDirection = ref<'previous' | 'next' | 'front' | 'back'>()
-const flashcardTagSheet = ref(false)
 const flashcardTagSaving = ref('')
 const flashcardEditorDialog = ref(false)
 const flashcardEditorCard = ref<Flashcard>()
@@ -260,6 +258,7 @@ const flashcardReviewPlaybackEnabled = computed(() => {
   return Boolean(
     review
     && step
+    && session.value?.status === 'running'
     && intervalFlashcardReviewPlaybackIsActive(
       review,
       step,
@@ -358,9 +357,6 @@ const canTagCurrentFlashcard = computed(() => Boolean(
   && flashcardReviewSet.value?.accessRole === 'owner'
   && currentFlashcardRecord.value,
 ))
-const intervalQuickTagNames = new Set(
-  INTERVAL_FLASHCARD_QUICK_TAGS.map(tag => tag.name.toLocaleLowerCase()),
-)
 const intervalQuickTags = computed(() => INTERVAL_FLASHCARD_QUICK_TAGS.map((quickTag) => {
   const tag = flashcardStore.tags.find(
     item => item.name.toLocaleLowerCase() === quickTag.name.toLocaleLowerCase(),
@@ -371,9 +367,6 @@ const intervalQuickTags = computed(() => INTERVAL_FLASHCARD_QUICK_TAGS.map((quic
     selected: Boolean(tag && flashcardPhase.value?.card.tags.includes(tag.id)),
   }
 }))
-const intervalSelectableTags = computed(() => flashcardStore.tags.filter(
-  tag => !intervalQuickTagNames.has(tag.name.toLocaleLowerCase()),
-))
 const flashcardSettingsChanged = computed(() => flashcardSettingsDialog.value
   && flashcardReviewSettingsSignature(flashcardSettingsDraft) !== flashcardSettingsOriginal.value)
 const canSaveFlashcardSettings = computed(() => flashcardSettingsChanged.value
@@ -525,10 +518,6 @@ watch([
 
 watch(flashcardContextSheet, (open, wasOpen) => {
   if (wasOpen && !open) void finishFlashcardContext()
-})
-
-watch(flashcardTagSheet, (open, wasOpen) => {
-  if (wasOpen && !open) void finishFlashcardModal()
 })
 
 function createTimerFit() {
@@ -1738,23 +1727,12 @@ async function saveIntervalFlashcard(card: Flashcard) {
   await updateFlashcardSnapshot({ ...review, cards })
 }
 
-async function openFlashcardTagSheet() {
-  if (!canTagCurrentFlashcard.value || flashcardTagSaving.value || !intervalSelectableTags.value.length) return
-  await pauseForFlashcardModal()
-  if (session.value && !finished.value) flashcardTagSheet.value = true
-  else await finishFlashcardModal()
-}
-
-function intervalFlashcardHasTag(tagId: string) {
-  return Boolean(flashcardPhase.value?.card.tags.includes(tagId))
-}
-
-async function toggleIntervalFlashcardTag(tag: FlashcardTag | { name: string }) {
+async function toggleIntervalFlashcardTag(tag: { name: string }) {
   const cardId = flashcardPhase.value?.card.id
   if (!cardId || !canTagCurrentFlashcard.value || flashcardTagSaving.value) return
-  flashcardTagSaving.value = 'id' in tag ? tag.id : tag.name
+  flashcardTagSaving.value = tag.name
   try {
-    const resolvedTag = 'id' in tag ? tag : await flashcardStore.createTag(tag.name)
+    const resolvedTag = await flashcardStore.createTag(tag.name)
     const update = flashcardTagToggleUpdate(
       flashcardPhase.value?.card.tags || [],
       resolvedTag,
@@ -2364,7 +2342,6 @@ async function runAgain(repetitions?: number) {
             show-tag-actions
             :quick-tags="intervalQuickTags"
             :can-tag="canTagCurrentFlashcard"
-            :has-selectable-tags="intervalSelectableTags.length > 0"
             ejectable
             :ejecting="flashcardEjecting"
             :eject-disabled="isTemplatePreview || syncing || flashcardEjecting"
@@ -2377,7 +2354,6 @@ async function runAgain(repetitions?: number) {
             @after-enter="finishIntervalFlashcardTransition"
             @eject="ejectIntervalFlashcard"
             @toggle-tag="toggleIntervalFlashcardTag({ name: $event })"
-            @open-tags="openFlashcardTagSheet"
             @previous="navigateIntervalFlashcard('previous', $event)"
             @next="navigateIntervalFlashcard('next', $event)"
             @flip="showIntervalFlashcardSide"
@@ -2477,32 +2453,6 @@ async function runAgain(repetitions?: number) {
       :tts-paused="sessionTtsPaused"
       @action="handleFlashcardContextAction"
     />
-
-    <ActionBottomSheet
-      v-model="flashcardTagSheet"
-      title="Tag flashcard"
-      description="Choose any additional tags for this card. Easy and hard stay pinned on the card."
-      aria-label="Choose flashcard tags"
-    >
-      <v-list-item
-        v-for="tag in intervalSelectableTags"
-        :key="tag.id"
-        :data-tag-id="tag.id"
-        :title="tag.name"
-        :prepend-icon="intervalFlashcardHasTag(tag.id) ? 'mdi-check-circle' : 'mdi-tag-outline'"
-        :active="intervalFlashcardHasTag(tag.id)"
-        :disabled="Boolean(flashcardTagSaving)"
-        rounded="lg"
-        @click="toggleIntervalFlashcardTag(tag)"
-      />
-      <v-list-item
-        v-if="!intervalSelectableTags.length"
-        prepend-icon="mdi-tag-off-outline"
-        title="No other tags available"
-        disabled
-        rounded="lg"
-      />
-    </ActionBottomSheet>
 
     <FlashcardCardDialog
       :model-value="flashcardEditorDialog"
@@ -2943,7 +2893,7 @@ async function runAgain(repetitions?: number) {
 }
 @media (orientation: portrait) {
   .runner-page {
-    padding-bottom: max(2rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
+    padding-bottom: max(1rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
   }
 
 }
@@ -3195,7 +3145,7 @@ async function runAgain(repetitions?: number) {
     min-width: 0;
     align-items: center;
     justify-content: center;
-    gap: .75rem;
+    flex-direction: column;
   }
 
   .runner-header--with-review .runner-header__review-title > strong {
