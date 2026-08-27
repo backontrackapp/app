@@ -328,7 +328,8 @@ async function reorderReviewSets(result: LongPressDragResult) {
         >
           <div class="review-set__row">
             <div class="review-set__icon" :style="{ background: reviewSet.color || '#C7F464' }">
-              <v-icon icon="mdi-cards-outline" size="21" />
+              <span v-if="reviewSet.icon" class="review-set__emoji" aria-hidden="true">{{ reviewSet.icon }}</span>
+              <v-icon v-else icon="mdi-cards-outline" size="21" />
             </div>
             <div class="review-set__main">
               <div class="min-width-0">
@@ -427,7 +428,8 @@ async function reorderReviewSets(result: LongPressDragResult) {
         >
           <div class="review-set__row">
             <div class="review-set__icon" :style="{ background: reviewSet.color || '#C7F464' }">
-              <v-icon icon="mdi-cards-outline" size="21" />
+              <span v-if="reviewSet.icon" class="review-set__emoji" aria-hidden="true">{{ reviewSet.icon }}</span>
+              <v-icon v-else icon="mdi-cards-outline" size="21" />
             </div>
             <div class="review-set__main">
               <div class="min-width-0">
@@ -669,6 +671,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
 .review-set:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .1875rem; }
 .review-set__row { display: flex; min-width: 0; align-items: flex-start; gap: .75rem; }
 .review-set__icon { display: grid; width: 2.625rem; height: 2.625rem; flex: 0 0 auto; place-items: center; border-radius: .875rem; color: rgb(var(--v-theme-on-secondary)); }
+.review-set__emoji { font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; font-size: 1.375rem; line-height: 1; }
 .review-set__main { min-width: 0; flex: 1 1 0; }
 .review-set__heading { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; }
 .review-set__heading h3 { min-width: 0; }

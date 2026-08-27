@@ -3,14 +3,31 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 export const TRACKING_CHART_COLORS = ['#8FB8FF', '#C7F464'] as const
 const MAX_TRACKING_CHART_ZOOM = 8
 
-export function formatTrackingAxisTick(value: number) {
-  const rounded = Math.ceil(value)
-  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(rounded === 0 ? 0 : rounded)
+export function trackingAxisTickStep(values: number[]) {
+  const ordered = [...new Set(values.filter(Number.isFinite))].sort((left, right) => left - right)
+  return ordered.reduce((smallest, value, index) => {
+    const previous = ordered[index - 1]
+    if (previous === undefined) return smallest
+    const difference = value - previous
+    return difference > 0 ? Math.min(smallest, difference) : smallest
+  }, Number.POSITIVE_INFINITY)
+}
+
+export function formatTrackingAxisTick(value: number, step = 1) {
+  const fractionDigits = Number.isFinite(step) && step > 0 && step < 1
+    ? Math.min(4, Math.max(1, Math.ceil(-Math.log10(step))))
+    : 0
+  const factor = 10 ** fractionDigits
+  const tolerance = Number.EPSILON * Math.max(1, Math.abs(value))
+  const rounded = Math.ceil((value - tolerance) * factor) / factor
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: fractionDigits })
+    .format(rounded === 0 ? 0 : rounded)
 }
 
 export function trackingAxisGutter(values: number[], minimum: number, padding = 16) {
+  const step = trackingAxisTickStep(values)
   const longestLabel = values.reduce(
-    (longest, value) => Math.max(longest, formatTrackingAxisTick(value).length),
+    (longest, value) => Math.max(longest, formatTrackingAxisTick(value, step).length),
     1,
   )
   return Math.max(minimum, longestLabel * 7 + padding)

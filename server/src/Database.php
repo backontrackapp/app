@@ -9,7 +9,7 @@ use PDOException;
 
 final class Database
 {
-    public const EXPECTED_SCHEMA_VERSION = '202608260001';
+    public const EXPECTED_SCHEMA_VERSION = '202608270003';
 
     public readonly PDO $pdo;
 
@@ -81,7 +81,7 @@ final class Database
                 'quick_amounts', 'cycle_length', 'program_repeat', 'program_strict',
                 'quick_log_enabled', 'quick_log_sort_order',
                 'log_with_images_enabled', 'sort_order',
-                'color', 'interval_template', 'flashcard_review_set',
+                'color', 'icon', 'interval_template', 'flashcard_review_set',
                 'session_count_mode', 'session_goal_type', 'session_target_seconds',
                 'tracking_trackers', 'reminder_enabled', 'reminder_times',
             ],
@@ -109,7 +109,7 @@ final class Database
                 'image_file', 'usage_count', 'active', 'created_at', 'updated_at',
             ],
             'interval_templates' => [
-                'id', 'owner', 'name', 'description', 'color', 'definition',
+                'id', 'owner', 'name', 'description', 'icon', 'color', 'definition',
                 'sound_enabled', 'vibration_enabled', 'sound', 'sort_order',
                 'flashcard_review_set', 'archived',
             ],

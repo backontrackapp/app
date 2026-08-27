@@ -5,6 +5,7 @@ import AppForm from '@/components/AppForm.vue'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import EmojiSelector from '@/components/EmojiSelector.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
 import { contentRetirementActions, type ContentRetirementActionId } from '@/services/contentRetirementActions'
 import { defaultAggregation, TRACKING_PRESETS, trackerDraftFromPreset } from '@/services/tracking'
@@ -203,8 +204,12 @@ function runRetirementAction(action: ContentRetirementActionId) {
       <v-card class="tracker-form-section surface-card pa-5 mb-4">
         <h2 class="section-title">Basics</h2>
         <v-text-field v-model="draft.name" label="Name" :rules="[(value: string) => Boolean(value?.trim()) || 'Name is required']" maxlength="160" variant="outlined" />
-        <v-textarea v-model="draft.description" label="What are you tracking? (optional)" maxlength="2000" rows="2" auto-grow variant="outlined" />
         <v-select v-model="draft.category" label="Category" :items="categoryOptions" variant="outlined" />
+        <EmojiSelector
+          v-model="draft.icon"
+          label="Tracker icon"
+          dialog-title="Choose an icon"
+        />
         <ColorSwatchPicker v-model="draft.color" />
       </v-card>
 

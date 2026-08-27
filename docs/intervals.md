@@ -1,5 +1,11 @@
 # Intervals
 
+Saved intervals support an optional emoji and selectable color as visual anchors. The editor places the shared emoji selector button directly above the color picker. Active interval cards show the selected emoji against that color and fall back to the timer icon when no emoji is selected; archived cards retain their archive status icon. Duplicating an interval preserves both its emoji and color.
+
+The interval editor does not expose the former optional template description field. Existing stored descriptions remain intact when another interval setting is edited.
+
+Interval steps use their selected preset type as the step name. The editable **Interval name** field is shown only for the **Custom** type; selecting any preset replaces the stored name with that preset's label.
+
 The interval editor uses one archive/restore action in place of direct deletion. For an active interval, the action asks whether to archive it or delete it permanently. Archiving removes the template from interval plans and new attachment choices while preserving its definition and completed run history. Archived intervals appear in the collapsible Archive section and can be opened to restore or permanently delete. Permanent deletion removes the reusable template while completed runs keep their snapshots.
 
 ## Interval card actions

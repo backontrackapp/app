@@ -85,13 +85,18 @@ const flashcardReviewEnabled = computed({
 function selectKind(kind: IntervalStepKind | null) {
   if (props.node.type !== 'step' || !kind) return
   const currentName = props.node.name.trim()
+  const selectedType = INTERVAL_STEP_TYPES.find(option => option.value === kind)
   const hasTypeName = INTERVAL_STEP_TYPES.some((option) =>
     option.title.localeCompare(currentName, undefined, { sensitivity: 'accent' }) === 0,
   )
   props.node.kind = kind
   props.node.flashcardReviewEnabled = intervalStepPlaysFlashcardReviewByDefault(kind)
+  if (kind !== 'custom') {
+    props.node.name = selectedType?.title || kind
+    return
+  }
   if (!currentName || hasTypeName) {
-    props.node.name = INTERVAL_STEP_TYPES.find((option) => option.value === kind)?.title || kind
+    props.node.name = selectedType?.title || kind
   }
 }
 </script>
@@ -176,7 +181,7 @@ function selectKind(kind: IntervalStepKind | null) {
               </v-list-item>
             </template>
           </v-select>
-          <v-text-field v-model="node.name" label="Interval name" />
+          <v-text-field v-if="node.kind === 'custom'" v-model="node.name" label="Interval name" />
           <fieldset v-if="node.kind !== 'confirmation'" class="duration-wheel">
             <legend>Duration</legend>
             <TimerWheelPicker v-model="durationSeconds" :active="isExpanded" />

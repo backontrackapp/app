@@ -5,6 +5,7 @@ import AppForm from '@/components/AppForm.vue'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import EmojiSelector from '@/components/EmojiSelector.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
 import IntervalSettingsFields from '@/components/IntervalSettingsFields.vue'
 import { contentRetirementActions, type ContentRetirementActionId } from '@/services/contentRetirementActions'
@@ -42,6 +43,7 @@ const retirementActions = contentRetirementActions(
 const draft = reactive<IntervalTemplateDraft>({
   name: '',
   description: '',
+  icon: '',
   color: '#C7F464',
   flashcardReviewSet: undefined,
   definition: {
@@ -172,8 +174,13 @@ function runRetirementAction(action: ContentRetirementActionId) {
       <v-card class="surface-card pa-5">
         <div class="field-stack">
           <v-text-field v-model="draft.name" label="Template name" :rules="[value => Boolean(value) || 'Name is required']" />
-          <v-textarea v-model="draft.description" label="Description (optional)" rows="2" auto-grow />
         </div>
+        <EmojiSelector
+          v-model="draft.icon"
+          label="Interval icon"
+          dialog-title="Choose an icon"
+          class="mt-4"
+        />
         <ColorSwatchPicker
           v-model="draft.color"
           label="Template color"

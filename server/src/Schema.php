@@ -68,6 +68,7 @@ final class Schema
             'flashcard_review_sets' => [
                 'fields' => [
                     'name' => self::text(160, true),
+                    'icon' => self::text(64),
                     'color' => self::text(20),
                     'tags' => self::jsonArray(5000),
                     'selection_mode' => self::choice(['tags', 'cards'], true),
@@ -138,6 +139,7 @@ final class Schema
                     'log_with_images_enabled' => self::boolean(),
                     'sort_order' => self::integer(),
                     'color' => self::text(20),
+                    'icon' => self::text(64),
                     'interval_template' => self::relation(false, true),
                     'flashcard_review_set' => self::relation(false, true),
                     'session_count_mode' => self::choice(['task', 'linked']),
@@ -240,6 +242,7 @@ final class Schema
                 'fields' => [
                     'name' => self::text(160, true),
                     'description' => self::text(2000),
+                    'icon' => self::text(64),
                     'color' => self::text(20, true),
                     'definition' => self::json(2000000, true),
                     'sound_enabled' => self::boolean(),

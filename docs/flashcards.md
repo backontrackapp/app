@@ -1,6 +1,6 @@
 # Flashcards
 
-Review sets use a selectable color as a visual anchor. The Flashcards view shows that color behind a cards icon on owned, shared, and archived Review set cards, matching the interval-card treatment.
+Review sets use an optional emoji and selectable color as visual anchors. The editor places the searchable emoji selector directly above the color picker. The Flashcards view shows the selected emoji against that color on owned and shared Review set cards, falling back to the cards icon for sets without an emoji; archived cards retain their archive status icon. Icons and colors are preserved when a shared set is copied.
 
 Owned Review set editors use one archive/restore action in place of direct deletion. For an active set, the action asks whether to archive it or delete it permanently. Archiving removes the set from normal Review choices while preserving its setup, cards, shares, and completed history. Archived sets appear in the collapsible Archive section and can be opened to restore or permanently delete. Permanent deletion may optionally remove the set's matching cards and keeps completed review snapshots.
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { format, parseISO } from 'date-fns'
-import { formatTrackingAxisTick, TRACKING_CHART_COLORS, trackingAxisGutter, useResponsiveChartWidth } from '@/services/responsiveChart'
+import { formatTrackingAxisTick, TRACKING_CHART_COLORS, trackingAxisGutter, trackingAxisTickStep, useResponsiveChartWidth } from '@/services/responsiveChart'
 import { formatNumber } from '@/services/tracking'
 import type { TrackingInsightResult } from '@/services/tracking'
 import type { TrackingRelationshipPoint } from '@/types/domain'
@@ -38,6 +38,8 @@ const factorRange = computed(() => valueRange(
   props.factorScaleMax,
 ))
 const outcomeTicks = computed(() => yTicks())
+const outcomeTickStep = computed(() => trackingAxisTickStep(outcomeTicks.value))
+const factorTickStep = computed(() => trackingAxisTickStep(xTicks()))
 const plotLeft = computed(() => trackingAxisGutter(outcomeTicks.value, 64, 32))
 const plotWidth = computed(() => Math.max(1, chartWidth.value - plotLeft.value - plotRight))
 const plottedPoints = computed(() => props.insight.matched.map((point, index) => ({
@@ -174,7 +176,7 @@ function displayValue(value: number, unit: string) {
       >
       <g v-for="(tick, index) in outcomeTicks" :key="`y-${index}`">
         <line :x1="plotLeft" :x2="chartWidth - plotRight" :y1="plotTop + index * plotHeight / 2" :y2="plotTop + index * plotHeight / 2" class="grid-line" />
-        <text :x="plotLeft - 8" :y="plotTop + index * plotHeight / 2 + 4" class="axis-value axis-value--outcome">{{ formatTrackingAxisTick(tick) }}</text>
+        <text :x="plotLeft - 8" :y="plotTop + index * plotHeight / 2 + 4" class="axis-value axis-value--outcome">{{ formatTrackingAxisTick(tick, outcomeTickStep) }}</text>
       </g>
 
       <text :x="16" :y="plotTop + plotHeight / 2" class="axis-title axis-title--outcome axis-title--vertical" :transform="`rotate(-90 16 ${plotTop + plotHeight / 2})`">
@@ -210,7 +212,7 @@ function displayValue(value: number, unit: string) {
             :y="chartHeight - 25"
             class="axis-category axis-category--factor"
             :text-anchor="index === 0 ? 'start' : index === 2 ? 'end' : 'middle'"
-          >{{ formatTrackingAxisTick(tick) }}</text>
+          >{{ formatTrackingAxisTick(tick, factorTickStep) }}</text>
         </g>
         <text :x="plotLeft + plotWidth / 2" :y="chartHeight - 5" class="axis-title axis-title--factor">
           {{ factorName }}{{ factorUnit ? ` · ${factorUnit}` : '' }}

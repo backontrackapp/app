@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import ContentIcon from '@/components/ContentIcon.vue'
 import { formatIntervalDuration } from '@/services/intervals'
 import { goalState } from '@/services/schedule'
-import { TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
+import { taskDisplayIcon, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import type {
   ProgramStepRequirementListItem,
   TaskLogImage,
@@ -16,8 +17,8 @@ const props = defineProps<{
   progress: TaskProgress
   busy?: boolean
   valuePulse?: number
-  interval?: { name: string; duration: string }
-  reviewSet?: { name: string; cardCount: number; mode: 'manual' | 'passive' }
+  interval?: { name: string; duration: string; icon: string; color: string }
+  reviewSet?: { name: string; cardCount: number; mode: 'manual' | 'passive'; icon: string }
   programStepRequirements?: ProgramStepRequirementListItem[]
   trackers?: TrackingTaskTracker[]
   canLogTracking?: boolean
@@ -204,19 +205,26 @@ const stateColor = computed(() => {
   return taskColor.value
 })
 const stateIcon = computed(() => {
-  if (isPausedTask.value) return 'mdi-pause'
+  if (isPausedTask.value || !task.value.active) return 'mdi-pause'
   if (isSkippedTask.value) return 'mdi-skip-next-outline'
   if (props.progress.complete) return 'mdi-check-bold'
   if (props.progress.locked) return 'mdi-lock-outline'
-  return taskTypePresentation.value.icon
+  return taskDisplayIcon(task.value, {
+    intervalIcon: props.interval?.icon,
+    reviewSetIcon: props.reviewSet?.icon,
+  })
 })
-const showingTaskTypeIcon = computed(() =>
-  !isPausedTask.value && !isSkippedTask.value && !props.progress.complete && !props.progress.locked,
+const showingTaskIcon = computed(() =>
+  task.value.active
+  && !isPausedTask.value
+  && !isSkippedTask.value
+  && !props.progress.complete
+  && !props.progress.locked,
 )
 const stateIconColor = computed(() => {
-  if (isPausedTask.value) return 'on-surface'
+  if (isPausedTask.value || !task.value.active) return 'on-surface'
   if (isSkippedTask.value) return 'warning'
-  if (showingTaskTypeIcon.value) return '#191C19'
+  if (showingTaskIcon.value) return '#191C19'
   if (props.progress.complete) return 'white'
   return stateColor.value
 })
@@ -329,9 +337,9 @@ onBeforeUnmount(() => {
         <div
           class="check-control check-control--status"
           :class="{
-            'check-control--type': showingTaskTypeIcon,
+            'check-control--type': showingTaskIcon,
             'check-control--done': progress.complete && !isPausedTask,
-            'check-control--paused': isPausedTask,
+            'check-control--paused': isPausedTask || !task.active,
           }"
           :style="{ '--task-color': taskColor }"
           aria-hidden="true"
@@ -344,7 +352,7 @@ onBeforeUnmount(() => {
             color="secondary"
             :width="2"
           />
-          <v-icon v-else :icon="stateIcon" :color="stateIconColor" size="1.25rem" />
+          <ContentIcon v-else :icon="stateIcon" :color="stateIconColor" size="1.25rem" />
         </div>
         <span
           v-if="task.mandatory && !progress.complete"
@@ -415,7 +423,7 @@ onBeforeUnmount(() => {
         >
           <template #prepend>
             <span class="task-detail-item__icon" :style="{ background: requirement.color || taskColor }">
-              <v-icon :icon="requirement.icon" size="1.125rem" />
+              <ContentIcon :icon="requirement.icon" size="1.125rem" />
             </span>
           </template>
           <template #append>
@@ -452,7 +460,7 @@ onBeforeUnmount(() => {
           >
             <template #prepend>
               <span class="task-detail-item__icon" :style="{ background: tracker.color }">
-                <v-icon :icon="tracker.icon" size="1.125rem" />
+                <ContentIcon :icon="tracker.icon" size="1.125rem" />
               </span>
             </template>
             <template #append>

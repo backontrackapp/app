@@ -92,6 +92,8 @@ function reviewSetDraft(reviewSet: FlashcardReviewSet): FlashcardReviewSetDraft 
   return {
     id: reviewSet.id,
     name: reviewSet.name,
+    icon: reviewSet.icon || '',
+    color: reviewSet.color,
     tags: [...reviewSet.tags],
     selectionMode: reviewSet.selectionMode || 'tags',
     includedCards: [...(reviewSet.includedCards || [])],

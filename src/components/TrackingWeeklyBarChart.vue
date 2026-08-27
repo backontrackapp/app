@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { addDays, format } from 'date-fns'
+import ContentIcon from '@/components/ContentIcon.vue'
 import { useResponsiveChartWidth } from '@/services/responsiveChart'
-import { formatNumber, formatTrackingValue, trackingDailyValuesForRange } from '@/services/tracking'
+import { formatNumber, formatTrackingValue, trackingCategoryIcon, trackingDailyValuesForRange } from '@/services/tracking'
 import { readInactiveTrackingChartTrackerIds, storeInactiveTrackingChartTrackerIds } from '@/services/trackingChartPreferences'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
 
@@ -155,6 +156,7 @@ const legendOptions = computed(() => readoutValues.value.map(({ tracker, value }
     selectionTitle: valueLabel ? `${tracker.name} (${valueLabel})` : tracker.name,
     valueLabel,
     color: tracker.color,
+    icon: tracker.icon || trackingCategoryIcon(tracker.category),
     line: isLineTracker(tracker),
   }
 }))
@@ -359,10 +361,17 @@ function onKeydown(event: KeyboardEvent) {
             :subtitle="item.raw.valueLabel || undefined"
           >
             <template #prepend>
-              <span
-                :class="['chart-series-color mr-3', { 'chart-series-color--line': item.raw.line }]"
-                :style="{ background: item.raw.color }"
-              />
+              <span class="chart-series-identity mr-3">
+                <ContentIcon
+                  :icon="item.raw.icon"
+                  :style="{ color: item.raw.color }"
+                  size="1.25rem"
+                />
+                <span
+                  :class="['chart-series-color', { 'chart-series-color--line': item.raw.line }]"
+                  :style="{ background: item.raw.color }"
+                />
+              </span>
             </template>
             <template #append>
               <v-icon
@@ -382,6 +391,11 @@ function onKeydown(event: KeyboardEvent) {
             variant="tonal"
             class="chart-series-chip"
           >
+            <ContentIcon
+              :icon="item.raw.icon"
+              :style="{ color: item.raw.color }"
+              size=".875rem"
+            />
             <span
               :class="['chart-series-color', { 'chart-series-color--line': item.raw.line }]"
               :style="{ background: item.raw.color }"
@@ -401,6 +415,7 @@ function onKeydown(event: KeyboardEvent) {
 .chart-series-select {
   min-height: 0;
 }
+.chart-series-identity { display: flex; min-width: 2.5rem; align-items: center; gap: .5rem; }
 .chart-series-color { display: block; width: .75rem; height: .75rem; flex: 0 0 auto; border: .0625rem solid rgb(var(--v-theme-on-surface) / .22); border-radius: .25rem; }
 .chart-series-color--line { height: .1875rem; border: 0; border-radius: 999rem; }
 .chart-series-chip { max-width: 9rem; }

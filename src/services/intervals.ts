@@ -302,6 +302,7 @@ export function cloneIntervalTemplateDraft(template: IntervalTemplate): Interval
     id: template.id,
     name: template.name,
     description: template.description,
+    icon: template.icon || '',
     color: template.color,
     flashcardReviewSet: template.flashcardReviewSet,
     definition: {

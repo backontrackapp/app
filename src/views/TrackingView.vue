@@ -4,6 +4,7 @@ import { addDays, format, isValid, parseISO, startOfWeek } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import ContentIcon from '@/components/ContentIcon.vue'
 import DateSwipeFeedback from '@/components/DateSwipeFeedback.vue'
 import TrackingLogBottomSheet from '@/components/TrackingLogBottomSheet.vue'
 import TrackingRatingValue from '@/components/TrackingRatingValue.vue'
@@ -439,7 +440,7 @@ async function loadVisibleWeekEntries() {
               >
                 <div class="tracking-log__row">
                   <span class="tracking-log__icon" :style="{ color: tracker.color }">
-                    <v-icon :icon="tracker.icon" size="20" />
+                    <ContentIcon :icon="tracker.icon" size="1.25rem" />
                   </span>
                   <span class="tracking-log__content">
                     <strong class="tracking-log__name">{{ tracker.name }}</strong>

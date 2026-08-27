@@ -1,4 +1,4 @@
-import type { TaskType } from '@/types/domain'
+import type { Task, TaskType } from '@/types/domain'
 
 export interface TaskTypePresentation {
   type: TaskType
@@ -23,6 +23,19 @@ export const TASK_TYPE_OPTIONS: TaskTypePresentation[] = [
 export const TASK_TYPE_PRESENTATION = Object.fromEntries(
   TASK_TYPE_OPTIONS.map(option => [option.type, option]),
 ) as Record<TaskType, TaskTypePresentation>
+
+export function taskDisplayIcon(
+  task: Pick<Task, 'icon' | 'type'>,
+  sources: {
+    intervalIcon?: string
+    reviewSetIcon?: string
+  } = {},
+) {
+  return task.icon
+    || sources.intervalIcon
+    || sources.reviewSetIcon
+    || TASK_TYPE_PRESENTATION[task.type].icon
+}
 
 export function taskSupportsQuickLog(type: TaskType) {
   return type !== 'program' && type !== 'tracking'
