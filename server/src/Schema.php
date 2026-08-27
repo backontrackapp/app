@@ -68,6 +68,7 @@ final class Schema
             'flashcard_review_sets' => [
                 'fields' => [
                     'name' => self::text(160, true),
+                    'color' => self::text(20),
                     'tags' => self::jsonArray(5000),
                     'selection_mode' => self::choice(['tags', 'cards'], true),
                     'included_cards' => self::jsonArray(200000),

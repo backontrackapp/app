@@ -540,6 +540,7 @@ export interface CuratedReviewSetDetail extends Omit<CuratedReviewSetSummary, 'c
 export interface FlashcardReviewSet extends FlashcardReviewSettings {
   id: string
   name: string
+  color: string
   tags: string[]
   selectionMode?: FlashcardReviewSetSelectionMode
   includedCards?: string[]

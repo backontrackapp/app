@@ -9,7 +9,7 @@ use PDOException;
 
 final class Database
 {
-    public const EXPECTED_SCHEMA_VERSION = '202608250003';
+    public const EXPECTED_SCHEMA_VERSION = '202608260001';
 
     public readonly PDO $pdo;
 

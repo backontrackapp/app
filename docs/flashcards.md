@@ -1,5 +1,7 @@
 # Flashcards
 
+Review sets use a selectable color as a visual anchor. The Flashcards view shows that color behind a cards icon on owned, shared, and archived Review set cards, matching the interval-card treatment.
+
 Owned Review set editors use one archive/restore action in place of direct deletion. For an active set, the action asks whether to archive it or delete it permanently. Archiving removes the set from normal Review choices while preserving its setup, cards, shares, and completed history. Archived sets appear in the collapsible Archive section and can be opened to restore or permanently delete. Permanent deletion may optionally remove the set's matching cards and keeps completed review snapshots.
 
 ## Curated Review sets
@@ -69,6 +71,8 @@ Creating a custom Review set from the bulk dialog redirects directly to its edit
 ## Runner settings
 
 Active Interval settings include the same Review cards section as the Interval form, so a Review set can be attached, replaced, or removed during a run. The Apply to menu in active Interval and Review set settings offers Current session, the saved Interval or Review set, and Both. Choosing Both updates the saved source and the active session snapshot so the current run reflects the new settings immediately.
+
+Passive Review set settings use 1–60 second sliders for the front and back display durations. Each slider updates in one-second increments and shows its current duration alongside the range.
 
 The Card order setting uses review history and quick tags together. **Most difficult** puts Hard-tagged cards first, followed by the highest error rates; **Easiest** puts Easy-tagged cards first, followed by the lowest error rates. Within each tag group, cards without graded attempts follow cards with difficulty history. DESC reverses the resulting order.
 

@@ -326,51 +326,56 @@ async function reorderReviewSets(result: LongPressDragResult) {
           @keydown.enter="openReviewSetActions(reviewSet)"
           @keydown.space.prevent="openReviewSetActions(reviewSet)"
         >
-          <div class="review-set__main">
-            <div class="min-width-0">
-              <div class="review-set__heading">
-                <h3 class="text-body-1 font-weight-black text-truncate">{{ reviewSet.name }}</h3>
-                <span class="review-set__total">
-                  {{ reviewSet.matchingCardCount }}
-                  {{ reviewSet.matchingCardCount === 1 ? 'card' : 'cards' }}
-                </span>
-              </div>
-              <div class="review-set__meta mt-2">
-                <span v-if="reviewSet.selectionMode === 'cards'" class="review-set__meta-item">
-                  <v-icon icon="mdi-card-multiple-outline" size="small" />
-                  <span>Custom selected cards</span>
-                </span>
-                <span v-else-if="!reviewSet.tags.length" class="review-set__meta-item">
-                  <v-icon icon="mdi-cards-outline" size="small" />
-                  <span>All cards</span>
-                </span>
-                <span class="review-set__meta-item">
-                  <v-icon
-                    :icon="reviewSet.mode === 'passive' ? 'mdi-play-speed' : 'mdi-gesture-tap'"
-                    size="small"
-                  />
-                  <span>{{ reviewSet.mode === 'passive' ? 'Passive' : 'Manual' }}</span>
-                </span>
-                <span v-if="reviewSet.speechEnabled" class="review-set__meta-item">
-                  <v-icon icon="mdi-volume-high" size="small" />
-                  <span>Speech</span>
-                </span>
-                <span v-if="reviewSet.indefinite" class="review-set__meta-item">
-                  <v-icon icon="mdi-infinity" size="small" />
-                  <span>Indefinite</span>
-                </span>
-                <span v-if="reviewSet.timeLimitSeconds" class="review-set__meta-item">
-                  <v-icon icon="mdi-timer-outline" size="small" />
-                  <span>{{ formatReviewDuration(reviewSet.timeLimitSeconds) }} limit</span>
-                </span>
-                <span class="review-set__meta-item">
-                  <v-icon icon="mdi-sort-variant" size="small" />
-                  <span>{{ reviewSortTitle(reviewSet.sortMode) }}</span>
-                </span>
-                <span class="review-set__meta-item">
-                  <v-icon icon="mdi-card-multiple-outline" size="small" />
-                  <span>{{ reviewSetCardCount(reviewSet) }} cards/session</span>
-                </span>
+          <div class="review-set__row">
+            <div class="review-set__icon" :style="{ background: reviewSet.color || '#C7F464' }">
+              <v-icon icon="mdi-cards-outline" size="21" />
+            </div>
+            <div class="review-set__main">
+              <div class="min-width-0">
+                <div class="review-set__heading">
+                  <h3 class="text-body-1 font-weight-black text-truncate">{{ reviewSet.name }}</h3>
+                  <span class="review-set__total">
+                    {{ reviewSet.matchingCardCount }}
+                    {{ reviewSet.matchingCardCount === 1 ? 'card' : 'cards' }}
+                  </span>
+                </div>
+                <div class="review-set__meta mt-2">
+                  <span v-if="reviewSet.selectionMode === 'cards'" class="review-set__meta-item">
+                    <v-icon icon="mdi-card-multiple-outline" size="small" />
+                    <span>Custom selected cards</span>
+                  </span>
+                  <span v-else-if="!reviewSet.tags.length" class="review-set__meta-item">
+                    <v-icon icon="mdi-cards-outline" size="small" />
+                    <span>All cards</span>
+                  </span>
+                  <span class="review-set__meta-item">
+                    <v-icon
+                      :icon="reviewSet.mode === 'passive' ? 'mdi-play-speed' : 'mdi-gesture-tap'"
+                      size="small"
+                    />
+                    <span>{{ reviewSet.mode === 'passive' ? 'Passive' : 'Manual' }}</span>
+                  </span>
+                  <span v-if="reviewSet.speechEnabled" class="review-set__meta-item">
+                    <v-icon icon="mdi-volume-high" size="small" />
+                    <span>Speech</span>
+                  </span>
+                  <span v-if="reviewSet.indefinite" class="review-set__meta-item">
+                    <v-icon icon="mdi-infinity" size="small" />
+                    <span>Indefinite</span>
+                  </span>
+                  <span v-if="reviewSet.timeLimitSeconds" class="review-set__meta-item">
+                    <v-icon icon="mdi-timer-outline" size="small" />
+                    <span>{{ formatReviewDuration(reviewSet.timeLimitSeconds) }} limit</span>
+                  </span>
+                  <span class="review-set__meta-item">
+                    <v-icon icon="mdi-sort-variant" size="small" />
+                    <span>{{ reviewSortTitle(reviewSet.sortMode) }}</span>
+                  </span>
+                  <span class="review-set__meta-item">
+                    <v-icon icon="mdi-card-multiple-outline" size="small" />
+                    <span>{{ reviewSetCardCount(reviewSet) }} cards/session</span>
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -394,7 +399,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
           <div v-show="archiveExpanded" id="archived-review-sets">
             <div class="review-set-list mt-2">
               <v-card v-for="reviewSet in archivedReviewSets" :key="reviewSet.id" class="review-set surface-card pa-4" role="link" tabindex="0" :aria-label="`Edit archived Review set ${reviewSet.name}`" @click="router.push({ name: 'flashcard-review-set-edit', params: { id: reviewSet.id } })" @keydown.enter="router.push({ name: 'flashcard-review-set-edit', params: { id: reviewSet.id } })" @keydown.space.prevent="router.push({ name: 'flashcard-review-set-edit', params: { id: reviewSet.id } })">
-                <div class="d-flex align-center ga-3"><v-icon icon="mdi-archive-outline" color="warning" /><div class="min-width-0"><h3 class="text-body-1 font-weight-black text-truncate">{{ reviewSet.name }}</h3><p class="text-caption muted mt-1">Archived · Open to restore</p></div></div>
+                <div class="d-flex align-center ga-3"><div class="review-set__icon" :style="{ background: reviewSet.color || '#C7F464' }"><v-icon icon="mdi-archive-outline" size="21" /></div><div class="min-width-0"><h3 class="text-body-1 font-weight-black text-truncate">{{ reviewSet.name }}</h3><p class="text-caption muted mt-1">Archived · Open to restore</p></div></div>
               </v-card>
             </div>
           </div>
@@ -420,45 +425,50 @@ async function reorderReviewSets(result: LongPressDragResult) {
           @keydown.enter="openReviewSetActions(reviewSet)"
           @keydown.space.prevent="openReviewSetActions(reviewSet)"
         >
-          <div class="review-set__main">
-            <div class="min-width-0">
-              <div class="review-set__heading">
-                <h3 class="text-body-1 font-weight-black text-truncate">{{ reviewSet.name }}</h3>
-                <div class="review-set__heading-meta">
-                  <v-chip size="x-small" :color="reviewSet.accessRole === 'editor' ? 'secondary' : undefined">
-                    {{ reviewSet.accessRole === 'editor' ? 'Editor' : 'Read only' }}
-                  </v-chip>
-                  <span class="review-set__total">
-                    {{ reviewSet.matchingCardCount }}
-                    {{ reviewSet.matchingCardCount === 1 ? 'card' : 'cards' }}
+          <div class="review-set__row">
+            <div class="review-set__icon" :style="{ background: reviewSet.color || '#C7F464' }">
+              <v-icon icon="mdi-cards-outline" size="21" />
+            </div>
+            <div class="review-set__main">
+              <div class="min-width-0">
+                <div class="review-set__heading">
+                  <h3 class="text-body-1 font-weight-black text-truncate">{{ reviewSet.name }}</h3>
+                  <div class="review-set__heading-meta">
+                    <v-chip size="x-small" :color="reviewSet.accessRole === 'editor' ? 'secondary' : undefined">
+                      {{ reviewSet.accessRole === 'editor' ? 'Editor' : 'Read only' }}
+                    </v-chip>
+                    <span class="review-set__total">
+                      {{ reviewSet.matchingCardCount }}
+                      {{ reviewSet.matchingCardCount === 1 ? 'card' : 'cards' }}
+                    </span>
+                  </div>
+                </div>
+                <p class="shared-review-set__owner mt-1">
+                  <v-icon icon="mdi-account-outline" size="x-small" />
+                  Shared by {{ reviewSet.ownerName || 'another account' }}
+                </p>
+                <div class="review-set__meta mt-2">
+                  <span v-if="reviewSet.selectionMode === 'cards'" class="review-set__meta-item">
+                    <v-icon icon="mdi-card-multiple-outline" size="small" />
+                    <span>Custom selected cards</span>
+                  </span>
+                  <span v-else-if="!reviewSet.tags.length" class="review-set__meta-item">
+                    <v-icon icon="mdi-cards-outline" size="small" />
+                    <span>All owner cards</span>
+                  </span>
+                  <span class="review-set__meta-item">
+                    <v-icon :icon="reviewSet.mode === 'passive' ? 'mdi-play-speed' : 'mdi-gesture-tap'" size="small" />
+                    <span>{{ reviewSet.mode === 'passive' ? 'Passive' : 'Manual' }}</span>
+                  </span>
+                  <span v-if="reviewSet.timeLimitSeconds" class="review-set__meta-item">
+                    <v-icon icon="mdi-timer-outline" size="small" />
+                    <span>{{ formatReviewDuration(reviewSet.timeLimitSeconds) }} limit</span>
+                  </span>
+                  <span class="review-set__meta-item">
+                    <v-icon icon="mdi-card-multiple-outline" size="small" />
+                    <span>{{ reviewSetCardCount(reviewSet) }} cards/session</span>
                   </span>
                 </div>
-              </div>
-              <p class="shared-review-set__owner mt-1">
-                <v-icon icon="mdi-account-outline" size="x-small" />
-                Shared by {{ reviewSet.ownerName || 'another account' }}
-              </p>
-              <div class="review-set__meta mt-2">
-                <span v-if="reviewSet.selectionMode === 'cards'" class="review-set__meta-item">
-                  <v-icon icon="mdi-card-multiple-outline" size="small" />
-                  <span>Custom selected cards</span>
-                </span>
-                <span v-else-if="!reviewSet.tags.length" class="review-set__meta-item">
-                  <v-icon icon="mdi-cards-outline" size="small" />
-                  <span>All owner cards</span>
-                </span>
-                <span class="review-set__meta-item">
-                  <v-icon :icon="reviewSet.mode === 'passive' ? 'mdi-play-speed' : 'mdi-gesture-tap'" size="small" />
-                  <span>{{ reviewSet.mode === 'passive' ? 'Passive' : 'Manual' }}</span>
-                </span>
-                <span v-if="reviewSet.timeLimitSeconds" class="review-set__meta-item">
-                  <v-icon icon="mdi-timer-outline" size="small" />
-                  <span>{{ formatReviewDuration(reviewSet.timeLimitSeconds) }} limit</span>
-                </span>
-                <span class="review-set__meta-item">
-                  <v-icon icon="mdi-card-multiple-outline" size="small" />
-                  <span>{{ reviewSetCardCount(reviewSet) }} cards/session</span>
-                </span>
               </div>
             </div>
           </div>
@@ -657,7 +667,9 @@ async function reorderReviewSets(result: LongPressDragResult) {
 .archive-heading :deep(.v-btn__content) { width: 100%; justify-content: flex-start; gap: .5rem; }
 .archive-heading__count { margin-left: auto; color: rgb(var(--v-theme-on-surface) / .54); font-size: .7rem; }
 .review-set:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .1875rem; }
-.review-set__main { min-width: 0; }
+.review-set__row { display: flex; min-width: 0; align-items: flex-start; gap: .75rem; }
+.review-set__icon { display: grid; width: 2.625rem; height: 2.625rem; flex: 0 0 auto; place-items: center; border-radius: .875rem; color: rgb(var(--v-theme-on-secondary)); }
+.review-set__main { min-width: 0; flex: 1 1 0; }
 .review-set__heading { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; }
 .review-set__heading h3 { min-width: 0; }
 .review-set__heading-meta { display: flex; flex: 0 0 auto; align-items: center; gap: .5rem; }

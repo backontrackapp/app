@@ -324,25 +324,29 @@ function updateSpeechEnabled(enabled: boolean | null) {
       <v-expand-transition>
         <div v-if="settings.mode === 'passive'">
           <div class="passive-settings mt-5">
-            <v-number-input
+            <LabeledSlider
               v-if="settings.cardSides !== 'back'"
               v-model="settings.frontSeconds"
-              label="Front duration"
-              suffix="seconds"
+              title="Front duration"
               :min="1"
-              :max="60"
+              :max="20"
               :step="1"
-              :rules="[value => value >= 1 && value <= 60 || 'Use 1–60 seconds']"
+              :value-label="`${settings.frontSeconds} ${settings.frontSeconds === 1 ? 'second' : 'seconds'}`"
+              min-label="1 second"
+              max-label="20 seconds"
+              aria-label="Front duration in seconds"
             />
-            <v-number-input
+            <LabeledSlider
               v-if="settings.cardSides !== 'front'"
               v-model="settings.backSeconds"
-              label="Back duration"
-              suffix="seconds"
+              title="Back duration"
               :min="1"
-              :max="60"
+              :max="20"
               :step="1"
-              :rules="[value => value >= 1 && value <= 60 || 'Use 1–60 seconds']"
+              :value-label="`${settings.backSeconds} ${settings.backSeconds === 1 ? 'second' : 'seconds'}`"
+              min-label="1 second"
+              max-label="20 seconds"
+              aria-label="Back duration in seconds"
             />
           </div>
         </div>

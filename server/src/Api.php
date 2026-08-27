@@ -3932,13 +3932,13 @@ final class Api
 
             $setStatement = $pdo->prepare(
                 'INSERT INTO flashcard_review_sets (
-                    id, owner, name, tags, mode, card_sides, invert_faces, indefinite, time_limit_seconds, max_cards, eject_behavior, eject_exclude_after,
+                    id, owner, name, color, tags, mode, card_sides, invert_faces, indefinite, time_limit_seconds, max_cards, eject_behavior, eject_exclude_after,
                     front_seconds, back_seconds, back_speech_repeat_count,
                     back_display,
                     speech_enabled, front_language, back_language, sort_mode, sort_direction, excluded_cards,
                     sort_order, created_at, updated_at
                  ) VALUES (
-                    :id, :owner, :name, :tags, :mode, :card_sides, :invert_faces, :indefinite, :time_limit_seconds, :max_cards, :eject_behavior, :eject_exclude_after,
+                    :id, :owner, :name, :color, :tags, :mode, :card_sides, :invert_faces, :indefinite, :time_limit_seconds, :max_cards, :eject_behavior, :eject_exclude_after,
                     :front_seconds, :back_seconds, :back_speech_repeat_count,
                     :back_display,
                     :speech_enabled, :front_language, :back_language, :sort_mode, :sort_direction, :excluded_cards,
@@ -3949,6 +3949,7 @@ final class Api
                 'id' => $newSetId,
                 'owner' => $account,
                 'name' => $copyName,
+                'color' => (string) ($reviewSet['color'] ?? '#C7F464'),
                 'tags' => json_encode([$scopeTagId], JSON_THROW_ON_ERROR),
                 ...$this->booleanDatabaseSettings($settings),
                 'sort_order' => $this->nextFlashcardReviewSetOrder($account),

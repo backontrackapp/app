@@ -74,6 +74,7 @@ CREATE TABLE flashcard_review_sets (
     id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),
     owner TEXT NOT NULL,
     name VARCHAR(160) NOT NULL DEFAULT '',
+    color VARCHAR(20) NOT NULL DEFAULT '#C7F464',
     tags JSON NOT NULL DEFAULT '[]',
     selection_mode TEXT NOT NULL DEFAULT 'tags',
     included_cards JSON NOT NULL DEFAULT '[]',
