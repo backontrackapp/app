@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { format, parseISO } from 'date-fns'
-import { formatTrackingAxisTick, TRACKING_CHART_COLORS, trackingAxisGutter, useScrollableTrackingChartWidth } from '@/services/responsiveChart'
+import { formatTrackingAxisTick, TRACKING_CHART_COLORS, trackingAxisGutter, trackingAxisTickStep, useScrollableTrackingChartWidth } from '@/services/responsiveChart'
 import { formatNumber } from '@/services/tracking'
 import type { TrackingInsightPoint } from '@/types/domain'
 
@@ -40,6 +40,8 @@ const outcomeRange = computed(() => valueRange(
 ))
 const factorTicks = computed(() => ticks(factorRange.value))
 const outcomeTicks = computed(() => ticks(outcomeRange.value))
+const factorTickStep = computed(() => trackingAxisTickStep(factorTicks.value))
+const outcomeTickStep = computed(() => trackingAxisTickStep(outcomeTicks.value))
 const plotLeft = computed(() => trackingAxisGutter(factorTicks.value, compactLayout.value ? 44 : 58))
 const plotRight = computed(() => trackingAxisGutter(outcomeTicks.value, compactLayout.value ? 44 : 62))
 const plotWidth = computed(() => Math.max(1, chartWidth.value - plotLeft.value - plotRight.value))
@@ -218,7 +220,7 @@ function displayValue(value: number | null, unit: string) {
       >
       <g v-for="(tick, index) in factorTicks" :key="`factor-${index}`">
         <line :x1="plotLeft" :x2="chartWidth - plotRight" :y1="tickY(index)" :y2="tickY(index)" class="grid-line" />
-        <text :x="plotLeft - 8" :y="tickY(index) + 4" class="axis-value axis-value--factor">{{ formatTrackingAxisTick(tick) }}</text>
+        <text :x="plotLeft - 8" :y="tickY(index) + 4" class="axis-value axis-value--factor">{{ formatTrackingAxisTick(tick, factorTickStep) }}</text>
       </g>
       <g v-for="(tick, index) in outcomeTicks" :key="`outcome-${index}`">
         <line
@@ -228,7 +230,7 @@ function displayValue(value: number | null, unit: string) {
           :y2="tickY(index)"
           class="axis-tick axis-tick--outcome"
         />
-        <text :x="chartWidth - plotRight + 9" :y="tickY(index) + 4" class="axis-value axis-value--outcome">{{ formatTrackingAxisTick(tick) }}</text>
+        <text :x="chartWidth - plotRight + 9" :y="tickY(index) + 4" class="axis-value axis-value--outcome">{{ formatTrackingAxisTick(tick, outcomeTickStep) }}</text>
       </g>
 
       <line :x1="plotLeft" :x2="plotLeft" :y1="plotTop" :y2="plotTop + plotHeight" class="axis-line axis-line--factor" />

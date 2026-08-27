@@ -94,7 +94,8 @@ function runTemplateAction(action: IntervalTemplateAction, template: IntervalTem
     >
       <div class="interval-plan-card__row d-flex align-start ga-3">
         <div class="interval-template-icon" :style="{ background: template.color }">
-          <v-icon icon="mdi-timer-outline" size="21" />
+          <span v-if="template.icon" class="interval-template-emoji" aria-hidden="true">{{ template.icon }}</span>
+          <v-icon v-else icon="mdi-timer-outline" size="21" />
         </div>
         <div class="interval-plan-details">
           <h2 class="text-body-1 font-weight-black text-truncate">{{ template.name }}</h2>
@@ -165,6 +166,7 @@ function runTemplateAction(action: IntervalTemplateAction, template: IntervalTem
 .interval-plan-card__row { width: 100%; min-width: 0; }
 .interval-plan-details { overflow: hidden; min-width: 0; flex: 1 1 0; }
 .interval-template-icon { display: grid; width: 2.625rem; height: 2.625rem; flex: 0 0 auto; place-items: center; border-radius: .875rem; color: rgb(var(--v-theme-on-secondary)); }
+.interval-template-emoji { font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; font-size: 1.375rem; line-height: 1; }
 .archive-heading { min-height: 2.75rem; }
 .archive-heading :deep(.v-btn__content) { width: 100%; justify-content: flex-start; gap: .5rem; }
 .archive-heading__count { margin-left: auto; color: rgb(var(--v-theme-on-surface) / .54); font-size: .7rem; }

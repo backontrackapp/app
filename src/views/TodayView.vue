@@ -7,6 +7,7 @@ import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
+import ContentIcon from '@/components/ContentIcon.vue'
 import AppDialog from '@/components/AppDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import DateSwipeFeedback from '@/components/DateSwipeFeedback.vue'
@@ -34,7 +35,7 @@ import {
   tasksWithoutProgress,
 } from '@/services/taskScheduleLayout'
 import { taskIdsFromProgressDrag, taskProgressDragKey } from '@/services/taskReordering'
-import { taskSupportsQuickLog, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
+import { taskDisplayIcon, taskSupportsQuickLog, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import { useIntervalStore } from '@/stores/intervals'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useJournalStore } from '@/stores/journal'
@@ -258,7 +259,7 @@ function programStepRequirementItems(progress: TaskProgress): ProgramStepRequire
         ]
           .filter(Boolean)
           .join(' · '),
-        icon: completion.complete ? 'mdi-check-circle' : 'mdi-timer-play-outline',
+        icon: completion.complete ? 'mdi-check-circle' : interval?.icon || 'mdi-timer-play-outline',
         color: interval?.color || TASK_TYPE_PRESENTATION.interval.color,
         complete: completion.complete,
         disabled: locked || (!completion.complete && !intervalCanStart(progress)),
@@ -1300,6 +1301,7 @@ function openTimeLogger(progress: TaskProgress) {
 function intervalMeta(progress: TaskProgress, completion?: ProgramStepCompletionProgress) {
   const templateId = completion?.intervalTemplate
     || progress.programStep?.intervalTemplate
+    || progress.completionItems?.find(item => item.type === 'interval')?.intervalTemplate
     || progress.task.intervalTemplate
   const template = intervalStore.templates.find((item) => item.id === templateId)
   if (!template) return undefined
@@ -1307,12 +1309,14 @@ function intervalMeta(progress: TaskProgress, completion?: ProgramStepCompletion
     name: template.name,
     duration: formatIntervalDuration(intervalDuration(template.definition)),
     color: template.color,
+    icon: template.icon || 'mdi-timer-outline',
   }
 }
 
 function reviewSetMeta(progress: TaskProgress, completion?: ProgramStepCompletionProgress) {
   const reviewSetId = completion?.flashcardReviewSet
     || progress.programStep?.flashcardReviewSet
+    || progress.completionItems?.find(item => item.type === 'flashcards')?.flashcardReviewSet
     || progress.task.flashcardReviewSet
   const reviewSet = flashcardStore.reviewSets.find(item => item.id === reviewSetId)
   if (!reviewSet) return undefined
@@ -1320,7 +1324,15 @@ function reviewSetMeta(progress: TaskProgress, completion?: ProgramStepCompletio
     name: reviewSet.name,
     mode: reviewSet.mode,
     cardCount: reviewSetCardCount(reviewSet),
+    icon: reviewSet.icon || 'mdi-cards-outline',
   }
+}
+
+function progressDisplayIcon(progress: TaskProgress) {
+  return taskDisplayIcon(progress.task, {
+    intervalIcon: intervalMeta(progress)?.icon,
+    reviewSetIcon: reviewSetMeta(progress)?.icon,
+  })
 }
 
 function reviewSessionMatchesProgress(progress: TaskProgress, completionId = '') {
@@ -1546,6 +1558,8 @@ async function saveTaskLogEntry() {
             onDrop: reorderQuickLogCards,
           }"
           :progress="item"
+          :interval-icon="intervalMeta(item)?.icon"
+          :review-set-icon="reviewSetMeta(item)?.icon"
           :class="{ 'quick-log-item--draggable': draggableTaskCount(quickLogProgress) > 1 }"
           @actions="openTaskActions"
         />
@@ -1702,7 +1716,12 @@ async function saveTaskLogEntry() {
                   class="not-scheduled-task__icon"
                   :style="{ background: item.task.color || taskPresentation(item).color }"
                 >
-                  <v-icon :icon="item.task.active ? taskPresentation(item).icon : 'mdi-pause'" size="1rem" />
+                  <ContentIcon
+                    :icon="item.complete
+                      ? 'mdi-check-bold'
+                      : item.task.active ? progressDisplayIcon(item) : 'mdi-pause'"
+                    size="1rem"
+                  />
                 </span>
                 <span
                   v-if="item.task.mandatory && !item.complete"
@@ -2167,11 +2186,19 @@ async function saveTaskLogEntry() {
         </v-row>
       </div>
       <div v-for="item in reviewItems" :key="`${item.scheduledDate}-${item.task.id}-${item.programStep?.id || ''}`" class="review-row px-2 py-3">
-        <div class="flex-grow-1">
-          <strong>{{ item.programStep?.name || item.task.name }}</strong>
-          <p class="text-caption muted">
-            {{ format(parseISO(item.scheduledDate), 'EEE, MMM d') }} · Choose how this attempt ends.
-          </p>
+        <div class="review-row__summary">
+          <span
+            class="review-row__icon"
+            :style="{ background: item.task.color || taskPresentation(item).color }"
+          >
+            <ContentIcon :icon="progressDisplayIcon(item)" size="1.25rem" />
+          </span>
+          <div class="review-row__copy flex-grow-1">
+            <strong>{{ item.programStep?.name || item.task.name }}</strong>
+            <p class="text-caption muted">
+              {{ format(parseISO(item.scheduledDate), 'EEE, MMM d') }} · Choose how this attempt ends.
+            </p>
+          </div>
         </div>
         <div class="review-actions">
           <v-btn
@@ -2363,6 +2390,10 @@ async function saveTaskLogEntry() {
 .task-log-value { display: block; margin-top: .125rem; color: rgb(var(--v-theme-on-surface)); font-size: .8rem; white-space: nowrap; }
 .task-log-empty { min-height: 10rem; }
 .review-row { display: flex; flex-direction: column; align-items: stretch; gap: 1rem; border-top: .0625rem solid rgb(var(--v-theme-on-surface) / .08); }
+.review-row__summary { display: flex; min-width: 0; align-items: center; gap: .75rem; }
+.review-row__icon { display: grid; width: 2.5rem; height: 2.5rem; flex: 0 0 auto; place-items: center; border-radius: .8rem; color: #191c19; }
+.review-row__copy { min-width: 0; }
+.review-row__copy strong { overflow-wrap: anywhere; }
 .review-actions { display: grid; gap: .5rem; }
 .review-actions .v-btn { width: 100%; }
 .next-task-banner-enter-active {

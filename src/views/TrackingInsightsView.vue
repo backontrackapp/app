@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { format, parseISO, subDays, subMonths } from 'date-fns'
 import { api } from '@/lib/api'
+import ContentIcon from '@/components/ContentIcon.vue'
 import DatePickerField from '@/components/DatePickerField.vue'
 import TrackingChartSkeleton from '@/components/TrackingChartSkeleton.vue'
 import TrackingRelationshipChart from '@/components/TrackingRelationshipChart.vue'
@@ -11,6 +12,7 @@ import {
   buildTrackingInsight,
   dateRangeKeys,
   defaultTrackingInsightRangePreset,
+  trackingCategoryIcon,
   trackingDailyValuesForRange,
   type TrackingInsightResult,
 } from '@/services/tracking'
@@ -24,6 +26,7 @@ import {
 } from '@/services/reviewSetInsights'
 import { INTERVAL_INSIGHT_PROFILE, intervalInsightDailyValues } from '@/services/intervalInsights'
 import { isNativeHealthConnectSupported, readHealthConnectStepsForDates, readScreenTimeForDates } from '@/services/healthConnect'
+import { taskDisplayIcon, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
 import { useTrackingStore } from '@/stores/tracking'
@@ -31,6 +34,7 @@ import type {
   FlashcardReviewSession,
   FlashcardReviewSet,
   IntervalSession,
+  Task,
   TrackingAnalysisSource,
   TrackingDailyValue,
 } from '@/types/domain'
@@ -44,7 +48,7 @@ const tracking = useTrackingStore()
 const tasks = useTaskStore()
 const intervals = useIntervalStore()
 const { insightFactorId: factorId, insightOutcomeId: outcomeId } = storeToRefs(tracking)
-const reviewSets = ref<Array<Pick<FlashcardReviewSet, 'id' | 'name' | 'archived'>>>([])
+const reviewSets = ref<Array<Pick<FlashcardReviewSet, 'id' | 'name' | 'icon' | 'color' | 'archived'>>>([])
 const datePreset = ref<DatePreset>('7')
 const rangeStart = ref(format(subDays(new Date(), 6), 'yyyy-MM-dd'))
 const rangeEnd = ref(format(new Date(), 'yyyy-MM-dd'))
@@ -63,6 +67,15 @@ const datePresets: Array<{ title: string; value: DatePreset }> = [
   { title: '6 months', value: '6-months' },
   { title: 'Custom', value: 'custom' },
 ]
+
+function taskFactorIcon(task: Task) {
+  const interval = intervals.templates.find((template) => template.id === task.intervalTemplate)
+  const reviewSet = reviewSets.value.find((item) => item.id === task.flashcardReviewSet)
+  return taskDisplayIcon(task, {
+    intervalIcon: interval ? interval.icon || 'mdi-timer-outline' : undefined,
+    reviewSetIcon: reviewSet ? reviewSet.icon || 'mdi-cards-outline' : undefined,
+  })
+}
 
 const healthConnectFactorSources: TrackingFactorSource[] = isNativeHealthConnectSupported() ? [
   {
@@ -95,6 +108,7 @@ const factorSources = computed<TrackingFactorSource[]>(() => [
     id: `tracker:${tracker.id}`,
     source: 'tracker' as const,
     name: tracker.name,
+    icon: tracker.icon || trackingCategoryIcon(tracker.category),
     role: 'factor' as const,
     favorableDirection: 'neutral' as const,
     unit: tracker.unit,
@@ -107,15 +121,17 @@ const factorSources = computed<TrackingFactorSource[]>(() => [
     id: `task:${task.id}`,
     source: 'task' as const,
     name: `Task · ${task.name}`,
+    icon: taskFactorIcon(task),
     role: 'factor' as const,
     favorableDirection: 'neutral' as const,
-    color: task.color || 'rgb(var(--v-theme-info))',
+    color: task.color || TASK_TYPE_PRESENTATION[task.type].color,
     ...taskInsightProfile(task),
   })),
   ...intervals.templates.filter((template) => !template.archived).map((template) => ({
     id: `interval:${template.id}`,
     source: 'interval' as const,
     name: `Interval · ${template.name}`,
+    icon: template.icon || 'mdi-timer-outline',
     role: 'factor' as const,
     favorableDirection: 'neutral' as const,
     color: template.color,
@@ -125,10 +141,11 @@ const factorSources = computed<TrackingFactorSource[]>(() => [
     id: `review_set:${reviewSet.id}`,
     source: 'review_set' as const,
     name: `Review set · ${reviewSet.name}`,
+    icon: reviewSet.icon || 'mdi-cards-outline',
     role: 'factor' as const,
     favorableDirection: 'neutral' as const,
     unit: 'cards',
-    color: 'rgb(var(--v-theme-secondary))',
+    color: reviewSet.color || 'rgb(var(--v-theme-secondary))',
     factorMode: 'quantity' as const,
     scaleMin: 0,
   })),
@@ -139,6 +156,7 @@ const outcomeSources = computed<TrackingAnalysisSource[]>(() =>
     id: tracker.id,
     source: 'tracker',
     name: tracker.name,
+    icon: tracker.icon || trackingCategoryIcon(tracker.category),
     role: tracker.role,
     favorableDirection: tracker.favorableDirection,
     unit: tracker.unit,
@@ -158,13 +176,23 @@ const factorItems = computed(() => [
 ].flatMap((group) => {
   const items = factorSources.value
     .filter((source) => source.source === group.source)
-    .map((source) => ({ title: source.name, value: source.id }))
+    .map((source) => ({
+      title: source.name,
+      value: source.id,
+      icon: source.icon || '',
+      color: source.color,
+    }))
 
   return items.length
-    ? [{ type: 'subheader' as const, title: group.title }, ...items]
+    ? [{ type: 'subheader' as const, title: group.title, icon: '', color: '' }, ...items]
     : []
 }))
-const outcomeItems = computed(() => outcomeSources.value.map((source) => ({ title: source.name, value: source.id })))
+const outcomeItems = computed(() => outcomeSources.value.map((source) => ({
+  title: source.name,
+  value: source.id,
+  icon: source.icon || '',
+  color: source.color,
+})))
 const selectedFactor = computed(() => factorSources.value.find((source) => source.id === factorId.value))
 const selectedOutcome = computed(() => outcomeSources.value.find((source) => source.id === outcomeId.value))
 const dateRangeValid = computed(() => Boolean(rangeStart.value && rangeEnd.value && rangeStart.value <= rangeEnd.value))
@@ -187,6 +215,8 @@ onMounted(async () => {
       reviewSets.value = records.map((record) => ({
         id: String(record.id),
         name: String(record.name),
+        icon: String(record.icon || ''),
+        color: String(record.color || '#C7F464'),
         archived: record.archived === true,
       }))
     }),
@@ -377,7 +407,29 @@ function trackerDailyValues(trackerId: string, start: string, end: string) {
             label="Factor"
             :items="factorItems"
             no-data-text="Create a factor, task, interval, or Review set first"
-          />
+          >
+            <template #item="{ props: itemProps, item }">
+              <v-list-item v-bind="itemProps">
+                <template v-if="item.raw.icon" #prepend>
+                  <span class="insight-source-icon mr-3" :style="{ background: item.raw.color }">
+                    <ContentIcon :icon="item.raw.icon" size="1.125rem" />
+                  </span>
+                </template>
+              </v-list-item>
+            </template>
+            <template #selection="{ item }">
+              <span class="insight-source-selection">
+                <span
+                  v-if="item.raw.icon"
+                  class="insight-source-selection__icon"
+                  :style="{ background: item.raw.color }"
+                >
+                  <ContentIcon :icon="item.raw.icon" size=".875rem" />
+                </span>
+                <span class="text-truncate">{{ item.title }}</span>
+              </span>
+            </template>
+          </v-select>
         </v-col>
         <v-col cols="12" sm="6">
           <v-select
@@ -385,7 +437,25 @@ function trackerDailyValues(trackerId: string, start: string, end: string) {
             label="Outcome"
             :items="outcomeItems"
             no-data-text="Create an outcome tracker first"
-          />
+          >
+            <template #item="{ props: itemProps, item }">
+              <v-list-item v-bind="itemProps">
+                <template #prepend>
+                  <span class="insight-source-icon mr-3" :style="{ background: item.raw.color }">
+                    <ContentIcon :icon="item.raw.icon" size="1.125rem" />
+                  </span>
+                </template>
+              </v-list-item>
+            </template>
+            <template #selection="{ item }">
+              <span class="insight-source-selection">
+                <span class="insight-source-selection__icon" :style="{ background: item.raw.color }">
+                  <ContentIcon :icon="item.raw.icon" size=".875rem" />
+                </span>
+                <span class="text-truncate">{{ item.title }}</span>
+              </span>
+            </template>
+          </v-select>
         </v-col>
       </v-row>
 
@@ -513,6 +583,9 @@ function trackerDailyValues(trackerId: string, start: string, end: string) {
 .filter-card > div:first-child p,
 .chart-heading p,
 .empty-state p { margin-top: .25rem; color: rgb(var(--v-theme-on-surface) / .58); font-size: .75rem; line-height: 1.45; }
+.insight-source-icon { display: grid; width: 2rem; height: 2rem; flex: 0 0 auto; place-items: center; border-radius: .65rem; color: #191c19; }
+.insight-source-selection { display: flex; min-width: 0; align-items: center; gap: .5rem; }
+.insight-source-selection__icon { display: grid; width: 1.5rem; height: 1.5rem; flex: 0 0 auto; place-items: center; border-radius: .5rem; color: #191c19; }
 .filter-label { color: rgb(var(--v-theme-on-surface) / .72); font-size: .75rem; }
 .date-presets { display: grid; width: 100%; height: auto !important; grid-template-columns: repeat(6, 1fr); }
 .date-presets :deep(.v-btn) { min-width: 0; padding-inline: .5rem; }

@@ -26,6 +26,7 @@ export interface Task {
   name: string
   description: string
   type: TaskType
+  icon?: string
   color?: string
   mandatory: boolean
   reviewWhenMissed: boolean
@@ -280,6 +281,7 @@ export interface IntervalTemplate {
   id: string
   name: string
   description: string
+  icon?: string
   color: string
   flashcardReviewSet?: string
   definition: IntervalDefinition
@@ -540,6 +542,8 @@ export interface CuratedReviewSetDetail extends Omit<CuratedReviewSetSummary, 'c
 export interface FlashcardReviewSet extends FlashcardReviewSettings {
   id: string
   name: string
+  icon?: string
+  color: string
   tags: string[]
   selectionMode?: FlashcardReviewSetSelectionMode
   includedCards?: string[]
@@ -909,6 +913,7 @@ export interface TrackingAnalysisSource {
   id: string
   source: TrackingSourceKind
   name: string
+  icon?: string
   role: TrackerRole
   favorableDirection: FavorableDirection
   unit: string

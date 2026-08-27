@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Intersect, Ripple } from 'vuetify/directives'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
+import ContentIcon from '@/components/ContentIcon.vue'
 import {
   filterJournalEntries,
   groupJournalEntriesByMonth,
@@ -301,8 +302,10 @@ onMounted(async () => {
                       size="small"
                       variant="tonal"
                       :color="context.color"
-                      :prepend-icon="context.icon"
                     >
+                      <template #prepend>
+                        <ContentIcon :icon="context.icon" size="1rem" class="mr-1" />
+                      </template>
                       {{ context.name }}
                     </v-chip>
                   </div>

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { addDays, format } from 'date-fns'
+import ContentIcon from '@/components/ContentIcon.vue'
 import { useResponsiveChartWidth } from '@/services/responsiveChart'
-import { formatNumber, formatTrackingValue, trackingDailyValuesForRange } from '@/services/tracking'
+import { formatNumber, formatTrackingValue, trackingCategoryIcon, trackingDailyValuesForRange } from '@/services/tracking'
 import { readInactiveTrackingChartTrackerIds, storeInactiveTrackingChartTrackerIds } from '@/services/trackingChartPreferences'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
 
@@ -77,7 +78,9 @@ const trackerSeries = computed(() => props.trackers
     return {
       tracker,
       values,
+      lineMin: observed.length ? Math.floor(Math.min(...observed)) : 0,
       max: Math.max(configuredMax, ...observed.map((value) => Math.abs(value)), 1),
+      lineMax: observed.length ? Math.ceil(Math.max(...observed)) : 0,
       hasValues: observed.length > 0,
     }
   }))
@@ -91,7 +94,9 @@ const screenTimeSeries = computed(() => {
   return [{
     tracker: screenTimeTracker,
     values,
+    lineMin: observed.length ? Math.floor(Math.min(...observed)) : 0,
     max: Math.max(...observed, 1),
+    lineMax: observed.length ? Math.ceil(Math.max(...observed)) : 0,
     hasValues: observed.length > 0,
   }]
 })
@@ -99,6 +104,8 @@ const availableSeries = computed(() => [...trackerSeries.value, ...screenTimeSer
   .sort((a, b) => a.tracker.sortOrder - b.tracker.sortOrder || a.tracker.name.localeCompare(b.tracker.name)))
 const series = computed(() => availableSeries.value.filter(item => item.hasValues))
 const activeSeries = computed(() => series.value.filter(item => !inactiveTrackerIds.value.has(item.tracker.id)))
+const activeBarSeries = computed(() => activeSeries.value.filter(item => !isLineTracker(item.tracker)))
+const activeLineSeries = computed(() => activeSeries.value.filter(item => isLineTracker(item.tracker)))
 const lastSelectableDayIndex = computed(() => {
   let index = -1
   for (const [dayIndex, day] of days.value.entries()) {
@@ -149,23 +156,25 @@ const legendOptions = computed(() => readoutValues.value.map(({ tracker, value }
     selectionTitle: valueLabel ? `${tracker.name} (${valueLabel})` : tracker.name,
     valueLabel,
     color: tracker.color,
+    icon: tracker.icon || trackingCategoryIcon(tracker.category),
+    line: isLineTracker(tracker),
   }
 }))
 const ariaLabel = computed(() => {
   const start = days.value[0]?.date
   const end = days.value.at(-1)?.date
   return start && end
-    ? `Grouped tracking bars for the week of ${format(start, 'MMMM d')} to ${format(end, 'MMMM d, yyyy')}. Each tracker uses its own scale. Use left and right arrow keys to inspect a day.`
-    : 'Grouped tracking bars for the visible week.'
+    ? `Tracking chart for the week of ${format(start, 'MMMM d')} to ${format(end, 'MMMM d, yyyy')}. Number and duration trackers are lines; other trackers are bars. Each tracker uses its own scale. Use left and right arrow keys to inspect a day.`
+    : 'Tracking chart for the visible week.'
 })
 
 function barWidth() {
-  if (!activeSeries.value.length) return 0
-  return Math.max(4, Math.min(18, (groupWidth.value - 16) / activeSeries.value.length - 2))
+  if (!activeBarSeries.value.length) return 0
+  return Math.max(4, Math.min(18, (groupWidth.value - 16) / activeBarSeries.value.length - 2))
 }
 
 function barsWidth() {
-  return activeSeries.value.length * barWidth() + Math.max(0, activeSeries.value.length - 1) * 2
+  return activeBarSeries.value.length * barWidth() + Math.max(0, activeBarSeries.value.length - 1) * 2
 }
 
 function barX(dayIndex: number, seriesIndex: number) {
@@ -180,6 +189,28 @@ function normalizedBarHeight(value: number | null, max: number) {
 
 function barY(value: number | null, max: number) {
   return plotTop + plotHeight - normalizedBarHeight(value, max)
+}
+
+function isLineTracker(tracker: TrackingTracker) {
+  return tracker.kind === 'number' || tracker.kind === 'duration'
+}
+
+function lineX(dayIndex: number) {
+  return plotLeft + dayIndex * groupWidth.value + groupWidth.value / 2
+}
+
+function lineY(value: number, min: number, max: number) {
+  if (min === max) return plotTop + plotHeight / 2
+  const ratio = Math.max(0, Math.min(1, (value - min) / (max - min)))
+  return plotTop + plotHeight - ratio * plotHeight
+}
+
+function linePath(values: Array<number | null>, min: number, max: number) {
+  return values.reduce((path, value, dayIndex) => {
+    if (value === null) return `${path} `
+    const command = path.trim() ? 'L' : 'M'
+    return `${path}${command}${lineX(dayIndex).toFixed(2)},${lineY(value, min, max).toFixed(2)} `
+  }, '').trim()
 }
 
 function legendValue(tracker: TrackingTracker, value: number) {
@@ -255,7 +286,7 @@ function onKeydown(event: KeyboardEvent) {
         />
 
         <template v-if="!loading">
-          <template v-for="(item, seriesIndex) in activeSeries" :key="item.tracker.id">
+          <template v-for="(item, seriesIndex) in activeBarSeries" :key="item.tracker.id">
             <rect
               v-for="(value, dayIndex) in item.values"
               v-show="value !== null"
@@ -270,6 +301,26 @@ function onKeydown(event: KeyboardEvent) {
             >
               <title>{{ days[dayIndex]?.label }} · {{ item.tracker.name }}: {{ value === null ? 'Not logged' : formatTrackingValue(item.tracker, value) }}</title>
             </rect>
+          </template>
+
+          <template v-for="item in activeLineSeries" :key="item.tracker.id">
+            <path
+              :d="linePath(item.values, item.lineMin, item.lineMax)"
+              :stroke="item.tracker.color"
+              class="chart-line"
+            />
+            <circle
+              v-for="(value, dayIndex) in item.values"
+              v-show="value !== null"
+              :key="`${item.tracker.id}-${days[dayIndex]?.key}`"
+              :cx="lineX(dayIndex)"
+              :cy="value === null ? plotTop + plotHeight : lineY(value, item.lineMin, item.lineMax)"
+              :fill="item.tracker.color"
+              r="3.5"
+              class="chart-line-dot"
+            >
+              <title>{{ days[dayIndex]?.label }} · {{ item.tracker.name }}: {{ value === null ? 'Not logged' : formatTrackingValue(item.tracker, value) }}</title>
+            </circle>
           </template>
         </template>
 
@@ -310,7 +361,17 @@ function onKeydown(event: KeyboardEvent) {
             :subtitle="item.raw.valueLabel || undefined"
           >
             <template #prepend>
-              <span class="chart-series-color mr-3" :style="{ background: item.raw.color }" />
+              <span class="chart-series-identity mr-3">
+                <ContentIcon
+                  :icon="item.raw.icon"
+                  :style="{ color: item.raw.color }"
+                  size="1.25rem"
+                />
+                <span
+                  :class="['chart-series-color', { 'chart-series-color--line': item.raw.line }]"
+                  :style="{ background: item.raw.color }"
+                />
+              </span>
             </template>
             <template #append>
               <v-icon
@@ -330,7 +391,15 @@ function onKeydown(event: KeyboardEvent) {
             variant="tonal"
             class="chart-series-chip"
           >
-            <span class="chart-series-color" :style="{ background: item.raw.color }" />
+            <ContentIcon
+              :icon="item.raw.icon"
+              :style="{ color: item.raw.color }"
+              size=".875rem"
+            />
+            <span
+              :class="['chart-series-color', { 'chart-series-color--line': item.raw.line }]"
+              :style="{ background: item.raw.color }"
+            />
             <span class="text-truncate">{{ item.raw.selectionTitle }}</span>
           </v-chip>
           <span v-else-if="index === 4" class="chart-series-overflow text-disabled">
@@ -346,7 +415,9 @@ function onKeydown(event: KeyboardEvent) {
 .chart-series-select {
   min-height: 0;
 }
+.chart-series-identity { display: flex; min-width: 2.5rem; align-items: center; gap: .5rem; }
 .chart-series-color { display: block; width: .75rem; height: .75rem; flex: 0 0 auto; border: .0625rem solid rgb(var(--v-theme-on-surface) / .22); border-radius: .25rem; }
+.chart-series-color--line { height: .1875rem; border: 0; border-radius: 999rem; }
 .chart-series-chip { max-width: 9rem; }
 .chart-series-chip :deep(.v-chip__content) { min-width: 0; gap: .375rem; }
 .chart-series-overflow { flex: 0 0 auto; color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; font-weight: 800; }
@@ -365,6 +436,19 @@ svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
     height 220ms cubic-bezier(.22, 1, .36, 1),
     opacity 180ms ease;
 }
+.chart-line {
+  fill: none;
+  opacity: .96;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+  animation: chart-line-enter 220ms ease both;
+}
+.chart-line-dot {
+  stroke: rgb(var(--v-theme-surface));
+  stroke-width: 1.5;
+  animation: chart-line-enter 220ms ease both;
+}
 .day-label { fill: rgba(var(--v-theme-on-surface), .54); font-family: inherit; font-size: .6875rem; font-weight: 800; text-anchor: middle; }
 .day-label--future { fill: rgba(var(--v-theme-on-surface), .24); }
 .weekly-chart-empty { color: rgba(var(--v-theme-on-surface), .58); font-size: .8rem; }
@@ -376,8 +460,14 @@ svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
   }
 }
 
+@keyframes chart-line-enter {
+  from { opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .chart-bar {
+  .chart-bar,
+  .chart-line,
+  .chart-line-dot {
     animation: none;
     transition: none;
   }

@@ -4,8 +4,9 @@ import { format } from 'date-fns'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import ContentIcon from '@/components/ContentIcon.vue'
 import { nextScheduledDates } from '@/services/schedule'
-import { TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
+import { taskDisplayIcon, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
@@ -44,6 +45,16 @@ function attachedIntervalName(task: Task) {
 
 function attachedReviewSetName(task: Task) {
   return flashcardStore.reviewSets.find(item => item.id === task.flashcardReviewSet)?.name || 'Attached Review set'
+}
+
+function taskIcon(task: Task) {
+  if (!task.active) return 'mdi-pause'
+  const interval = intervalStore.templates.find(item => item.id === task.intervalTemplate)
+  const reviewSet = flashcardStore.reviewSets.find(item => item.id === task.flashcardReviewSet)
+  return taskDisplayIcon(task, {
+    intervalIcon: interval?.icon || (interval ? 'mdi-timer-outline' : undefined),
+    reviewSetIcon: reviewSet?.icon || (reviewSet ? 'mdi-cards-outline' : undefined),
+  })
 }
 
 function scheduleLabel(task: Task) {
@@ -129,7 +140,7 @@ async function confirmStatusChange() {
             >
               <div class="d-flex align-start ga-3">
                 <div class="type-icon" :style="{ background: task.color || TASK_TYPE_PRESENTATION[task.type].color }">
-                  <v-icon :icon="TASK_TYPE_PRESENTATION[task.type].icon" size="21" />
+                  <ContentIcon :icon="taskIcon(task)" size="1.3125rem" />
                 </div>
                 <div class="flex-grow-1 min-width-0">
                   <div class="d-flex align-center ga-2">

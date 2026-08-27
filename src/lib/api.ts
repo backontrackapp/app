@@ -1318,6 +1318,8 @@ class ApiClient {
       const now = new Date().toISOString()
       const reviewSet = await putLocalCreate(accountId, 'flashcard_review_sets', {
         name: baseName,
+        icon: String(source.icon || ''),
+        color: String(source.color || '#C7F464'),
         tags: [scopeTag.id],
         mode: source.mode,
         card_sides: source.card_sides,

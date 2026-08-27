@@ -94,6 +94,8 @@ function mapReviewSet(record: Record<string, any>): FlashcardReviewSet {
   return {
     id: record.id,
     name: record.name,
+    icon: record.icon || '',
+    color: record.color || '#C7F464',
     tags: Array.isArray(record.tags) ? record.tags : [],
     selectionMode: record.selection_mode === 'cards' ? 'cards' : 'tags',
     includedCards: Array.isArray(record.included_cards) ? record.included_cards : [],
@@ -933,6 +935,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     const payload = {
       owner: api.authStore.record!.id,
       name: draft.name,
+      icon: draft.icon || '',
+      color: draft.color,
       tags: draft.tags,
       selection_mode: draft.selectionMode || 'tags',
       included_cards: draft.includedCards || [],
@@ -1005,6 +1009,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       if (!name) throw new Error('Review set name is required.')
       return saveReviewSet({
         name,
+        icon: '',
+        color: '#C7F464',
         tags: [],
         selectionMode: 'cards',
         includedCards: selected,

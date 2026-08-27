@@ -3,7 +3,9 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppForm from '@/components/AppForm.vue'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
+import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import EmojiSelector from '@/components/EmojiSelector.vue'
 import FlashcardCardsManager from '@/components/FlashcardCardsManager.vue'
 import FlashcardTagCombobox from '@/components/FlashcardTagCombobox.vue'
 import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsFields.vue'
@@ -68,6 +70,8 @@ const canEditCards = computed(() => (
 ))
 const draft = reactive<FlashcardReviewSetDraft>({
   name: '',
+  icon: '',
+  color: '#C7F464',
   tags: [],
   selectionMode: 'tags',
   includedCards: [],
@@ -103,6 +107,8 @@ function serializedDraft() {
   const excludedCards = [...(draft.excludedCards || [])].sort()
   return JSON.stringify(isOwner.value ? {
       name: draft.name,
+      icon: draft.icon,
+      color: draft.color,
       tags: draft.tags,
       selectionMode: draft.selectionMode,
       includedCards: draft.includedCards,
@@ -120,6 +126,8 @@ function applyReviewSet(reviewSet: FlashcardReviewSet) {
   Object.assign(draft, {
     id: reviewSet.id,
     name: reviewSet.name,
+    icon: reviewSet.icon || '',
+    color: reviewSet.color || '#C7F464',
     tags: [...reviewSet.tags],
     selectionMode: reviewSet.selectionMode || 'tags',
     includedCards: [...(reviewSet.includedCards || [])],
@@ -371,6 +379,22 @@ async function remove() {
             >
               <template #label>Review set name <span class="required-mark">*</span></template>
             </v-text-field>
+          </v-col>
+
+          <v-col cols="12">
+            <EmojiSelector
+              v-model="draft.icon"
+              label="Review set icon"
+              dialog-title="Choose an icon"
+            />
+          </v-col>
+
+          <v-col cols="12">
+            <ColorSwatchPicker
+              v-model="draft.color"
+              label="Review set color"
+              custom-label="Choose a custom Review set color"
+            />
           </v-col>
 
           <v-col v-if="draft.selectionMode !== 'cards'" cols="12">

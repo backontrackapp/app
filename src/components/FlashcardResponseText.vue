@@ -311,8 +311,8 @@ onBeforeUnmount(() => {
   align-self: stretch;
   flex-direction: column;
   gap: .45rem;
-  overflow-x: hidden;
-  overflow-y: auto;
+  /*overflow-x: hidden;
+  overflow-y: auto;*/
   overscroll-behavior: contain;
   scrollbar-color: rgba(var(--v-theme-on-surface), .28) transparent;
   scrollbar-width: thin;

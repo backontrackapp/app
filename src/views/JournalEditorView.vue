@@ -7,6 +7,7 @@ import AppForm from '@/components/AppForm.vue'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import ContentIcon from '@/components/ContentIcon.vue'
 import DateTimePickerField from '@/components/DateTimePickerField.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
 import JournalImageField from '@/components/JournalImageField.vue'
@@ -80,9 +81,9 @@ const trackerItems = computed(() => [...trackingStore.trackers]
   .map(item => ({
     title: item.name,
     value: item.id,
+    icon: item.icon,
     props: {
       subtitle: item.archived ? 'Archived tracker' : item.active ? undefined : 'Paused tracker',
-      prependIcon: item.icon,
     },
   })))
 const signature = computed(() => JSON.stringify({
@@ -443,7 +444,21 @@ function runRetirementAction(action: ContentRetirementActionId) {
             closable-chips
             variant="outlined"
             hide-details="auto"
-          />
+          >
+            <template #item="{ props: itemProps, item }">
+              <v-list-item v-bind="itemProps">
+                <template #prepend>
+                  <ContentIcon :icon="item.raw.icon" size="1.125rem" class="mr-3" />
+                </template>
+              </v-list-item>
+            </template>
+            <template #chip="{ props: chipProps, item }">
+              <v-chip v-bind="chipProps">
+                <ContentIcon :icon="item.raw.icon" size=".875rem" class="mr-1" />
+                {{ item.title }}
+              </v-chip>
+            </template>
+          </v-select>
         </div>
       </v-card>
     </AppForm>

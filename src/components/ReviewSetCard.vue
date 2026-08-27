@@ -57,7 +57,6 @@ const props = withDefaults(defineProps<{
   showTagActions?: boolean
   quickTags?: FlashcardReviewCardQuickTag[]
   canTag?: boolean
-  hasSelectableTags?: boolean
   ejectable?: boolean
   ejecting?: boolean
   ejectDisabled?: boolean
@@ -84,7 +83,6 @@ const props = withDefaults(defineProps<{
   showTagActions: false,
   quickTags: () => [],
   canTag: false,
-  hasSelectableTags: false,
   ejectable: false,
   ejecting: false,
   ejectDisabled: false,
@@ -100,7 +98,6 @@ const emit = defineEmits<{
   lostPointerCapture: [event: PointerEvent]
   afterEnter: []
   toggleTag: [name: string]
-  openTags: []
   eject: []
   previous: [transitionDirection: ReviewCardTransitionDirection]
   next: [transitionDirection: ReviewCardTransitionDirection]
@@ -353,9 +350,7 @@ defineExpose({ refitContent })
     role="button"
     :tabindex="disabled ? -1 : 0"
     :aria-disabled="disabled"
-    :aria-label="paused
-      ? `${setName} paused for this step, card ${displayedBuffer.cardPosition} of ${cardCount}`
-      : `${setName}, ${displayedBuffer.side}, card ${displayedBuffer.cardPosition} of ${cardCount}`"
+    :aria-label="`${setName} ${paused ? 'paused' : 'playing'}, ${displayedBuffer.side}, card ${displayedBuffer.cardPosition} of ${cardCount}`"
     @pointerdown.capture="emit('pointerDown', $event)"
     @pointermove.capture="emit('pointerMove', $event)"
     @pointerup.capture="emit('pointerUp', $event)"
@@ -382,12 +377,6 @@ defineExpose({ refitContent })
             <span class="text-truncate">{{ setName }}</span>
             <span class="interval-review-card__count">({{ displayedBuffer.cardPosition }} of {{ cardCount }})</span>
           </span>
-          <div class="interval-review-card__meta">
-            <small>
-              <v-icon v-if="paused" icon="mdi-pause-circle-outline" size=".875rem" />
-              {{ paused ? 'Paused' : displayedBuffer.side === 'front' ? 'Front' : 'Back' }}
-            </small>
-          </div>
         </div>
         <div class="interval-review-card__face-window">
           <div
@@ -424,7 +413,7 @@ defineExpose({ refitContent })
         </div>
       </div>
     </div>
-    <footer v-if="showTagActions" class="interval-review-card__tag-actions" aria-label="Flashcard tags">
+    <footer v-if="showTagActions" class="interval-review-card__tag-actions" aria-label="Flashcard actions and playback status">
       <v-btn
         v-if="ejectable"
         class="interval-review-card__tag-control interval-review-card__eject-button"
@@ -456,16 +445,12 @@ defineExpose({ refitContent })
           {{ tag.name }}
         </v-chip>
       </div>
-      <v-btn
-        class="interval-review-card__tag-control interval-review-card__tag-menu-button"
-        size="x-small"
-        variant="text"
-        prepend-icon="mdi-tag-multiple-outline"
-        :disabled="!canTag || !hasSelectableTags"
-        @click.stop="emit('openTags')"
-      >
-        Tags
-      </v-btn>
+      <div class="interval-review-card__meta">
+        <small>
+          <v-icon :icon="paused ? 'mdi-pause-circle-outline' : 'mdi-play-circle-outline'" size=".875rem" />
+          {{ paused ? 'Paused' : 'Playing' }}
+        </small>
+      </div>
     </footer>
     <v-progress-linear
       class="review-set-card__progress interval-review-card__progress"
@@ -742,7 +727,7 @@ defineExpose({ refitContent })
 .interval-review-card :deep(.v-ripple__container) { z-index: 2; }
 .interval-review-card__content { position: relative; z-index: 1; display: flex; box-sizing: border-box; min-height: 8.5rem; padding: 1rem; align-items: center; justify-content: flex-start; flex-direction: column; gap: .65rem; text-align: center; }
 .interval-review-card__heading { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; }
-.interval-review-card__meta { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: .75rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.interval-review-card__meta { display: flex; min-width: 0; align-items: center; justify-content: flex-end; grid-column: 3; justify-self: end; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
 .interval-review-card__meta small { display: inline-flex; align-items: center; gap: .25rem; }
 .interval-review-card__set { display: flex; min-width: 0; max-width: 75%; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-align: left; text-transform: uppercase; }
 .interval-review-card__set > .text-truncate { min-width: 0; flex: 1 1 auto; }
@@ -761,7 +746,6 @@ defineExpose({ refitContent })
 .interval-review-card__eject-button { min-width: 1.5rem; padding: 0; grid-column: 1; justify-self: start; }
 .interval-review-card__quick-tag { --v-chip-height: 1.5rem; }
 .interval-review-card__quick-tag.v-chip--variant-outlined { border-color: rgba(var(--v-theme-on-surface), .18); }
-.interval-review-card__tag-menu-button { min-width: 0; padding-inline: .65rem; grid-column: 3; justify-self: end; }
 .interval-review-card :deep(.v-progress-linear) { border-radius: 0; }
 .interval-review-card__progress { width: 100%; }
 .interval-review-card__progress :deep(.v-progress-linear__determinate) { opacity: .3; transition: none; }
@@ -802,6 +786,7 @@ defineExpose({ refitContent })
   .passive-card { height: 100%; min-height: 0; padding: clamp(1rem, 3dvh, 1.5rem) 1.5rem; gap: clamp(.75rem, 2dvh, 1.25rem); }
   .passive-card__content { gap: 0; }
   .review-card__tag-actions { position: static; display: flex; width: 100%; max-width: none; padding-left: 1rem; grid-column: 2; grid-row: 3; align-self: end; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 4.375rem; border-left: .0625rem solid rgb(var(--v-theme-on-surface) / .12); }
+  .review-card__eject-button { width: 100%; flex: 0 0 100%; }
   .review-card__quick-tags { flex-wrap: wrap; }
   .review-card__tag-menu-button { height: 2rem; min-width: 0; padding-inline: .5rem; grid-column: auto; justify-self: auto; font-size: .75rem; }
   .review-card__quick-tag { height: 1.75rem; padding-inline: .5rem; font-size: .75rem; }

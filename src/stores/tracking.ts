@@ -30,7 +30,7 @@ export function mapTrackingTracker(record: Record<string, any>): TrackingTracker
     archived: record.archived === true,
     sortOrder: Number(record.sort_order || 0),
     color: record.color || '#C7F464',
-    icon: trackingCategoryIcon(record.category),
+    icon: record.icon || trackingCategoryIcon(record.category),
   }
 }
 
@@ -123,7 +123,7 @@ export const useTrackingStore = defineStore('tracking', () => {
       archived: draft.archived === true,
       sort_order: draft.sortOrder,
       color: draft.color,
-      icon: trackingCategoryIcon(draft.category),
+      icon: draft.icon,
     }
     const index = draft.id ? trackers.value.findIndex(item => item.id === draft.id) : -1
     const previous = index >= 0 ? trackers.value[index] : undefined

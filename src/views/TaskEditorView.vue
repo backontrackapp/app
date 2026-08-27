@@ -7,7 +7,9 @@ import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import AppForm from '@/components/AppForm.vue'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import ContentIcon from '@/components/ContentIcon.vue'
 import DatePickerField from '@/components/DatePickerField.vue'
+import EmojiSelector from '@/components/EmojiSelector.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
 import TaskReminderSettings from '@/components/TaskReminderSettings.vue'
 import TimerWheelPicker from '@/components/TimerWheelPicker.vue'
@@ -155,6 +157,7 @@ const draft = reactive<TaskDraft>({
   name: '',
   description: '',
   type: (route.query.type as TaskType) || 'check',
+  icon: '',
   color: '#C7F464',
   mandatory: true,
   reviewWhenMissed: false,
@@ -755,7 +758,6 @@ async function deleteTaskPermanently() {
       <v-card class="surface-card pa-5 mb-4">
         <div class="field-stack mb-4">
           <v-text-field v-model="draft.name" label="Task name" placeholder="e.g. Hit protein target" :rules="[v => Boolean(v) || 'Name is required']" />
-          <v-textarea v-model="draft.description" label="Why does this matter? (optional)" rows="2" auto-grow variant="outlined" />
         </div>
         <div v-if="!typeLocked" class="mb-4">
           <label class="field-label">Task type</label>
@@ -775,6 +777,14 @@ async function deleteTaskPermanently() {
             </button>
           </div>
         </div>
+        <EmojiSelector
+          :model-value="draft.icon || TASK_TYPE_PRESENTATION[draft.type].icon"
+          label="Task icon"
+          dialog-title="Choose a task icon"
+          :clearable="Boolean(draft.icon)"
+          class="mb-4"
+          @update:model-value="draft.icon = $event"
+        />
         <ColorSwatchPicker
           v-model="draft.color"
           label="Routine color"
@@ -917,7 +927,7 @@ async function deleteTaskPermanently() {
               <v-list-item v-bind="itemProps">
                 <template #prepend>
                   <span class="tracking-attachment-icon mr-3" :style="{ background: item.raw.color }">
-                    <v-icon :icon="item.raw.icon" size="18" />
+                    <ContentIcon :icon="item.raw.icon" size="1.125rem" />
                   </span>
                 </template>
               </v-list-item>
@@ -929,7 +939,7 @@ async function deleteTaskPermanently() {
                   class="tracking-selection-icon mr-1"
                   :style="{ background: trackingTrackerFor(item.value)?.color }"
                 >
-                  <v-icon :icon="trackingTrackerFor(item.value)?.icon" size="14" />
+                  <ContentIcon :icon="trackingTrackerFor(item.value)?.icon" size=".875rem" />
                 </span>
                 {{ item.title }}
               </v-chip>

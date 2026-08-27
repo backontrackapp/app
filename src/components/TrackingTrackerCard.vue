@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Ripple } from 'vuetify/directives'
+import ContentIcon from '@/components/ContentIcon.vue'
+import { trackingCategoryIcon } from '@/services/tracking'
 import type { TrackingTracker } from '@/types/domain'
 
 const props = withDefaults(defineProps<{
@@ -44,7 +46,11 @@ const cardInk = computed(() => {
       @click="emit('actions', tracker)"
     >
       <span class="tracker-card__header">
-        <v-icon :icon="tracker.icon" size="32" />
+        <ContentIcon
+          :icon="tracker.icon"
+          :fallback-icon="trackingCategoryIcon(tracker.category)"
+          size="2rem"
+        />
       </span>
       <span class="tracker-card__content">
         <strong class="tracker-card__title">{{ tracker.name }}</strong>

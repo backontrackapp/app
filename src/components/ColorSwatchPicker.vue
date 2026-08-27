@@ -43,17 +43,18 @@ const emit = defineEmits<{
 const customColorDialog = ref(false)
 const draftColor = ref(props.modelValue)
 const availableColors = computed(() => props.colors || DEFAULT_COLORS)
+const modelColor = computed(() => props.modelValue || '')
 const allColorsGradient = computed(() => availableColors.value.length > 1
   ? `conic-gradient(${[...availableColors.value, availableColors.value[0]].join(', ')})`
   : 'conic-gradient(rgb(var(--v-theme-secondary)), rgb(var(--v-theme-info)), rgb(var(--v-theme-error)), rgb(var(--v-theme-secondary)))')
 
 const isCustomColor = computed(() => (
-  Boolean(props.modelValue)
-  && !availableColors.value.some(color => color.toLowerCase() === props.modelValue.toLowerCase())
+  Boolean(modelColor.value)
+  && !availableColors.value.some(color => color.toLowerCase() === modelColor.value.toLowerCase())
 ))
 
 const customIconColor = computed(() => {
-  const hex = props.modelValue.match(/^#([0-9a-f]{6})$/i)?.[1]
+  const hex = modelColor.value.match(/^#([0-9a-f]{6})$/i)?.[1]
   if (!hex) return '#17200F'
 
   const red = Number.parseInt(hex.slice(0, 2), 16)
@@ -64,11 +65,11 @@ const customIconColor = computed(() => {
 })
 
 function isSelected(color: string) {
-  return props.modelValue.toLowerCase() === color.toLowerCase()
+  return modelColor.value.toLowerCase() === color.toLowerCase()
 }
 
 function openCustomColorPicker() {
-  draftColor.value = props.modelValue
+  draftColor.value = modelColor.value
   customColorDialog.value = true
 }
 

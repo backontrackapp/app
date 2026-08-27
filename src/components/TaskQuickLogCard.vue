@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Ripple } from 'vuetify/directives'
+import ContentIcon from '@/components/ContentIcon.vue'
 import { formatIntervalDuration } from '@/services/intervals'
-import { TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
+import { taskDisplayIcon, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import type { TaskProgress } from '@/types/domain'
 
 const props = defineProps<{
   progress: TaskProgress
+  intervalIcon?: string
+  reviewSetIcon?: string
 }>()
 const emit = defineEmits<{
   actions: [progress: TaskProgress]
@@ -16,6 +19,12 @@ const vRipple = Ripple
 const task = computed(() => props.progress.task)
 const title = computed(() => props.progress.programStep?.name || task.value.name)
 const presentation = computed(() => TASK_TYPE_PRESENTATION[task.value.type])
+const displayIcon = computed(() => task.value.active
+  ? taskDisplayIcon(task.value, {
+      intervalIcon: props.intervalIcon,
+      reviewSetIcon: props.reviewSetIcon,
+    })
+  : 'mdi-pause')
 const taskColor = computed(() => task.value.color || presentation.value.color)
 const completionItems = computed(() => props.progress.completionItems || [])
 const hasMultipleCompletions = computed(() => completionItems.value.length > 1)
@@ -92,7 +101,7 @@ const cardInk = computed(() => {
       @click="emit('actions', progress)"
     >
       <span class="task-quick-log__color">
-        <v-icon :icon="progress.complete ? 'mdi-check-bold' : presentation.icon" size="28" />
+        <ContentIcon :icon="progress.complete ? 'mdi-check-bold' : displayIcon" size="1.75rem" />
       </span>
       <span class="task-quick-log__content">
         <strong>{{ title }}</strong>
