@@ -143,7 +143,7 @@ function scrollToFeatures() {
 
         <section id="features" class="feature-section px-6 px-lg-10">
           <div class="section-intro">
-            <h2>Five tools. One feedback loop<span class="text-secondary">.</span></h2>
+            <h2>Five tools. One connected system<span class="text-secondary">.</span></h2>
             <p>Each tool does one job well. Together, they turn a plan into practice, evidence, and a better next step.</p>
           </div>
 
@@ -215,6 +215,12 @@ function scrollToFeatures() {
     rgb(var(--v-theme-background));
   background-size: 2.125rem 2.125rem;
   color: rgb(var(--v-theme-on-background));
+}
+
+.landing-page,
+.landing-page :deep(*) {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .landing-header,

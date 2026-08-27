@@ -866,7 +866,7 @@ function releaseLeavingPage(element: Element) {
   height: calc(60px + max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px)));
   padding-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
   border-bottom: 1px solid rgb(var(--v-theme-on-surface) / .08);
-  background: rgb(var(--v-theme-background) / .9);
+  background: rgba(var(--v-theme-background) / .9);
   backdrop-filter: blur(16px);
 }
 
