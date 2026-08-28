@@ -35,7 +35,7 @@ import {
   tasksWithoutProgress,
 } from '@/services/taskScheduleLayout'
 import { taskIdsFromProgressDrag, taskProgressDragKey } from '@/services/taskReordering'
-import { taskDisplayIcon, taskSupportsQuickLog, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
+import { taskDisplayIcon, taskSupportsImageLogging, taskSupportsQuickLog, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import { useIntervalStore } from '@/stores/intervals'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useJournalStore } from '@/stores/journal'
@@ -398,7 +398,7 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
       icon: 'mdi-plus-minus-variant',
       disabled: locked || Boolean(progress.sealed),
     })
-    if (progress.task.logWithImagesEnabled) {
+    if (taskSupportsImageLogging(progress.task.type) && progress.task.logWithImagesEnabled) {
       items.push({
         id: 'log-with-image',
         title: 'Log with image',
@@ -436,14 +436,6 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
       icon: 'mdi-plus-minus-variant',
       disabled: locked,
     })
-    if (progress.task.logWithImagesEnabled) {
-      items.push({
-        id: 'log-with-image',
-        title: 'Log with image',
-        icon: 'mdi-image-plus-outline',
-        disabled: locked,
-      })
-    }
   }
   if (!progress.programStep && progress.task.type === 'journal' && journalCanWrite(progress)) {
     items.push({
@@ -1057,8 +1049,7 @@ function runProgramStepRequirement(progress: TaskProgress, completionId: string)
     return
   }
   if (completion.type === 'quantity') {
-    if (progress.task.logWithImagesEnabled) openImageLogger(progress, completion.id)
-    else void openExact(progress, false, completion.id)
+    void openExact(progress, false, completion.id)
     return
   }
   if (completion.type === 'interval') {

@@ -18,7 +18,7 @@ import { reviewSetCardCount } from '@/services/flashcards'
 import { formatIntervalDuration, intervalDuration, intervalStepCount } from '@/services/intervals'
 import { createProgramStepCompletion } from '@/services/programStepCompletions'
 import { requestTaskReminderPermission, taskReminderSettingsAvailable } from '@/services/taskReminders'
-import { taskSupportsQuickLog, TASK_TYPE_OPTIONS, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
+import { taskSupportsImageLogging, taskSupportsQuickLog, TASK_TYPE_OPTIONS, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import { TASK_RETIREMENT_ACTIONS, type TaskRetirementActionId } from '@/services/taskRetirementActions'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
@@ -208,9 +208,7 @@ const scheduledTimeModel = computed({
 const showTarget = computed(() =>
   draft.type === 'duration' || draft.type === 'daily_total' || draft.type === 'step_counter',
 )
-const showImageLogSettings = computed(() =>
-  ['duration', 'daily_total', 'step_counter', 'program'].includes(draft.type),
-)
+const showImageLogSettings = computed(() => taskSupportsImageLogging(draft.type))
 const showQuickLogSettings = computed(() => taskSupportsQuickLog(draft.type))
 const selectedInterval = computed(() => intervalStore.templates.find((item) => item.id === draft.intervalTemplate))
 const intervalItems = computed(() => intervalStore.templates

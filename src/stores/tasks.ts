@@ -14,7 +14,7 @@ import {
 import { dailyTotalCompletionPercent, isTaskScheduled, meetsTarget, programCycleDay, progressPercent, stepsForDate, toDateKey } from '@/services/schedule'
 import { taskNeedsReview } from '@/services/taskCardActions'
 import { reconcileTaskReminders } from '@/services/taskReminders'
-import { taskSupportsQuickLog } from '@/services/taskTypes'
+import { taskSupportsImageLogging, taskSupportsQuickLog } from '@/services/taskTypes'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useJournalStore } from '@/stores/journal'
 import { useTrackingStore } from '@/stores/tracking'
@@ -72,7 +72,7 @@ function mapTask(record: Record<string, any>): Task {
     programStrict: record.program_strict,
     quickLogEnabled: taskSupportsQuickLog(record.type) && record.quick_log_enabled === true,
     quickLogSortOrder: Number(record.quick_log_sort_order || 0),
-    logWithImagesEnabled: record.log_with_images_enabled === true,
+    logWithImagesEnabled: taskSupportsImageLogging(record.type) && record.log_with_images_enabled === true,
     sortOrder: record.sort_order || 0,
     intervalTemplate: record.interval_template || undefined,
     flashcardReviewSet: record.flashcard_review_set || undefined,
@@ -1527,7 +1527,7 @@ export const useTaskStore = defineStore('tasks', () => {
       program_strict: draft.programStrict ?? false,
       quick_log_enabled: taskSupportsQuickLog(draft.type) && draft.quickLogEnabled === true,
       quick_log_sort_order: quickLogSortOrder,
-      log_with_images_enabled: draft.logWithImagesEnabled,
+      log_with_images_enabled: taskSupportsImageLogging(draft.type) && draft.logWithImagesEnabled === true,
       sort_order: sortOrder,
       interval_template: draft.type === 'interval' ? draft.intervalTemplate || '' : '',
       flashcard_review_set: draft.type === 'flashcards' ? draft.flashcardReviewSet || '' : '',

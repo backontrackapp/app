@@ -22,6 +22,8 @@ On mobile, the next incomplete task banner appears only when no incomplete task 
 
 When a Daily Total log exactly fills the positive amount remaining to its target, the Tasks view asks whether to lock in the total. Locking finishes the task and prevents more changes for that day; skipping leaves it unlocked so more values can still be logged.
 
+Daily Total tasks can optionally enable **Log with images** to quickly log a reusable labeled amount from a photo. Other task types use their standard amount, timer, session, sync, or completion controls and do not expose image logging.
+
 Duration-task action menus include **Lock in total**. Locking finishes the task for that day and prevents further timer or amount changes while preserving the day's logged duration and earned progress; the same menu can unlock the total again.
 
 Logged amounts update task progress immediately. Background persistence and synchronization refreshes preserve that optimistic value so totals do not temporarily revert while the save is in flight.

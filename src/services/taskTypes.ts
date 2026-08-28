@@ -40,3 +40,7 @@ export function taskDisplayIcon(
 export function taskSupportsQuickLog(type: TaskType) {
   return type !== 'program' && type !== 'tracking'
 }
+
+export function taskSupportsImageLogging(type: TaskType) {
+  return type === 'daily_total'
+}
