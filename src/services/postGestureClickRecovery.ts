@@ -42,12 +42,17 @@ function controlIsReady(control: HTMLElement) {
     && control.ownerDocument.defaultView?.getComputedStyle(control).pointerEvents !== 'none'
 }
 
-function controlAtCoordinates(ownerDocument: Document, x: number, y: number) {
+function controlAtCoordinates(
+  ownerDocument: Document,
+  surface: Element,
+  x: number,
+  y: number,
+) {
   let closestControl: HTMLElement | undefined
   let closestArea = Number.POSITIVE_INFINITY
 
   for (const control of ownerDocument.querySelectorAll<HTMLElement>(CONTROL_SELECTOR)) {
-    if (!controlCanRecover(control)) continue
+    if (!surface.contains(control) || !controlCanRecover(control)) continue
     const bounds = control.getBoundingClientRect()
     if (
       bounds.width <= 0
@@ -76,12 +81,16 @@ function recoverableControlFromEvent(event: Event) {
   if (!(target instanceof Element)) return
   let control = target.closest<HTMLElement>(CONTROL_SELECTOR)
   if (!control && event instanceof PointerEvent) {
-    control = typeof target.ownerDocument.elementFromPoint === 'function'
-      ? target.ownerDocument
-        .elementFromPoint(event.clientX, event.clientY)
-        ?.closest<HTMLElement>(CONTROL_SELECTOR) ?? null
+    const hitTarget = typeof target.ownerDocument.elementFromPoint === 'function'
+      ? target.ownerDocument.elementFromPoint(event.clientX, event.clientY)
       : null
-    control ||= controlAtCoordinates(target.ownerDocument, event.clientX, event.clientY) ?? null
+    control = hitTarget?.closest<HTMLElement>(CONTROL_SELECTOR) ?? null
+    control ||= controlAtCoordinates(
+      target.ownerDocument,
+      hitTarget ?? target,
+      event.clientX,
+      event.clientY,
+    ) ?? null
   }
   if (!control || !controlCanRecover(control)) return
   return control

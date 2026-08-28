@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace BackOnTrack\Api;
 
 use PHPMailer\PHPMailer\PHPMailer;
+use RuntimeException;
 use Throwable;
 
 final class Mailer
 {
+    private const ACCOUNT_ACTION_TEMPLATE = 'account-action.html';
+
     public function __construct(private readonly Config $config)
     {
     }
@@ -24,6 +27,7 @@ final class Mailer
             'Confirm email',
             $url,
             'This link expires in 24 hours.',
+            self::ACCOUNT_ACTION_TEMPLATE,
         );
     }
 
@@ -38,6 +42,7 @@ final class Mailer
             'Reset password',
             $url,
             'This link expires in 1 hour. Ignore this email if you did not request it.',
+            self::ACCOUNT_ACTION_TEMPLATE,
         );
     }
 
@@ -58,6 +63,7 @@ final class Mailer
         string $action,
         string $url,
         string $footer,
+        string $template,
     ): void {
         if ($this->config->mailHost === '' || $this->config->mailFromAddress === '') {
             throw new ApiException(503, 'Email delivery is not configured.');
@@ -79,7 +85,13 @@ final class Mailer
             $mail->addAddress($recipient);
             $mail->Subject = $subject;
             $mail->isHTML(true);
-            $mail->Body = $this->htmlTemplate($heading, $message, $action, $url, $footer);
+            $mail->Body = $this->renderHtmlTemplate($template, [
+                'heading' => $heading,
+                'message' => $message,
+                'action' => $action,
+                'url' => $url,
+                'footer' => $footer,
+            ]);
             $mail->AltBody = implode("\n\n", [$heading, $message, $action . ': ' . $url, $footer]);
             $mail->send();
         } catch (Throwable $exception) {
@@ -93,40 +105,45 @@ final class Mailer
         }
     }
 
-    private function htmlTemplate(
-        string $heading,
-        string $message,
-        string $action,
-        string $url,
-        string $footer,
-    ): string {
-        $escape = static fn (string $value): string => htmlspecialchars(
-            $value,
-            ENT_QUOTES | ENT_SUBSTITUTE,
-            'UTF-8',
-        );
+    /**
+     * @param array<string, string> $variables
+     */
+    private function renderHtmlTemplate(string $template, array $variables): string
+    {
+        if (basename($template) !== $template || !str_ends_with($template, '.html')) {
+            throw new RuntimeException('The email template name is invalid.');
+        }
 
-        return '<!doctype html><html lang="en"><body style="margin:0;padding:32px;'
-            . 'font-family:Arial,sans-serif;color:#191c19;background:#ffffff">'
-            . '<main style="max-width:520px;margin:0 auto">'
-            . '<p style="margin:0 0 24px;font-size:14px;font-weight:700">BackOnTrack</p>'
-            . '<h1 style="margin:0 0 16px;font-size:24px;line-height:1.2">'
-            . $escape($heading) . '</h1>'
-            . '<p style="margin:0 0 24px;font-size:16px;line-height:1.5">'
-            . $escape($message) . '</p>'
-            . '<table role="presentation" border="0" cellspacing="0" cellpadding="0" '
-            . 'style="margin:0 0 24px"><tr><td bgcolor="#C7F464" '
-            . 'style="padding:0 6px;border:12px solid #C7F464;border-radius:8px;'
-            . 'background-color:#C7F464;line-height:20px">'
-            . '<a href="' . $escape($url) . '" '
-            . 'style="background:none !important;background-color:transparent !important;'
-            . 'color:#191c19 !important;font-weight:700;text-decoration:none;'
-            . 'forced-color-adjust:none">'
-            . '<span style="background:none !important;background-color:transparent !important;'
-            . 'color:#191c19 !important;forced-color-adjust:none">'
-            . $escape($action) . '</span></a></td></tr></table>'
-            . '<p style="margin:0;color:#626862;font-size:13px;line-height:1.5">'
-            . $escape($footer) . '</p>'
-            . '</main></body></html>';
+        $path = dirname(__DIR__) . '/templates/' . $template;
+        if (!is_file($path) || !is_readable($path)) {
+            throw new RuntimeException('The email template is unavailable.');
+        }
+
+        $contents = file_get_contents($path);
+        if ($contents === false) {
+            throw new RuntimeException('The email template could not be read.');
+        }
+
+        $rendered = preg_replace_callback(
+            '/{{\s*([a-z][a-z0-9_]*)\s*}}/',
+            static function (array $matches) use ($variables): string {
+                $name = $matches[1];
+                if (!array_key_exists($name, $variables)) {
+                    throw new RuntimeException('The email template contains an unknown placeholder.');
+                }
+
+                return htmlspecialchars(
+                    $variables[$name],
+                    ENT_QUOTES | ENT_SUBSTITUTE,
+                    'UTF-8',
+                );
+            },
+            $contents,
+        );
+        if ($rendered === null) {
+            throw new RuntimeException('The email template could not be parsed.');
+        }
+
+        return $rendered;
     }
 }

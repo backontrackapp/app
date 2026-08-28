@@ -11,6 +11,11 @@ Forgot-password requests for unconfirmed accounts do not create password-reset t
 the same confirmation-link recovery behavior and show a warning that email confirmation is required
 before a password can be reset.
 
+Confirmation and password-reset emails render the named `server/templates/account-action.html`
+file. The mailer parses `heading`, `message`, `action`, `url`, and `footer` placeholders and
+HTML-escapes every substituted value. Additional email layouts can use another named `.html` file
+in the same directory; unknown placeholders or unavailable templates stop delivery.
+
 ## Password changes
 
 Authenticated users can change their password from the account page by providing their current
