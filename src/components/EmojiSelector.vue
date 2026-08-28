@@ -238,6 +238,10 @@ watch(() => props.modelValue, (value) => {
 </template>
 
 <style scoped>
+.emoji-selector {
+  min-width: 0;
+}
+
 .emoji-selector__label {
   display: block;
   margin-bottom: .5rem;
@@ -247,6 +251,9 @@ watch(() => props.modelValue, (value) => {
 }
 
 .emoji-selector__activator {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
   min-height: 3.5rem;
   padding: .5rem .75rem;
   border-color: rgb(var(--v-theme-on-surface) / .38);
@@ -255,6 +262,7 @@ watch(() => props.modelValue, (value) => {
 .emoji-selector__activator :deep(.v-btn__content) {
   width: 100%;
   min-width: 0;
+  overflow: hidden;
   justify-content: flex-start;
   gap: .75rem;
 }
@@ -277,6 +285,7 @@ watch(() => props.modelValue, (value) => {
 }
 
 .emoji-selector__activator-name {
+  flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
   text-align: start;
@@ -289,6 +298,7 @@ watch(() => props.modelValue, (value) => {
 }
 
 .emoji-selector__activator-chevron {
+  flex: 0 0 auto;
   margin-left: auto;
   color: rgb(var(--v-theme-on-surface) / .68);
 }
