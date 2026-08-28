@@ -51,7 +51,7 @@ self.addEventListener('fetch', event => {
     return
   }
 
-  if (/\.(?:js|css|png|svg|jpe?g|webmanifest|mp3)$/i.test(url.pathname)) {
+  if (/\.(?:js|css|png|svg|jpe?g|webp|webmanifest|mp3)$/i.test(url.pathname)) {
     event.respondWith(staleWhileRevalidate(request, CACHE_NAME))
   }
 })

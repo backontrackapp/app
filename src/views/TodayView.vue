@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Capacitor } from '@capacitor/core'
 import { App } from '@capacitor/app'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { addDays, format, isAfter, isBefore, parseISO, startOfDay, startOfWeek, subDays } from 'date-fns'
 import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
@@ -20,10 +20,12 @@ import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
 import { dateSwipe as vDateSwipe } from '@/directives/dateSwipe'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { reviewSetCardCount } from '@/services/flashcards'
+import { loadExerciseOptions } from '@/services/exercises'
 import { isNativeHealthConnectSupported } from '@/services/healthConnect'
 import { isHealthConnectEntry } from '@/services/healthConnectEntries'
 import { formatIntervalDuration, intervalDuration } from '@/services/intervals'
 import { bottomAlignedTaskScrollTop, nextIncompleteTaskKey } from '@/services/nextIncompleteTask'
+import { programStepRequirementName } from '@/services/programStepCompletions'
 import { taskCompletionMarkerColor, toDateKey } from '@/services/schedule'
 import { TASK_CARD_ACTION_ITEMS, taskCanLogAdditionalValue, taskCanLogAmounts, taskIntervalCanStart } from '@/services/taskCardActions'
 import type { TaskCardActionId } from '@/services/taskCardActions'
@@ -49,6 +51,7 @@ import type {
   TaskProgress,
   TrackingTracker,
 } from '@/types/domain'
+import type { ExerciseOption } from '@/types/exercise'
 
 const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
 const HEALTH_CONNECT_RESUME_DELAY_MS = 500
@@ -125,6 +128,10 @@ const reorderingTasks = ref(false)
 const reorderingQuickLogs = ref(false)
 const dateSwipeFeedback = ref<InstanceType<typeof DateSwipeFeedback>>()
 const quickLogStrip = ref<HTMLElement>()
+const exerciseOptions = shallowRef<ExerciseOption[]>([])
+const exerciseOptionsById = computed(() => new Map(
+  exerciseOptions.value.map(exercise => [exercise.id, exercise]),
+))
 
 function changeTaskDate(amount: number) {
   selectedDate.value = addDays(selectedDate.value, amount)
@@ -221,9 +228,15 @@ function programStepRequirementItems(progress: TaskProgress): ProgramStepRequire
   return completions.map((completion, index) => {
     const sourceName = completionSourceName(completion)
     const customLabel = completion.label?.trim()
-    const requirementName = customLabel || sourceName
+    const exercise = completion.exercise
+      ? exerciseOptionsById.value.get(completion.exercise)
+      : undefined
+    const requirementName = programStepRequirementName(completion, exercise?.name, sourceName)
     const title = completions.length > 1 ? `${index + 1}. ${requirementName}` : requirementName
     const locked = Boolean(progress.locked)
+    const exercisePresentation = exercise
+      ? { image: exercise.imageUrl, imageAlt: exercise.name }
+      : {}
 
     if (completion.type === 'check') {
       return {
@@ -231,6 +244,7 @@ function programStepRequirementItems(progress: TaskProgress): ProgramStepRequire
         title,
         subtitle: completion.complete ? 'Checked off' : 'Not checked off',
         icon: completion.complete ? 'mdi-check-circle' : 'mdi-check-circle-outline',
+        ...exercisePresentation,
         complete: completion.complete,
         disabled: locked,
       }
@@ -242,6 +256,7 @@ function programStepRequirementItems(progress: TaskProgress): ProgramStepRequire
         title,
         subtitle: completionValueLabel(completion),
         icon: 'mdi-plus-minus-variant',
+        ...exercisePresentation,
         complete: completion.complete,
         disabled: locked || Boolean(progress.sealed),
       }
@@ -254,12 +269,13 @@ function programStepRequirementItems(progress: TaskProgress): ProgramStepRequire
         title,
         subtitle: [
           completion.complete ? 'Complete' : '',
-          customLabel ? sourceName : '',
+          customLabel ? exercise?.name || sourceName : exercise ? sourceName : '',
           interval?.duration ? `${interval.duration} total` : 'Saved interval unavailable',
         ]
           .filter(Boolean)
           .join(' · '),
         icon: completion.complete ? 'mdi-check-circle' : interval?.icon || 'mdi-timer-play-outline',
+        ...exercisePresentation,
         color: interval?.color || TASK_TYPE_PRESENTATION.interval.color,
         complete: completion.complete,
         disabled: locked || (!completion.complete && !intervalCanStart(progress)),
@@ -276,10 +292,11 @@ function programStepRequirementItems(progress: TaskProgress): ProgramStepRequire
       title,
       subtitle: [
         completion.complete ? 'Complete' : '',
-        customLabel ? sourceName : '',
+        customLabel ? exercise?.name || sourceName : exercise ? sourceName : '',
         reviewDetails,
       ].filter(Boolean).join(' · '),
       icon: completion.complete ? 'mdi-check-circle' : 'mdi-cards-playing-outline',
+      ...exercisePresentation,
       color: TASK_TYPE_PRESENTATION.flashcards.color,
       complete: completion.complete,
       disabled: locked || (!completion.complete && (
@@ -686,6 +703,9 @@ onMounted(async () => {
     if (todayPage.value) nextTaskResizeObserver.observe(todayPage.value)
   }
   scheduleNextIncompleteTask()
+  void loadExerciseOptions('en')
+    .then(options => { exerciseOptions.value = options })
+    .catch(() => { /* Requirements keep their existing type presentation if the catalog is unavailable. */ })
   try {
     await Promise.all([store.load(), intervalStore.load(), flashcardStore.load(), trackingStore.load()])
   } catch { /* Store error states are displayed in the view. */ }

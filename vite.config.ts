@@ -69,7 +69,7 @@ export default defineConfig(({ mode }) => ({
       injectRegister: false,
       manifest: false,
       injectManifest: {
-        globPatterns: ['**/*.{js,css,html,png,svg,jpeg,webmanifest,mp3}'],
+        globPatterns: ['**/*.{js,css,html,png,svg,jpeg,webp,webmanifest,mp3}'],
       },
     }),
   ],

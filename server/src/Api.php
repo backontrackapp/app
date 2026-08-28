@@ -7418,6 +7418,10 @@ final class Api
                 if (!in_array($type, ['check', 'quantity', 'interval', 'flashcards'], true)) {
                     throw new ApiException(422, 'A completion requirement has an invalid type.');
                 }
+                $exercise = $completion['exercise'] ?? '';
+                if (!is_string($exercise) || strlen($exercise) > 64) {
+                    throw new ApiException(422, 'A completion requirement has an invalid exercise.');
+                }
                 if ($type === 'quantity') {
                     $target = $completion['targetValue'] ?? null;
                     $operator = (string) ($completion['targetOperator'] ?? '');

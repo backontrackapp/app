@@ -1586,9 +1586,23 @@ export const useTaskStore = defineStore('tasks', () => {
         : []
       const retainedStepIds = new Set(draft.steps.map(step => step.id).filter(Boolean))
       const removedSteps = existingSteps.filter(step => !retainedStepIds.has(step.id))
+      const existingStepById = new Map(existingSteps.map(step => [step.id, step]))
+      const changedCompletionSteps = draft.steps.flatMap((step) => {
+        if (!step.id) return []
+        const existingStep = existingStepById.get(step.id)
+        if (!existingStep) return []
+        const previousDefinition = programStepCompletionPayload(existingStep.completions || [])
+        const nextDefinition = programStepCompletionPayload(step.completions || [])
+        return JSON.stringify(previousDefinition) === JSON.stringify(nextDefinition)
+          ? []
+          : [existingStep]
+      })
       const referencedStepIds = new Set<string>()
-      if (removedSteps.length) {
-        const referenceChecks = await Promise.all(removedSteps.map(async step => ({
+      const referenceCandidates = [...new Map(
+        [...removedSteps, ...changedCompletionSteps].map(step => [step.id, step]),
+      ).values()]
+      if (referenceCandidates.length) {
+        const referenceChecks = await Promise.all(referenceCandidates.map(async step => ({
           id: step.id,
           referenced: await programStepHasReferences(step.id),
         })))
@@ -1596,9 +1610,18 @@ export const useTaskStore = defineStore('tasks', () => {
           .filter(check => check.referenced)
           .forEach(check => referencedStepIds.add(check.id))
       }
+      const versionedStepIds = new Set(changedCompletionSteps
+        .filter(step => referencedStepIds.has(step.id))
+        .map(step => step.id))
+      const retiredSteps = [...new Map(
+        [
+          ...removedSteps,
+          ...changedCompletionSteps.filter(step => versionedStepIds.has(step.id)),
+        ].map(step => [step.id, step]),
+      ).values()]
       steps.value = [
         ...steps.value,
-        ...removedSteps
+        ...retiredSteps
           .filter(step => referencedStepIds.has(step.id))
           .map(step => ({ ...step, active: false })),
       ]
@@ -1612,7 +1635,7 @@ export const useTaskStore = defineStore('tasks', () => {
       })
 
       if (draft.type === 'program') {
-        await Promise.all(removedSteps.map((step) => referencedStepIds.has(step.id)
+        await Promise.all(retiredSteps.map((step) => referencedStepIds.has(step.id)
           ? api.collection('program_steps').update(step.id, { active: false })
           : api.collection('program_steps').delete(step.id),
         ))
@@ -1637,7 +1660,7 @@ export const useTaskStore = defineStore('tasks', () => {
               flashcard_review_set: primary?.type === 'flashcards' ? primary.flashcardReviewSet || '' : '',
               completions: programStepCompletionPayload(completions),
             }
-            return step.id
+            return step.id && !versionedStepIds.has(step.id)
               ? api.collection('program_steps').update(step.id, stepPayload)
               : api.collection('program_steps').create(stepPayload)
           }),

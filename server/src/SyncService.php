@@ -1891,6 +1891,10 @@ final class SyncService
                 if (!in_array($type, ['check', 'quantity', 'interval', 'flashcards'], true)) {
                     throw new ApiException(422, 'A completion requirement has an invalid type.');
                 }
+                $exercise = $completion['exercise'] ?? '';
+                if (!is_string($exercise) || strlen($exercise) > 64) {
+                    throw new ApiException(422, 'A completion requirement has an invalid exercise.');
+                }
                 if ($type === 'interval') {
                     $statement = $this->database->pdo->prepare(
                         'SELECT 1 FROM interval_templates WHERE id = :id AND owner = :owner',

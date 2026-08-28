@@ -7,6 +7,8 @@ const props = defineProps<{
   summary: string
   taskName?: string
   icon: string
+  image?: string
+  imageAlt?: string
   color?: string
   primaryLabel: string
   cancelLabel: string
@@ -69,9 +71,21 @@ onBeforeUnmount(() => {
     <div class="runner-start-screen__identity">
       <div
         class="runner-start-screen__icon"
+        :class="{ 'runner-start-screen__icon--image': image }"
         :style="color ? { background: color } : undefined"
       >
-        <ContentIcon :icon="icon" size="2.25rem" />
+        <v-img
+          v-if="image"
+          class="runner-start-screen__image"
+          :src="image"
+          :alt="imageAlt || title"
+          cover
+        >
+          <template #error>
+            <ContentIcon :icon="icon" size="2.25rem" />
+          </template>
+        </v-img>
+        <ContentIcon v-else :icon="icon" size="2.25rem" />
       </div>
       <h1
         ref="titleElement"
@@ -145,6 +159,12 @@ onBeforeUnmount(() => {
   background: rgb(var(--v-theme-secondary));
   color: rgb(var(--v-theme-on-secondary));
 }
+.runner-start-screen__icon--image { overflow: hidden; }
+.runner-start-screen__image {
+  width: 100% !important;
+  height: 100% !important;
+}
+.runner-start-screen__image :deep(.v-img__img) { object-fit: cover; }
 .runner-start-screen__title {
   width: 100%;
   max-width: 100%;

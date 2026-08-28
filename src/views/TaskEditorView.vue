@@ -10,6 +10,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import ContentIcon from '@/components/ContentIcon.vue'
 import DatePickerField from '@/components/DatePickerField.vue'
 import EmojiSelector from '@/components/EmojiSelector.vue'
+import ExerciseSelector from '@/components/ExerciseSelector.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
 import TaskReminderSettings from '@/components/TaskReminderSettings.vue'
 import TimerWheelPicker from '@/components/TimerWheelPicker.vue'
@@ -1161,18 +1162,6 @@ async function deleteTaskPermanently() {
               </div>
             </v-expansion-panel-title>
             <v-expansion-panel-text v-if="step.completionType !== 'day_off'">
-              <v-alert
-                v-if="stepWillBeArchived(step)"
-                type="info"
-                variant="tonal"
-                density="compact"
-                icon="mdi-archive-outline"
-                class="mt-2 mb-4"
-              >
-                {{ step.id && failedStepReferenceIds.has(step.id)
-                  ? 'History could not be checked, so this step will be archived to protect any logs.'
-                  : 'This step has history. It will be archived so its logs stay linked.' }}
-              </v-alert>
               <div class="field-stack mt-2 mb-4">
                 <v-text-field
                   v-model="step.name"
@@ -1223,6 +1212,12 @@ async function deleteTaskPermanently() {
                         @click.stop="removeCompletion(step, completion.id)"
                       />
                     </div>
+                    <ExerciseSelector
+                      v-model="completion.exercise"
+                      label="Exercise (optional)"
+                      dialog-title="Choose an exercise"
+                      class="mb-4"
+                    />
                     <v-select
                       :model-value="completionStyleValue(completion)"
                       label="Completion style"
@@ -1294,18 +1289,18 @@ async function deleteTaskPermanently() {
               >
                 Duplicate step
               </v-btn>
-              <v-btn
-                block
-                class="mt-2"
-                :color="stepWillBeArchived(step) ? 'warning' : 'error'"
-                variant="tonal"
-                :prepend-icon="stepWillBeArchived(step) ? 'mdi-archive-outline' : 'mdi-delete-outline'"
-                :disabled="checkingStepReferences(step)"
-                @click="removeStep(index)"
-              >
-                {{ checkingStepReferences(step)
-                  ? 'Checking history…'
-                  : stepWillBeArchived(step) ? 'Archive step' : 'Delete step' }}
+                <v-btn
+                  block
+                  class="mt-2"
+                  :color="stepWillBeArchived(step) ? 'warning' : 'error'"
+                  variant="tonal"
+                  :prepend-icon="stepWillBeArchived(step) ? 'mdi-archive-outline' : 'mdi-delete-outline'"
+                  :disabled="checkingStepReferences(step)"
+                  @click="removeStep(index)"
+                >
+                  {{ checkingStepReferences(step)
+                    ? 'Checking history…'
+                    : stepWillBeArchived(step) ? 'Archive step' : 'Delete step' }}
               </v-btn>
             </v-expansion-panel-text>
           </v-expansion-panel>

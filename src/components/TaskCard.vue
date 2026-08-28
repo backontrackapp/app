@@ -422,8 +422,30 @@ onBeforeUnmount(() => {
           @click="emit('runProgramStepRequirement', progress, requirement.id)"
         >
           <template #prepend>
-            <span class="task-detail-item__icon" :style="{ background: requirement.color || taskColor }">
-              <ContentIcon :icon="requirement.complete ? 'mdi-check-bold' : requirement.icon" size="1.125rem" />
+            <span
+              class="task-detail-item__icon"
+              :class="{ 'task-detail-item__icon--image': requirement.image }"
+              :style="{ background: requirement.color || taskColor }"
+            >
+              <v-img
+                v-if="requirement.image"
+                class="task-detail-item__image"
+                :src="requirement.image"
+                :alt="requirement.imageAlt || requirement.title"
+                cover
+              >
+                <template #error>
+                  <ContentIcon icon="mdi-dumbbell" size="1.125rem" />
+                </template>
+              </v-img>
+              <ContentIcon
+                v-else
+                :icon="requirement.complete ? 'mdi-check-bold' : requirement.icon"
+                size="1.125rem"
+              />
+              <span v-if="requirement.image && requirement.complete" class="task-detail-item__complete-badge">
+                <ContentIcon icon="mdi-check-bold" size=".625rem" />
+              </span>
             </span>
           </template>
         </v-list-item>
@@ -629,6 +651,7 @@ onBeforeUnmount(() => {
   opacity: .5;
 }
 .task-detail-item__icon {
+  position: relative;
   display: grid;
   width: 2rem;
   height: 2rem;
@@ -636,6 +659,31 @@ onBeforeUnmount(() => {
   place-items: center;
   border-radius: .65rem;
   color: #17200f;
+}
+.task-detail-item__icon--image {
+  overflow: hidden;
+  background: rgb(var(--v-theme-surface-variant)) !important;
+  border: .0625rem solid rgb(var(--v-theme-on-surface) / .12);
+}
+.task-detail-item__image {
+  width: 100% !important;
+  height: 100% !important;
+}
+.task-detail-item__image :deep(.v-img__img) {
+  object-fit: cover;
+}
+.task-detail-item__complete-badge {
+  position: absolute;
+  right: .1rem;
+  bottom: .1rem;
+  display: grid;
+  width: .9rem;
+  height: .9rem;
+  place-items: center;
+  border: .0625rem solid rgb(var(--v-theme-surface));
+  border-radius: 999px;
+  background: rgb(var(--v-theme-secondary));
+  color: rgb(var(--v-theme-on-secondary));
 }
 .tracking-duration-actions { display: grid; margin-top: -.2rem; padding: .2rem .4rem .5rem; gap: .5rem; }
 .tracking-duration-actions .v-btn { min-height: 2.75rem; }

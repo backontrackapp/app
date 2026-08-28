@@ -2,6 +2,8 @@
 
 A mobile-first personal management app for tasks, plans, habits, workouts, and programmable intervals. The client uses Vue 3, Vuetify, and TypeScript. A PHP API provides password/passkey authentication and secure SQLite access.
 
+Exercise data by [RepDB](https://repdb.co).
+
 ## Offline-first data
 
 After the first authenticated bootstrap, the app reads and writes its core data from IndexedDB. Edits, deletions, task progress, interval state, flashcard reviews, settings, shares, and journal images update the interface immediately and enter an ordered outbox. The app exchanges that outbox with the PHP API in the background, pulls remote changes every two minutes after activity, progressively backs idle pulls off to five minutes, and retries automatically after reconnect, focus, or app resume. A service worker precaches the web shell and uses Background Sync when the browser supports it; Android and iOS use Capacitor Background Runner as a best-effort closed-app uploader.

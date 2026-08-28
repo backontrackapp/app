@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { isValid, parseISO } from 'date-fns'
 import fitty, { type FittyInstance } from 'fitty'
 import { useRoute, useRouter } from 'vue-router'
@@ -79,6 +79,8 @@ import {
   MIN_GLOBAL_REPETITIONS,
   validateIntervalDefinition,
 } from '@/services/intervals'
+import { loadExerciseOptions } from '@/services/exercises'
+import { programStepRequirementName } from '@/services/programStepCompletions'
 import { toDateKey } from '@/services/schedule'
 import { intervalRunnerSessionMenuItems } from '@/services/runnerSessionActions'
 import { confirmSwipeHint, REVIEW_SET_CARD_SWIPE_HINT } from '@/services/swipeHints'
@@ -102,12 +104,17 @@ import type {
   RunnerSessionAction,
   TaskProgress,
 } from '@/types/domain'
+import type { ExerciseOption } from '@/types/exercise'
 
 const route = useRoute()
 const router = useRouter()
 const store = useIntervalStore()
 const flashcardStore = useFlashcardStore()
 const taskStore = useTaskStore()
+const exerciseOptions = shallowRef<ExerciseOption[]>([])
+const exerciseOptionsById = computed(() => new Map(
+  exerciseOptions.value.map(exercise => [exercise.id, exercise]),
+))
 const displayRemainingMs = ref(0)
 const progressRingsContent = ref<HTMLElement>()
 const timerValueElement = ref<HTMLElement>()
@@ -420,6 +427,41 @@ const originProgramStepId = computed(() => typeof route.query.step === 'string' 
 const originProgramStepCompletionId = computed(() => (
   typeof route.query.completion === 'string' ? route.query.completion : ''
 ))
+const attributedProgramStep = computed(() => {
+  const programStepId = originProgramStepId.value || session.value?.programStep
+  return programStepId
+    ? taskStore.steps.find(step => step.id === programStepId)
+    : undefined
+})
+const attributedProgramStepCompletion = computed(() => {
+  const completionId = originProgramStepCompletionId.value || session.value?.programStepCompletion
+  const completions = attributedProgramStep.value?.completions
+  const identified = completionId
+    ? completions?.find(completion => completion.id === completionId)
+    : undefined
+  if (identified) return identified
+  return completions?.find(completion => (
+    completion.type === 'interval'
+    && completion.intervalTemplate === session.value?.template
+  ))
+})
+const attributedExercise = computed(() => {
+  const exerciseId = attributedProgramStepCompletion.value?.exercise
+  return exerciseId ? exerciseOptionsById.value.get(exerciseId) : undefined
+})
+const runnerIdentityTitle = computed(() => programStepRequirementName(
+  attributedProgramStepCompletion.value,
+  attributedExercise.value?.name,
+  session.value?.name || 'Interval',
+))
+const runnerIdentityImage = computed(() => attributedExercise.value?.imageUrl)
+const runnerIdentitySummary = computed(() => {
+  if (!session.value) return ''
+  const duration = `${formatIntervalDuration(session.value.plannedSeconds)} total`
+  return runnerIdentityTitle.value === session.value.name
+    ? duration
+    : `${session.value.name} · ${duration}`
+})
 const originTaskDate = computed(() => {
   if (typeof route.query.date !== 'string') return toDateKey(new Date())
   const parsed = parseISO(route.query.date)
@@ -568,6 +610,9 @@ watch(remainingLabel, () => {
 
 onMounted(async () => {
   runnerMounted = true
+  void loadExerciseOptions('en')
+    .then(options => { exerciseOptions.value = options })
+    .catch(() => { /* Runner panels retain the Interval identity if the catalog is unavailable. */ })
   try {
     await Promise.all([
       store.loaded ? Promise.resolve() : store.load(),
@@ -2094,10 +2139,12 @@ async function runAgain(repetitions?: number) {
         v-if="!error && session && isTemplatePreview"
         key="start"
         class="runner-view"
-        :title="session.name"
-        :summary="`${formatIntervalDuration(session.plannedSeconds)} total`"
+        :title="runnerIdentityTitle"
+        :summary="runnerIdentitySummary"
         :task-name="startTaskName"
         :icon="sessionIcon"
+        :image="runnerIdentityImage"
+        :image-alt="attributedExercise?.name"
         :color="sessionColor"
         primary-label="Start interval"
         cancel-label="Cancel interval"
@@ -2111,11 +2158,27 @@ async function runAgain(repetitions?: number) {
         key="briefing"
         class="finish-card runner-view runner-view--briefing"
       >
-        <div class="finish-icon" :style="{ background: sessionColor }">
-          <ContentIcon :icon="sessionIcon" size="2.125rem" />
+        <div
+          class="finish-icon"
+          :class="{ 'finish-icon--image': runnerIdentityImage }"
+          :style="{ background: sessionColor }"
+        >
+          <v-img
+            v-if="runnerIdentityImage"
+            class="finish-image"
+            :src="runnerIdentityImage"
+            :alt="attributedExercise?.name || runnerIdentityTitle"
+            cover
+          >
+            <template #error>
+              <ContentIcon :icon="sessionIcon" size="2.125rem" />
+            </template>
+          </v-img>
+          <ContentIcon v-else :icon="sessionIcon" size="2.125rem" />
         </div>
         <p class="runner-label">{{ session.status === 'completed' ? 'Session complete' : 'Session ended' }}</p>
-        <h1 class="display-title">{{ session.name }}<span class="text-secondary">.</span></h1>
+        <h1 class="display-title">{{ runnerIdentityTitle }}<span class="text-secondary">.</span></h1>
+        <p v-if="runnerIdentityTitle !== session.name" class="finish-source">{{ session.name }}</p>
         <div class="finish-stats">
           <div><span>Planned</span><strong>{{ formatIntervalDuration(session.plannedSeconds) }}</strong></div>
           <div><span>Elapsed</span><strong>{{ formatIntervalDuration(session.elapsedSeconds) }}</strong></div>
@@ -2820,8 +2883,12 @@ async function runAgain(repetitions?: number) {
 .runner-controls .runner-confirm-button { width: min(100%, 22rem); grid-column: 1 / -1; }
 .runner-controls--landscape { display: none; }
 .finish-card { width: 100%; max-width: 620px; margin: auto; text-align: center; }
-.finish-icon { display: grid; width: 72px; height: 72px; margin: 0 auto 1rem; place-items: center; border-radius: 24px; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); }
+.finish-icon { display: grid; width: 4.5rem; height: 4.5rem; margin: 0 auto 1rem; place-items: center; border-radius: 1.5rem; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); }
+.finish-icon--image { overflow: hidden; }
+.finish-image { width: 100% !important; height: 100% !important; }
+.finish-image :deep(.v-img__img) { object-fit: cover; }
 .finish-card h1 { margin-top: .75rem; font-size: clamp(2.8rem, 12vw, 5rem); }
+.finish-source { margin-top: .5rem; color: rgb(var(--v-theme-on-surface) / .56); font-size: .875rem; font-weight: 800; }
 .finish-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem; margin: 2rem 0; }
 .finish-stats div { display: flex; padding: 1rem .5rem; flex-direction: column; border-radius: 16px; background: rgb(var(--v-theme-surface)); }
 .finish-stats span { color: rgb(var(--v-theme-on-surface) / .52); font-size: .6rem; text-transform: uppercase; }

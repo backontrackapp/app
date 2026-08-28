@@ -82,6 +82,7 @@ export interface ProgramStep {
 export interface ProgramStepCompletion {
   id: string
   type: ProgramStepCompletionType
+  exercise?: string
   label?: string
   targetValue?: number
   targetOperator?: TargetOperator
@@ -101,6 +102,8 @@ export interface ProgramStepRequirementListItem extends Pick<ProgramStepCompleti
   title: string
   subtitle: string
   icon: string
+  image?: string
+  imageAlt?: string
   color?: string
   disabled?: boolean
 }

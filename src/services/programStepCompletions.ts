@@ -33,6 +33,9 @@ function normalizedCompletion(value: unknown): ProgramStepCompletion | undefined
   }
   const id = typeof record.id === 'string' && record.id ? record.id : createLocalRecordId()
   const completion: ProgramStepCompletion = { id, type: type as ProgramStepCompletionType }
+  completion.exercise = typeof record.exercise === 'string'
+    ? record.exercise.trim() || undefined
+    : undefined
   if (completion.type !== 'quantity') {
     completion.label = String(record.label || '').trim() || undefined
   }
@@ -78,6 +81,7 @@ export function programStepCompletionPayload(completions: ProgramStepCompletion[
   return completions.map((completion) => ({
     id: completion.id,
     type: completion.type,
+    ...(completion.exercise?.trim() ? { exercise: completion.exercise.trim() } : {}),
     ...(completion.type !== 'quantity' && completion.label?.trim() ? {
       label: completion.label.trim(),
     } : {}),
@@ -94,6 +98,14 @@ export function programStepCompletionPayload(completions: ProgramStepCompletion[
       flashcardReviewSet: completion.flashcardReviewSet || '',
     } : {}),
   }))
+}
+
+export function programStepRequirementName(
+  completion: Pick<ProgramStepCompletion, 'label'> | undefined,
+  exerciseName: string | undefined,
+  fallbackName: string,
+) {
+  return completion?.label?.trim() || exerciseName?.trim() || fallbackName
 }
 
 export function programStepPrimaryCompletion(completions: ProgramStepCompletion[]) {
