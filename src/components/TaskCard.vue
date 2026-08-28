@@ -423,18 +423,8 @@ onBeforeUnmount(() => {
         >
           <template #prepend>
             <span class="task-detail-item__icon" :style="{ background: requirement.color || taskColor }">
-              <ContentIcon :icon="requirement.icon" size="1.125rem" />
+              <ContentIcon :icon="requirement.complete ? 'mdi-check-bold' : requirement.icon" size="1.125rem" />
             </span>
-          </template>
-          <template #append>
-            <v-icon
-              v-if="requirement.complete"
-              icon="mdi-check-circle"
-              color="success"
-              size="1.125rem"
-              class="mr-2"
-              aria-label="Complete"
-            />
           </template>
         </v-list-item>
       </v-list>
