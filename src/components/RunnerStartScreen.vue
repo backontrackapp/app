@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 const props = defineProps<{
   title: string
   summary: string
+  taskName?: string
   icon: string
   color?: string
   primaryLabel: string
@@ -81,6 +82,10 @@ onBeforeUnmount(() => {
         </template>
       </h1>
       <p class="runner-start-screen__summary">{{ summary }}</p>
+      <p v-if="taskName" class="runner-start-screen__task">
+        <v-icon icon="mdi-clipboard-check-outline" size="small" />
+        <span>{{ taskName }}</span>
+      </p>
     </div>
     <div class="runner-start-screen__actions">
       <v-btn
@@ -148,6 +153,22 @@ onBeforeUnmount(() => {
   color: rgb(var(--v-theme-on-surface) / .56);
   font-size: .875rem;
   font-weight: 800;
+}
+.runner-start-screen__task {
+  display: flex;
+  max-width: 100%;
+  margin-top: .75rem;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  color: rgb(var(--v-theme-on-surface) / .76);
+  font-size: .875rem;
+  font-weight: 900;
+}
+.runner-start-screen__task span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .runner-start-screen__actions {
   display: flex;

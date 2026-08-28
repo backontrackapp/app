@@ -50,6 +50,7 @@ import {
 } from '@/services/flashcards'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { showSavedSnackbar } from '@/stores/snackbar'
+import { useTaskStore } from '@/stores/tasks'
 import type {
   BackgroundFlashcardReviewState,
   Flashcard,
@@ -68,6 +69,7 @@ import type {
 const route = useRoute()
 const router = useRouter()
 const store = useFlashcardStore()
+const taskStore = useTaskStore()
 type ReviewCardTransitionDirection = 'previous' | 'next' | 'front' | 'back'
 const loading = ref(true)
 const busy = ref(false)
@@ -294,6 +296,10 @@ const passiveProgress = computed(() => {
 })
 const accuracy = computed(() => session.value ? sessionAccuracy(session.value) : undefined)
 const exitDestination = computed(() => route.query.from === 'tasks' ? '/tasks' : '/flashcards')
+const startTaskName = computed(() => {
+  const taskId = session.value?.task
+  return taskId ? taskStore.tasks.find(task => task.id === taskId)?.name : undefined
+})
 const speechWarning = computed(() => speechPlaybackWarning.value || backgroundSpeechWarning.value)
 const previewSummary = computed(() => {
   if (!session.value) return ''
@@ -413,7 +419,12 @@ watch(shouldKeepScreenAwake, (keepAwake) => {
 onMounted(async () => {
   mounted = true
   try {
-    if (!store.loaded) await store.load()
+    await Promise.all([
+      store.loaded ? Promise.resolve() : store.load(),
+      typeof route.query.task === 'string' && !taskStore.tasks.length
+        ? taskStore.load()
+        : Promise.resolve(),
+    ])
     if (typeof route.params.sessionId === 'string') {
       const loaded = await store.loadSession(route.params.sessionId)
       currentSessionId.value = loaded.id
@@ -1594,6 +1605,7 @@ async function leaveRunner() {
         class="px-4"
         :title="session.name"
         :summary="previewSummary"
+        :task-name="startTaskName"
         icon="mdi-cards-playing-outline"
         primary-label="Start review"
         cancel-label="Cancel review"

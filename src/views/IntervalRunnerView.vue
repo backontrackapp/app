@@ -407,6 +407,10 @@ const hasStarted = computed(() => {
 const playActionLabel = computed(() => hasStarted.value ? 'Resume' : 'Start')
 const returnTo = computed(() => route.query.from === 'tasks' ? '/tasks' : '/intervals')
 const originTaskId = computed(() => typeof route.query.task === 'string' ? route.query.task : '')
+const startTaskName = computed(() => {
+  const taskId = originTaskId.value || session.value?.task
+  return taskId ? taskStore.tasks.find(task => task.id === taskId)?.name : undefined
+})
 const originProgramStepId = computed(() => typeof route.query.step === 'string' ? route.query.step : '')
 const originProgramStepCompletionId = computed(() => (
   typeof route.query.completion === 'string' ? route.query.completion : ''
@@ -2087,6 +2091,7 @@ async function runAgain(repetitions?: number) {
         class="runner-view"
         :title="session.name"
         :summary="`${formatIntervalDuration(session.plannedSeconds)} total`"
+        :task-name="startTaskName"
         icon="mdi-timer-outline"
         :color="previewTemplate?.color"
         primary-label="Start interval"
