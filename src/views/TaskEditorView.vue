@@ -105,7 +105,7 @@ const completionStyleItems = computed<ProgramStepCompletionStyleItem[]>(() => [
         value: `interval:${interval.id}`,
         completionType: 'interval' as const,
         sourceId: interval.id,
-        icon: 'mdi-timer-play-outline',
+        icon: interval.icon || 'mdi-timer-play-outline',
         color: interval.color,
         props: {
           subtitle: `${formatIntervalDuration(intervalDuration(interval.definition))} · ${intervalStepCount(interval.definition)} intervals`,
@@ -127,8 +127,8 @@ const completionStyleItems = computed<ProgramStepCompletionStyleItem[]>(() => [
         value: `flashcards:${reviewSet.id}`,
         completionType: 'flashcards' as const,
         sourceId: reviewSet.id,
-        icon: 'mdi-cards-playing-outline',
-        color: TASK_TYPE_PRESENTATION.flashcards.color,
+        icon: reviewSet.icon || 'mdi-cards-outline',
+        color: reviewSet.color || TASK_TYPE_PRESENTATION.flashcards.color,
         props: { subtitle: reviewSetSummary(reviewSet.id) },
       }))
     : [{
@@ -1240,7 +1240,7 @@ async function deleteTaskPermanently() {
                               class="completion-style-icon mr-3"
                               :style="{ background: item.raw.color }"
                             >
-                              <v-icon :icon="item.raw.icon" size="18" />
+                              <ContentIcon :icon="item.raw.icon" size="1.125rem" />
                             </span>
                           </template>
                         </v-list-item>
@@ -1251,7 +1251,7 @@ async function deleteTaskPermanently() {
                             class="completion-style-selection__icon"
                             :style="{ background: item.raw.color }"
                           >
-                            <v-icon :icon="item.raw.icon" size="14" />
+                            <ContentIcon :icon="item.raw.icon" size=".875rem" />
                           </span>
                           <span class="text-truncate">{{ item.title }}</span>
                         </span>
