@@ -337,7 +337,6 @@ onBeforeUnmount(() => {
 
 .flashcard-response-text__primary {
   max-width: 34rem;
-  overflow: hidden;
   overflow-wrap: normal;
   font-weight: 850;
   line-height: 1.35;
