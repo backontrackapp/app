@@ -82,11 +82,14 @@ onBeforeUnmount(() => {
           {{ index ? ' ' : '' }}<span class="runner-start-screen__word">{{ word }}<span v-if="index === titleWords.length - 1" class="text-secondary">.</span></span>
         </template>
       </h1>
-      <p class="runner-start-screen__summary">{{ summary }}</p>
-      <p v-if="taskName" class="runner-start-screen__task">
-        <v-icon icon="mdi-clipboard-check-outline" size="small" />
-        <span>{{ taskName }}</span>
-      </p>
+      <div class="runner-start-screen__details">
+        <p v-if="taskName" class="runner-start-screen__task">
+          <v-icon icon="mdi-clipboard-check-outline" size="small" />
+          <span>{{ taskName }}</span>
+        </p>
+        <span v-if="taskName" class="runner-start-screen__separator" aria-hidden="true">·</span>
+        <p class="runner-start-screen__summary">{{ summary }}</p>
+      </div>
     </div>
     <div class="runner-start-screen__actions">
       <v-btn
@@ -149,16 +152,33 @@ onBeforeUnmount(() => {
   font-size: clamp(2rem, 10vw, 6rem);
 }
 .runner-start-screen__word { max-width: 100%; }
-.runner-start-screen__summary {
+.runner-start-screen__details {
+  display: flex;
+  width: 100%;
+  min-width: 0;
   margin-top: 1rem;
+  align-items: center;
+  justify-content: center;
+  gap: .75rem;
+}
+.runner-start-screen__summary {
+  margin: 0;
+  flex: 0 0 auto;
   color: rgb(var(--v-theme-on-surface) / .56);
   font-size: .875rem;
   font-weight: 800;
 }
+.runner-start-screen__separator {
+  flex: 0 0 auto;
+  color: rgb(var(--v-theme-on-surface) / .4);
+  font-weight: 900;
+}
 .runner-start-screen__task {
   display: flex;
+  min-width: 0;
   max-width: 100%;
-  margin-top: .75rem;
+  margin: 0;
+  flex: 0 1 auto;
   align-items: center;
   justify-content: center;
   gap: .5rem;
@@ -175,9 +195,16 @@ onBeforeUnmount(() => {
   display: flex;
   width: min(100%, 22rem);
   flex: 0 0 auto;
-  flex-direction: column;
+  align-items: stretch;
   gap: .75rem;
 }
-.runner-start-screen__actions :deep(.v-btn:first-child) { min-height: 4rem; }
-.runner-start-screen__actions :deep(.v-btn:last-child) { min-height: 3rem; }
+.runner-start-screen__actions :deep(.v-btn:first-child) {
+  min-width: 0;
+  min-height: 4rem;
+  flex: 1 1 auto;
+}
+.runner-start-screen__actions :deep(.v-btn:last-child) {
+  min-height: 4rem;
+  flex: 0 0 auto;
+}
 </style>
