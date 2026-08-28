@@ -2842,6 +2842,10 @@ async function runAgain(repetitions?: number) {
 .finish-note p { overflow-wrap: anywhere; white-space: pre-wrap; }
 .finish-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
 .finish-actions__done { min-height: 4rem; grid-column: 1 / -1; }
+@media (orientation: landscape) {
+  .finish-actions { grid-template-columns: 1fr; }
+  .finish-actions__done { grid-column: 1; }
+}
 .note-dialog-heading { display: flex; align-items: center; gap: 12px; }
 .note-dialog-icon {
   display: grid;

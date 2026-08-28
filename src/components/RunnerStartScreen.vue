@@ -196,6 +196,7 @@ onBeforeUnmount(() => {
   width: min(100%, 22rem);
   flex: 0 0 auto;
   align-items: stretch;
+  flex-direction: column;
   gap: .75rem;
 }
 .runner-start-screen__actions :deep(.v-btn:first-child) {
@@ -206,5 +207,45 @@ onBeforeUnmount(() => {
 .runner-start-screen__actions :deep(.v-btn:last-child) {
   min-height: 4rem;
   flex: 0 0 auto;
+}
+@media (orientation: landscape) {
+  .runner-start-screen {
+    width: min(100%, 42rem);
+    align-items: center;
+    flex-direction: row;
+    gap: 1rem;
+    text-align: left;
+  }
+  .runner-start-screen__identity {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: 5rem minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-items: center;
+    column-gap: 1.5rem;
+  }
+  .runner-start-screen__icon {
+    margin-bottom: 0;
+    grid-column: 1;
+    grid-row: 1 / 3;
+  }
+  .runner-start-screen__title {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: end;
+    font-size: clamp(2rem, 6vw, 4rem);
+  }
+  .runner-start-screen__details {
+    margin-top: .5rem;
+    grid-column: 2;
+    grid-row: 2;
+    align-self: start;
+    justify-content: flex-start;
+  }
+  .runner-start-screen__actions {
+    width: auto;
+    justify-content: flex-end;
+    flex-direction: column;
+  }
 }
 </style>
