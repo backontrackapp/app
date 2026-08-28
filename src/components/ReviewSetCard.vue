@@ -377,6 +377,9 @@ defineExpose({ refitContent })
             <span class="text-truncate">{{ setName }}</span>
             <span class="interval-review-card__count">({{ displayedBuffer.cardPosition }} of {{ cardCount }})</span>
           </span>
+          <small class="interval-review-card__side">
+            {{ displayedBuffer.side === 'front' ? 'Front' : 'Back' }}
+          </small>
         </div>
         <div class="interval-review-card__face-window">
           <div
@@ -727,6 +730,7 @@ defineExpose({ refitContent })
 .interval-review-card :deep(.v-ripple__container) { z-index: 2; }
 .interval-review-card__content { position: relative; z-index: 1; display: flex; box-sizing: border-box; min-height: 8.5rem; padding: 1rem; align-items: center; justify-content: flex-start; flex-direction: column; gap: .65rem; text-align: center; }
 .interval-review-card__heading { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; }
+.interval-review-card__side { flex: 0 0 auto; }
 .interval-review-card__meta { display: flex; min-width: 0; align-items: center; justify-content: flex-end; grid-column: 3; justify-self: end; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
 .interval-review-card__meta small { display: inline-flex; align-items: center; gap: .25rem; }
 .interval-review-card__set { display: flex; min-width: 0; max-width: 75%; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-align: left; text-transform: uppercase; }
