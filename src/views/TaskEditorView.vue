@@ -780,7 +780,7 @@ async function deleteTaskPermanently() {
         <EmojiSelector
           :model-value="draft.icon || TASK_TYPE_PRESENTATION[draft.type].icon"
           label="Task icon"
-          dialog-title="Choose a task icon"
+          dialog-title="Choose an icon"
           :clearable="Boolean(draft.icon)"
           class="mb-4"
           @update:model-value="draft.icon = $event"
