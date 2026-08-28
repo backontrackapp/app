@@ -6,6 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import AppDialog from '@/components/AppDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import ContentIcon from '@/components/ContentIcon.vue'
 import FlashcardCardDialog from '@/components/FlashcardCardDialog.vue'
 import FlashcardContextActions from '@/components/FlashcardContextActions.vue'
 import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsFields.vue'
@@ -240,6 +241,10 @@ const isTemplatePreview = computed(() => Boolean(route.params.templateId))
 const previewTemplate = computed(() => store.templates.find((item) => item.id === route.params.templateId))
 const persistedSession = computed(() => store.sessions.find((item) => item.id === route.params.sessionId))
 const session = computed(() => persistedSession.value || previewSession.value)
+const sessionTemplate = computed(() => previewTemplate.value
+  || store.templates.find(item => item.id === session.value?.template))
+const sessionIcon = computed(() => sessionTemplate.value?.icon || 'mdi-timer-outline')
+const sessionColor = computed(() => sessionTemplate.value?.color || '#C7F464')
 const current = computed(() => session.value ? resolveIntervalStep(session.value.definition, session.value.runtime.stepIndex) : undefined)
 const next = computed(() => session.value ? resolveIntervalStep(session.value.definition, session.value.runtime.stepIndex + 1) : undefined)
 const finished = computed(() => session.value?.status === 'completed' || session.value?.status === 'ended')
@@ -2092,8 +2097,8 @@ async function runAgain(repetitions?: number) {
         :title="session.name"
         :summary="`${formatIntervalDuration(session.plannedSeconds)} total`"
         :task-name="startTaskName"
-        icon="mdi-timer-outline"
-        :color="previewTemplate?.color"
+        :icon="sessionIcon"
+        :color="sessionColor"
         primary-label="Start interval"
         cancel-label="Cancel interval"
         :busy="starting"
@@ -2106,7 +2111,9 @@ async function runAgain(repetitions?: number) {
         key="briefing"
         class="finish-card runner-view runner-view--briefing"
       >
-        <div class="finish-icon"><v-icon :icon="session.status === 'completed' ? 'mdi-check-bold' : 'mdi-stop'" size="34" /></div>
+        <div class="finish-icon" :style="{ background: sessionColor }">
+          <ContentIcon :icon="sessionIcon" size="2.125rem" />
+        </div>
         <p class="runner-label">{{ session.status === 'completed' ? 'Session complete' : 'Session ended' }}</p>
         <h1 class="display-title">{{ session.name }}<span class="text-secondary">.</span></h1>
         <div class="finish-stats">

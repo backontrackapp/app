@@ -5,6 +5,7 @@ import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import AppForm from '@/components/AppForm.vue'
 import AppDialog from '@/components/AppDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import ContentIcon from '@/components/ContentIcon.vue'
 import FlashcardCardDialog from '@/components/FlashcardCardDialog.vue'
 import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsFields.vue'
 import ReviewSetCard from '@/components/ReviewSetCard.vue'
@@ -1606,7 +1607,8 @@ async function leaveRunner() {
         :title="session.name"
         :summary="previewSummary"
         :task-name="startTaskName"
-        icon="mdi-cards-playing-outline"
+        :icon="currentReviewSet?.icon || 'mdi-cards-outline'"
+        :color="currentReviewSet?.color || '#C7F464'"
         primary-label="Start review"
         cancel-label="Cancel review"
         :busy="busy"
@@ -1615,8 +1617,11 @@ async function leaveRunner() {
       />
 
       <section v-else-if="isFinished" class="completion-panel">
-        <div class="completion-panel__icon">
-          <v-icon :icon="session.status === 'completed' ? 'mdi-check-bold' : 'mdi-stop'" size="48" />
+        <div
+          class="completion-panel__icon"
+          :style="{ background: currentReviewSet?.color || '#C7F464' }"
+        >
+          <ContentIcon :icon="currentReviewSet?.icon || 'mdi-cards-outline'" size="3rem" />
         </div>
         <h1 class="display-title">{{ session.status === 'completed' ? 'Review complete' : 'Review ended' }}</h1>
         <p class="muted">
@@ -1978,7 +1983,7 @@ async function leaveRunner() {
   .session-settings-actions__primary { max-width: 10rem; }
 }
 .completion-panel { display: flex; width: min(42rem, calc(100% - 2rem)); min-height: 0; margin: 0 auto; padding: 2rem 0; align-items: center; justify-content: center; flex: 1 1 auto; flex-direction: column; gap: 1.25rem; overflow-y: auto; text-align: center; }
-.completion-panel__icon { display: grid; width: 6rem; height: 6rem; place-items: center; border-radius: 2rem; background: rgba(var(--v-theme-secondary), .16); color: rgb(var(--v-theme-secondary)); }
+.completion-panel__icon { display: grid; width: 6rem; height: 6rem; place-items: center; border-radius: 2rem; color: rgb(var(--v-theme-on-secondary)); }
 .completion-panel h1 { font-size: clamp(2.6rem, 10vw, 5rem); }
 .completion-panel__done { width: 100%; flex: 0 0 auto; }
 .completion-stats { display: grid; width: 100%; margin: 1rem 0; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .6rem; }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import ContentIcon from '@/components/ContentIcon.vue'
 
 const props = defineProps<{
   title: string
@@ -70,7 +71,7 @@ onBeforeUnmount(() => {
         class="runner-start-screen__icon"
         :style="color ? { background: color } : undefined"
       >
-        <v-icon :icon="icon" size="2.25rem" />
+        <ContentIcon :icon="icon" size="2.25rem" />
       </div>
       <h1
         ref="titleElement"
