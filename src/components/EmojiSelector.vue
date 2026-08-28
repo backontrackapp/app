@@ -294,7 +294,10 @@ watch(() => props.modelValue, (value) => {
 }
 
 .emoji-selector__dialog {
-  overflow: hidden;
+  max-height: calc(100dvh - 2rem);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .emoji-selector__header {
