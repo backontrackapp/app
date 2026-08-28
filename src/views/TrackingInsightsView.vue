@@ -77,6 +77,14 @@ function taskFactorIcon(task: Task) {
   })
 }
 
+function trackerScale(tracker: { kind: string; scaleMin: number; scaleMax: number }) {
+  const hasFixedScale = tracker.kind === 'rating' || tracker.kind === 'yes_no'
+  return {
+    scaleMin: hasFixedScale && tracker.scaleMax > tracker.scaleMin ? tracker.scaleMin : undefined,
+    scaleMax: hasFixedScale && tracker.scaleMax > tracker.scaleMin ? tracker.scaleMax : undefined,
+  }
+}
+
 const healthConnectFactorSources: TrackingFactorSource[] = isNativeHealthConnectSupported() ? [
   {
     id: 'health_connect:steps',
@@ -114,8 +122,7 @@ const factorSources = computed<TrackingFactorSource[]>(() => [
     unit: tracker.unit,
     color: tracker.color,
     factorMode: ['number', 'duration', 'rating'].includes(tracker.kind) ? 'quantity' as const : 'presence' as const,
-    scaleMin: tracker.scaleMax > tracker.scaleMin ? tracker.scaleMin : undefined,
-    scaleMax: tracker.scaleMax > tracker.scaleMin ? tracker.scaleMax : undefined,
+    ...trackerScale(tracker),
   })),
   ...tasks.activeTasks.map((task) => ({
     id: `task:${task.id}`,
@@ -162,8 +169,7 @@ const outcomeSources = computed<TrackingAnalysisSource[]>(() =>
     unit: tracker.unit,
     color: tracker.color,
     factorMode: 'quantity',
-    scaleMin: tracker.scaleMax > tracker.scaleMin ? tracker.scaleMin : undefined,
-    scaleMax: tracker.scaleMax > tracker.scaleMin ? tracker.scaleMax : undefined,
+    ...trackerScale(tracker),
   })),
 )
 
