@@ -6,6 +6,7 @@ import {
   flashcardEjectLoadsNext,
   flashcardReviewSettingsAreValid,
 } from '@/services/flashcards'
+import { notoEmojiImageUrl } from '@/services/emojis'
 import type {
   AssistantCardUpdate,
   AssistantChoice,
@@ -17,6 +18,7 @@ import type {
   AssistantWritePlan,
   FlashcardReviewSet,
   FlashcardReviewSetDraft,
+  SquareImageSourceValue,
 } from '@/types/domain'
 import type { useFlashcardStore } from '@/stores/flashcards'
 
@@ -254,6 +256,7 @@ export function assistantReadToolResult(
           back: card.back,
           transliteration: card.transliteration || '',
           note: card.note,
+          image: card.image,
           success_count: card.successCount,
           error_count: card.errorCount,
           last_reviewed_at: card.lastReviewedAt || '',
@@ -293,6 +296,7 @@ export function assistantReadToolResult(
         back: card.back,
         transliteration: card.transliteration || '',
         note: card.note,
+        image: card.image,
         success_count: card.successCount,
         error_count: card.errorCount,
         last_reviewed_at: card.lastReviewedAt || '',
@@ -353,6 +357,9 @@ export function assistantWritePlan(
       const transliteration = nullableText(record.transliteration, 4000, 'Transliteration')
         ?? current.transliteration ?? ''
       const note = nullableText(record.note, 2000, 'Note') ?? current.note
+      const imageEmoji = nullableText(record.image, 64, 'Image')
+      const imageUrl = imageEmoji === undefined ? undefined : imageEmoji ? notoEmojiImageUrl(imageEmoji) : ''
+      if (imageEmoji && !imageUrl) throw new Error('Choose one Noto Emoji for the card image.')
       if (!front || !back) throw new Error('Card fronts and backs cannot be empty.')
       const draft = {
         id: current.id,
@@ -363,7 +370,26 @@ export function assistantWritePlan(
         tags: [...current.tags],
       }
       const changes = cardChanges(current, draft)
-      if (changes.length) updates.push({ id: current.id, label: current.front, draft, changes })
+      let image: SquareImageSourceValue | undefined
+      const currentImage = current.image || ''
+      const currentImageSource = current.imageSource || (currentImage ? 'url' : 'none')
+      if (
+        imageUrl !== undefined
+        && (imageUrl !== currentImage || currentImageSource !== (imageUrl ? 'url' : 'none'))
+      ) {
+        image = {
+          source: imageUrl ? 'url' : 'none',
+          url: imageUrl,
+          existingUrl: currentImage,
+          existingSource: currentImageSource,
+        }
+        changes.push({
+          label: 'Image',
+          before: currentImage ? 'Current image' : 'None',
+          after: imageEmoji || 'None',
+        })
+      }
+      if (changes.length) updates.push({ id: current.id, label: current.front, draft, image, changes })
     }
     if (!updates.length) throw new Error('The requested content already matches these cards.')
     return {
@@ -521,7 +547,7 @@ export function assistantWritePlan(
 
 export async function executeAssistantWritePlan(plan: AssistantWritePlan, store: FlashcardStore) {
   if (plan.updatedCards) {
-    for (const update of plan.updatedCards) await store.saveCard(update.draft)
+    for (const update of plan.updatedCards) await store.saveCard(update.draft, update.image)
     return {
       type: 'function_call_output' as const,
       callId: plan.call.callId,
