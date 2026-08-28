@@ -111,7 +111,7 @@ On the host, place a copy of `.env.prod` named `.env` at the project root becaus
 - `pnpm ios:open` — open the native project in Xcode
 - `pnpm ios:run` — sync and run on an iOS simulator or device
 - `pnpm ios:build:release` — create a signed release IPA using the configured Apple signing identity
-- `pnpm release:android [X.X.X]` — update Android and iOS versions, then create and push a release commit and annotated tag summarizing committed changes since the previous release
+- `pnpm release:android [X.X.X]` — update Android and iOS versions, then create and push a release commit and annotated tag summarizing committed changes since the previous release; the tag workflow creates or updates the matching GitHub Release and attaches the signed APK and its SHA-256 checksum
 
 ## iOS release builds
 

@@ -2146,7 +2146,7 @@ async function saveTaskLogEntry() {
       <div v-if="reviewItems.length > 3" class="review-bulk-actions px-2 pb-3">
         <p class="text-caption muted mb-2">Apply one resolution to the full backlog.</p>
         <v-row dense>
-          <v-col cols="12" md="4">
+          <v-col cols="12">
             <v-btn
               block
               size="large"
@@ -2159,7 +2159,7 @@ async function saveTaskLogEntry() {
               Mark all missed
             </v-btn>
           </v-col>
-          <v-col cols="12" md="4">
+          <v-col cols="12">
             <v-btn
               block
               size="large"
@@ -2171,7 +2171,7 @@ async function saveTaskLogEntry() {
               Carry all forward
             </v-btn>
           </v-col>
-          <v-col v-if="reviewProgramItems.length" cols="12" md="4">
+          <v-col v-if="reviewProgramItems.length" cols="12">
             <v-btn
               block
               size="large"
@@ -2412,7 +2412,6 @@ async function saveTaskLogEntry() {
   .task-stack { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .task-hour-stack,
   .task-all-day-stack { grid-template-columns: 1fr; }
-  .review-actions { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
 }
 
 @media (prefers-reduced-motion: reduce) {

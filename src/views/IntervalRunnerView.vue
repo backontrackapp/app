@@ -6,6 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import AppDialog from '@/components/AppDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import ContentIcon from '@/components/ContentIcon.vue'
 import FlashcardCardDialog from '@/components/FlashcardCardDialog.vue'
 import FlashcardContextActions from '@/components/FlashcardContextActions.vue'
 import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsFields.vue'
@@ -240,6 +241,10 @@ const isTemplatePreview = computed(() => Boolean(route.params.templateId))
 const previewTemplate = computed(() => store.templates.find((item) => item.id === route.params.templateId))
 const persistedSession = computed(() => store.sessions.find((item) => item.id === route.params.sessionId))
 const session = computed(() => persistedSession.value || previewSession.value)
+const sessionTemplate = computed(() => previewTemplate.value
+  || store.templates.find(item => item.id === session.value?.template))
+const sessionIcon = computed(() => sessionTemplate.value?.icon || 'mdi-timer-outline')
+const sessionColor = computed(() => sessionTemplate.value?.color || '#C7F464')
 const current = computed(() => session.value ? resolveIntervalStep(session.value.definition, session.value.runtime.stepIndex) : undefined)
 const next = computed(() => session.value ? resolveIntervalStep(session.value.definition, session.value.runtime.stepIndex + 1) : undefined)
 const finished = computed(() => session.value?.status === 'completed' || session.value?.status === 'ended')
@@ -407,6 +412,10 @@ const hasStarted = computed(() => {
 const playActionLabel = computed(() => hasStarted.value ? 'Resume' : 'Start')
 const returnTo = computed(() => route.query.from === 'tasks' ? '/tasks' : '/intervals')
 const originTaskId = computed(() => typeof route.query.task === 'string' ? route.query.task : '')
+const startTaskName = computed(() => {
+  const taskId = originTaskId.value || session.value?.task
+  return taskId ? taskStore.tasks.find(task => task.id === taskId)?.name : undefined
+})
 const originProgramStepId = computed(() => typeof route.query.step === 'string' ? route.query.step : '')
 const originProgramStepCompletionId = computed(() => (
   typeof route.query.completion === 'string' ? route.query.completion : ''
@@ -2087,8 +2096,9 @@ async function runAgain(repetitions?: number) {
         class="runner-view"
         :title="session.name"
         :summary="`${formatIntervalDuration(session.plannedSeconds)} total`"
-        icon="mdi-timer-outline"
-        :color="previewTemplate?.color"
+        :task-name="startTaskName"
+        :icon="sessionIcon"
+        :color="sessionColor"
         primary-label="Start interval"
         cancel-label="Cancel interval"
         :busy="starting"
@@ -2101,7 +2111,9 @@ async function runAgain(repetitions?: number) {
         key="briefing"
         class="finish-card runner-view runner-view--briefing"
       >
-        <div class="finish-icon"><v-icon :icon="session.status === 'completed' ? 'mdi-check-bold' : 'mdi-stop'" size="34" /></div>
+        <div class="finish-icon" :style="{ background: sessionColor }">
+          <ContentIcon :icon="sessionIcon" size="2.125rem" />
+        </div>
         <p class="runner-label">{{ session.status === 'completed' ? 'Session complete' : 'Session ended' }}</p>
         <h1 class="display-title">{{ session.name }}<span class="text-secondary">.</span></h1>
         <div class="finish-stats">
@@ -2830,6 +2842,10 @@ async function runAgain(repetitions?: number) {
 .finish-note p { overflow-wrap: anywhere; white-space: pre-wrap; }
 .finish-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
 .finish-actions__done { min-height: 4rem; grid-column: 1 / -1; }
+@media (orientation: landscape) {
+  .finish-actions { grid-template-columns: 1fr; }
+  .finish-actions__done { grid-column: 1; }
+}
 .note-dialog-heading { display: flex; align-items: center; gap: 12px; }
 .note-dialog-icon {
   display: grid;

@@ -42,13 +42,15 @@ const cardInk = computed(() => {
       v-ripple
       type="button"
       class="tracker-card__action"
-      :aria-label="`Open ${tracker.name} actions`"
+      :aria-label="logged
+        ? `Open ${tracker.name} actions; logged for selected date`
+        : `Open ${tracker.name} actions`"
       @click="emit('actions', tracker)"
     >
       <span class="tracker-card__header">
         <ContentIcon
-          :icon="tracker.icon"
-          :fallback-icon="trackingCategoryIcon(tracker.category)"
+          :icon="logged ? 'mdi-check-bold' : tracker.icon"
+          :fallback-icon="logged ? 'mdi-check-bold' : trackingCategoryIcon(tracker.category)"
           size="2rem"
         />
       </span>

@@ -77,9 +77,8 @@ function yAt(value: number, range: [number, number]) {
 function seriesPath(key: 'factorValue' | 'outcomeValue', range: [number, number]) {
   return props.points.reduce((path, point, index) => {
     const value = point[key]
-    if (value === null) return `${path} `
-    const previous = props.points[index - 1]?.[key]
-    const command = index === 0 || previous === null || previous === undefined ? 'M' : 'L'
+    if (value === null) return path
+    const command = path ? 'L' : 'M'
     return `${path}${command}${xAt(index).toFixed(2)},${yAt(value, range).toFixed(2)} `
   }, '').trim()
 }

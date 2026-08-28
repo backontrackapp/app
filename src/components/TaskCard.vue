@@ -460,18 +460,8 @@ onBeforeUnmount(() => {
           >
             <template #prepend>
               <span class="task-detail-item__icon" :style="{ background: tracker.color }">
-                <ContentIcon :icon="tracker.icon" size="1.125rem" />
+                <ContentIcon :icon="tracker.logged ? 'mdi-check-bold' : tracker.icon" size="1.125rem" />
               </span>
-            </template>
-            <template #append>
-              <v-icon
-                v-if="tracker.logged"
-                icon="mdi-check-circle"
-                color="success"
-                size="1.125rem"
-                class="mr-2"
-                aria-label="Logged"
-              />
             </template>
           </v-list-item>
           <div v-if="tracker.kind === 'duration'" class="tracking-duration-actions">

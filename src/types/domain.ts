@@ -781,6 +781,7 @@ export interface AssistantCardUpdate {
   id: string
   label: string
   draft: FlashcardDraft
+  image?: SquareImageSourceValue
   changes: AssistantReviewSetChange[]
 }
 

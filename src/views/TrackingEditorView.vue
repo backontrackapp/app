@@ -99,6 +99,9 @@ watch(() => draft.kind, (kind) => {
     draft.scaleMin = 0
     draft.scaleMax = 0
     draft.unit = 'minutes'
+  } else if (kind === 'number') {
+    draft.scaleMin = 0
+    draft.scaleMax = 0
   }
 })
 
