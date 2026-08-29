@@ -56,13 +56,14 @@ public class MainActivity extends BridgeActivity {
     public void onResume() {
         super.onResume();
         appVisible = true;
-        TransientAudioFocus.reapplyActiveFocusIfNecessary();
+        TransientAudioFocus.setAppVisible(true);
         updateSystemBarVisibility();
     }
 
     @Override
     public void onPause() {
         appVisible = false;
+        TransientAudioFocus.setAppVisible(false);
         super.onPause();
     }
 
