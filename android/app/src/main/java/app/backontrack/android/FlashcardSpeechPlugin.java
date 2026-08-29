@@ -30,6 +30,8 @@ import java.util.TreeSet;
 @CapacitorPlugin(name = "FlashcardSpeech")
 public class FlashcardSpeechPlugin extends Plugin {
 
+    private static volatile FlashcardSpeechPlugin activeInstance;
+
     private static final int NOTIFICATION_PERMISSION_REQUEST = 9021;
 
     private final List<PluginCall> pendingLanguageCalls = new ArrayList<>();
@@ -45,6 +47,7 @@ public class FlashcardSpeechPlugin extends Plugin {
 
     @Override
     public void load() {
+        activeInstance = this;
         volumeBoost = new TtsVolumeBoost(getContext());
         volumeBoost.setPlaybackListener(new TtsVolumeBoost.PlaybackListener() {
             @Override
@@ -234,6 +237,15 @@ public class FlashcardSpeechPlugin extends Plugin {
         if (recordingPlayer != null) recordingPlayer.stop();
     }
 
+    static boolean isForegroundSpeechActive() {
+        FlashcardSpeechPlugin instance = activeInstance;
+        return instance != null && (
+            instance.pendingSpeechCall != null
+                || (instance.volumeBoost != null && instance.volumeBoost.isActive())
+                || (instance.recordingPlayer != null && instance.recordingPlayer.isActive())
+        );
+    }
+
     @PluginMethod
     public void startBackground(PluginCall call) {
         JSArray cards = call.getArray("cards");
@@ -342,6 +354,7 @@ public class FlashcardSpeechPlugin extends Plugin {
 
     @Override
     protected void handleOnDestroy() {
+        if (activeInstance == this) activeInstance = null;
         for (PluginCall call : pendingLanguageCalls) {
             call.unavailable("Speech synthesis stopped before languages were loaded.");
         }

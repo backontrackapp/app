@@ -503,6 +503,18 @@ export async function stopFlashcardSpeech() {
   }
 }
 
+export async function waitForFlashcardSpeechCompletion() {
+  while (true) {
+    const active = isNativeAndroid()
+      ? await NativeFlashcardSpeech.isSpeechActive?.()
+        .then(result => result.active)
+        .catch(() => false) || false
+      : Boolean(activeBrowserUtterance || activeRecordedAudio)
+    if (!active) return
+    await new Promise(resolve => setTimeout(resolve, 50))
+  }
+}
+
 export async function waitForFlashcardSpeechHandoff(
   refreshProgress?: () => void | Promise<void>,
 ) {

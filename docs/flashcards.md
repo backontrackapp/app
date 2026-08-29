@@ -72,7 +72,7 @@ Creating a custom Review set from the bulk dialog redirects directly to its edit
 
 Active Interval settings include the same Review cards section as the Interval form, so a Review set can be attached, replaced, or removed during a run. The Apply to menu in active Interval and Review set settings offers Current session, the saved Interval or Review set, and Both. Choosing Both updates the saved source and the active session snapshot so the current run reflects the new settings immediately.
 
-Passive Review set settings use 1–60 second sliders for the front and back display durations. Each slider updates in one-second increments and shows its current duration alongside the range.
+Passive Review set settings use 1–60 second sliders for the front and back display durations. Each slider updates in one-second increments and shows its current duration alongside the range. When speech or a saved recording is enabled, that playback completes before the configured display duration begins, so a 1.5-second utterance with a 3-second duration keeps the face visible for 4.5 seconds in total.
 
 The Card order setting uses review history and quick tags together. **Most difficult** puts Hard-tagged cards first, followed by the highest error rates; **Easiest** puts Easy-tagged cards first, followed by the lowest error rates. Within each tag group, cards without graded attempts follow cards with difficulty history. DESC reverses the resulting order.
 

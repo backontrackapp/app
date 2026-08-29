@@ -21,6 +21,7 @@ import {
   stopFlashcardSpeech,
   syncBackgroundFlashcardReview,
   toggleFlashcardSpeechOverAmplification,
+  waitForFlashcardSpeechCompletion,
   waitForFlashcardSpeechHandoff,
 } from '@/services/flashcardSpeech'
 import {
@@ -121,6 +122,7 @@ const sessionSettingsDraft = reactive<FlashcardReviewSettings>({
 const tickVersion = ref(0)
 const passiveSide = ref<'front' | 'back'>('front')
 const passiveRemainingMs = ref(0)
+const passiveSpeechPlaying = ref(false)
 const localElapsedMs = ref(0)
 const currentQueueIndex = ref(0)
 const ejectedQueueIndexes: number[] = []
@@ -611,7 +613,11 @@ function tick() {
     tickVersion.value++
     return
   }
-  if (session.value?.mode === 'passive' && currentCard.value) {
+  if (
+    session.value?.mode === 'passive'
+    && currentCard.value
+    && !passiveSpeechPlaying.value
+  ) {
     passiveRemainingMs.value = Math.max(0, passiveRemainingMs.value - delta)
     if (passiveRemainingMs.value === 0 && !passiveAdvancing) void advancePassive()
   }
@@ -958,12 +964,15 @@ async function speakCurrentSide(allowPaused = false) {
   ) {
     if (!value || !card || !value.speechEnabled) lastSpokenKey = ''
     await stopFlashcardSpeech()
+    if (request === speechRequest) passiveSpeechPlaying.value = false
     return
   }
   if (key === lastSpokenKey) return
 
   lastSpokenKey = key
   const side = currentSpeechSide.value
+  const holdPassiveDuration = value.mode === 'passive' && value.status === 'running'
+  if (holdPassiveDuration) passiveSpeechPlaying.value = true
   try {
     const text = side === 'front' ? card.front : card.back
     const language = side === 'front' ? value.frontLanguage : value.backLanguage
@@ -973,12 +982,26 @@ async function speakCurrentSide(allowPaused = false) {
     })
     if (audio) await speakFlashcardText(text, language, '', audio)
     else await speakFlashcardText(text, language)
+    if (holdPassiveDuration) await waitForFlashcardSpeechCompletion()
     if (request === speechRequest) speechPlaybackWarning.value = ''
   } catch {
     if (request === speechRequest) spokenWord.value = undefined
     if (request === speechRequest && !speechFailureWarnedSessionIds.has(value.id)) {
       speechFailureWarnedSessionIds.add(value.id)
       speechFailureSnackbar.value = true
+    }
+  } finally {
+    if (request === speechRequest) {
+      passiveSpeechPlaying.value = false
+      lastTickAt = Date.now()
+      if (holdPassiveDuration) {
+        savePassiveState()
+        if (
+          document.visibilityState === 'visible'
+          && !visibilitySpeechHandoff.value
+          && !reconcilingBackground.value
+        ) void syncNativeBackground()
+      }
     }
   }
 }

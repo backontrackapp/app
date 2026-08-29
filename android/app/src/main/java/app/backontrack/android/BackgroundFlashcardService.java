@@ -77,12 +77,20 @@ public class BackgroundFlashcardService extends Service {
     private String pendingSpeechLanguage = "";
     private String pendingRecordingUrl = "";
     private long lastNotificationSecond = -1L;
+    private long lastTickElapsedMs;
+    private boolean speechTimingHeld;
 
     private final Runnable ticker = new Runnable() {
         @Override
         public void run() {
             if (!running) return;
             long now = SystemClock.elapsedRealtime();
+            boolean holdSpeechTiming = shouldHoldSpeechTiming();
+            if (speechTimingHeld || holdSpeechTiming) {
+                deadlineElapsedMs += Math.max(0L, now - lastTickElapsedMs);
+            }
+            lastTickElapsedMs = now;
+            speechTimingHeld = holdSpeechTiming;
             if (timeLimitMs > 0L && currentElapsedMs(now) >= timeLimitMs) {
                 finishReview(now);
                 return;
@@ -92,6 +100,7 @@ public class BackgroundFlashcardService extends Service {
             advance(now);
             if (!running) return;
             repeatBackSpeechWhenDue(now);
+            speechTimingHeld = shouldHoldSpeechTiming();
             long notificationSecond = Math.max(0L, deadlineElapsedMs - now) / 1000L;
             if (notificationSecond != lastNotificationSecond) {
                 lastNotificationSecond = notificationSecond;
@@ -207,6 +216,7 @@ public class BackgroundFlashcardService extends Service {
         speechOverAmplified = config.optBoolean("overAmplified", false);
         baseElapsedMs = Math.max(0L, config.optLong("elapsedMs", 0L));
         configuredElapsedMs = SystemClock.elapsedRealtime();
+        lastTickElapsedMs = configuredElapsedMs;
         long remainingMs = Math.max(1L, config.optLong("remainingMs", 1L));
         deadlineElapsedMs = configuredElapsedMs + remainingMs;
         lastBackSpeechRepeatIndex = "back".equals(side)
@@ -222,7 +232,16 @@ public class BackgroundFlashcardService extends Service {
         pendingSpeechLanguage = "";
         pendingRecordingUrl = "";
         stopSpeechPlayback();
+        speechTimingHeld = shouldHoldSpeechTiming();
         persistState();
+    }
+
+    private boolean shouldHoldSpeechTiming() {
+        return FlashcardSpeechPlugin.isForegroundSpeechActive()
+            || !pendingSpeechText.isEmpty()
+            || !pendingRecordingUrl.isEmpty()
+            || (volumeBoost != null && volumeBoost.isActive())
+            || (recordingPlayer != null && recordingPlayer.isActive());
     }
 
     private void advance(long now) {
