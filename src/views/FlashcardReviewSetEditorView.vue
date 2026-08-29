@@ -557,15 +557,18 @@ async function remove() {
           hide-details="auto"
           :label="`Also delete ${deleteCardCount === 1 ? 'its card' : `all ${deleteCardCount} cards`}`"
         />
-        <v-alert
-          v-if="deleteCardsWithReviewSet"
-          type="warning"
-          variant="tonal"
-          density="compact"
-          class="mt-2"
-        >
-          These cards will be removed from the Card library and every other Review set.
-        </v-alert>
+        <v-expand-transition>
+          <div v-if="deleteCardsWithReviewSet">
+            <v-alert
+              type="warning"
+              variant="tonal"
+              density="compact"
+              class="mt-2"
+            >
+              These cards will be removed from the Card library and every other Review set.
+            </v-alert>
+          </div>
+        </v-expand-transition>
       </div>
     </ConfirmDialog>
   </main>
