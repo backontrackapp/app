@@ -523,7 +523,7 @@ defineExpose({ refitContent })
               >
                 <span class="review-card__answer">
                   <span
-                    v-if="buffer.cardSides === 'both' && !buffer.invertFaces"
+                    v-if="buffer.cardSides === 'both' && !buffer.invertFaces && !buffer.card.note.trim()"
                     class="review-card__front-reference"
                   >
                     {{ buffer.card.front }}
@@ -610,7 +610,7 @@ defineExpose({ refitContent })
                       :colorize-pinyin="bufferColorizesPinyin(buffer)"
                     />
                     <span
-                      v-if="buffer.cardSides === 'both' && !buffer.invertFaces"
+                      v-if="buffer.cardSides === 'both' && !buffer.invertFaces && !buffer.card.note.trim()"
                       class="review-card__front-reference"
                     >
                       {{ buffer.card.front }}
