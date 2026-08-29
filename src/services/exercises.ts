@@ -34,6 +34,25 @@ function localizedValue(
   return exercise[`${field}_en`]
 }
 
+function localizedList(
+  exercise: ExerciseDatasetRecord,
+  field: 'instructions' | 'tips',
+  locale: ExerciseLocale,
+) {
+  const value = exercise[`${field}_${locale}` as keyof ExerciseDatasetRecord]
+  if (Array.isArray(value) && value.length) return value
+  return exercise[`${field}_en`]
+}
+
+function exerciseImageUrls(exercise: ExerciseDatasetRecord) {
+  const { main, start, peak } = exercise.images.flat
+  return {
+    ...(main ? { main: `/exercises/${main}` } : {}),
+    ...(start ? { start: `/exercises/${start}` } : {}),
+    ...(peak ? { peak: `/exercises/${peak}` } : {}),
+  }
+}
+
 function exerciseImageUrl(exercise: ExerciseDatasetRecord) {
   const image = exercise.images.flat.main
     || exercise.images.flat.start
@@ -55,6 +74,7 @@ export function buildExerciseOptions(
       const bodyPartLabel = formatExerciseTerm(exercise.body_part)
       const primaryMuscles = exercise.primary_muscles || []
       const secondaryMuscles = exercise.secondary_muscles || []
+      const imageUrls = exerciseImageUrls(exercise)
 
       return {
         id: exercise.id,
@@ -70,6 +90,9 @@ export function buildExerciseOptions(
         primaryMuscles,
         secondaryMuscles,
         imageUrl: exerciseImageUrl(exercise),
+        imageUrls,
+        instructions: localizedList(exercise, 'instructions', locale),
+        tips: localizedList(exercise, 'tips', locale),
         searchText: normalizeSearchText([
           exercise.category,
           equipment,

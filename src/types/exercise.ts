@@ -14,6 +14,12 @@ export interface ExerciseDatasetRecord {
   description_en: string
   description_de: string
   description_es: string
+  instructions_en: string[]
+  instructions_de: string[]
+  instructions_es: string[]
+  tips_en: string[]
+  tips_de: string[]
+  tips_es: string[]
   category: string
   difficulty: string
   equipment?: string
@@ -63,6 +69,9 @@ export interface ExerciseOption {
   primaryMuscles: string[]
   secondaryMuscles: string[]
   imageUrl: string
+  imageUrls: ExerciseImageVariants
+  instructions: string[]
+  tips: string[]
   searchText: string
 }
 

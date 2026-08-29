@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { isValid, parseISO } from 'date-fns'
 import fitty, { type FittyInstance } from 'fitty'
 import { useRoute, useRouter } from 'vue-router'
@@ -7,6 +7,7 @@ import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import AppDialog from '@/components/AppDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import ContentIcon from '@/components/ContentIcon.vue'
+import ExerciseDetailsPanel from '@/components/ExerciseDetailsPanel.vue'
 import FlashcardCardDialog from '@/components/FlashcardCardDialog.vue'
 import FlashcardContextActions from '@/components/FlashcardContextActions.vue'
 import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsFields.vue'
@@ -80,6 +81,7 @@ import {
   validateIntervalDefinition,
 } from '@/services/intervals'
 import { exercisePresentationById } from '@/services/exercisePresentations'
+import { loadExerciseOptions } from '@/services/exercises'
 import { programStepRequirementName } from '@/services/programStepCompletions'
 import { toDateKey } from '@/services/schedule'
 import { intervalRunnerSessionMenuItems } from '@/services/runnerSessionActions'
@@ -104,6 +106,7 @@ import type {
   RunnerSessionAction,
   TaskProgress,
 } from '@/types/domain'
+import type { ExerciseOption } from '@/types/exercise'
 
 const route = useRoute()
 const router = useRouter()
@@ -205,6 +208,10 @@ const pendingCompletion = ref<{
 const backgroundError = ref('')
 const timerEffect = ref<'count' | ''>('')
 const timerEffectKey = ref(0)
+const runnerExercise = shallowRef<ExerciseOption>()
+const runnerExerciseVisible = ref(false)
+const runnerSwipeOffset = ref(0)
+const runnerSwipeDragging = ref(false)
 let animationFrame: number | undefined
 let wakeLock: { release: () => Promise<void> } | undefined
 let runnerMounted = false
@@ -218,6 +225,14 @@ let intervalFlashcardSwipeStart: {
   scrollElement?: HTMLElement
   scrollTop: number
   maxScrollTop: number
+} | undefined
+let runnerExerciseRequestId = 0
+let runnerSwipeStart: {
+  input: 'pointer' | 'touch'
+  pointerId: number
+  x: number
+  y: number
+  width: number
 } | undefined
 let suppressIntervalFlashcardClick = false
 let lastSpokenFlashcardKey = ''
@@ -445,6 +460,9 @@ const attributedExercise = computed(() => {
   const exerciseId = attributedProgramStepCompletion.value?.exercise
   return exercisePresentationById(exerciseId)
 })
+const runnerStageTrackStyle = computed(() => ({
+  transform: `translate3d(calc(${runnerExerciseVisible.value ? '-100%' : '0%'} + ${runnerSwipeOffset.value}px), 0, 0)`,
+}))
 const runnerIdentityTitle = computed(() => programStepRequirementName(
   attributedProgramStepCompletion.value,
   attributedExercise.value?.name,
@@ -461,6 +479,25 @@ const runnerIdentitySummary = computed(() => {
     ? duration
     : `${session.value.name} · ${duration}`
 })
+
+watch(() => attributedExercise.value?.id, async (exerciseId) => {
+  const requestId = ++runnerExerciseRequestId
+  runnerExercise.value = undefined
+  runnerExerciseVisible.value = false
+  runnerSwipeOffset.value = 0
+  runnerSwipeDragging.value = false
+  runnerSwipeStart = undefined
+  if (!exerciseId) return
+
+  try {
+    const exercises = await loadExerciseOptions()
+    if (requestId === runnerExerciseRequestId) {
+      runnerExercise.value = exercises.find(exercise => exercise.id === exerciseId)
+    }
+  } catch {
+    // The runner remains fully usable when the bundled exercise details cannot be loaded.
+  }
+}, { immediate: true })
 const originTaskDate = computed(() => {
   if (typeof route.query.date !== 'string') return toDateKey(new Date())
   const parsed = parseISO(route.query.date)
@@ -707,6 +744,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   runnerMounted = false
+  runnerExerciseRequestId += 1
+  resetRunnerSwipe()
   timerFitResizeObserver?.disconnect()
   timerFit?.unsubscribe()
   if (animationFrame !== undefined) window.cancelAnimationFrame(animationFrame)
@@ -1596,6 +1635,198 @@ async function showIntervalFlashcardSide(
   }
 }
 
+function resetRunnerSwipe() {
+  runnerSwipeStart = undefined
+  runnerSwipeOffset.value = 0
+  runnerSwipeDragging.value = false
+}
+
+function showRunnerExercise() {
+  if (!runnerExercise.value) return
+  resetRunnerSwipe()
+  runnerExerciseVisible.value = true
+}
+
+function showRunnerProgress() {
+  resetRunnerSwipe()
+  runnerExerciseVisible.value = false
+  void nextTick(() => timerFit?.fit({ sync: true }))
+}
+
+function runnerSwipeCanStart(target: EventTarget | null) {
+  const element = target instanceof Element ? target : undefined
+  if (!runnerExercise.value || !element) return false
+  if (element.closest('button, a, [role="button"]')) return false
+  return runnerExerciseVisible.value || Boolean(element.closest('.runner-main'))
+}
+
+function beginRunnerGesture(
+  input: 'pointer' | 'touch',
+  pointerId: number,
+  x: number,
+  y: number,
+  width: number,
+  target: EventTarget | null,
+) {
+  if (runnerSwipeStart || !runnerSwipeCanStart(target)) return
+  runnerSwipeStart = {
+    input,
+    pointerId,
+    x,
+    y,
+    width,
+  }
+  runnerSwipeOffset.value = 0
+  runnerSwipeDragging.value = false
+}
+
+function beginRunnerSwipe(event: PointerEvent) {
+  if (
+    !event.isPrimary
+    || event.pointerType === 'touch'
+    || (event.pointerType === 'mouse' && event.button !== 0)
+  ) return
+  const stage = event.currentTarget
+  beginRunnerGesture(
+    'pointer',
+    event.pointerId,
+    event.clientX,
+    event.clientY,
+    stage instanceof HTMLElement ? stage.clientWidth : 0,
+    event.target,
+  )
+}
+
+function runnerTouchWithId(touches: TouchList, pointerId: number) {
+  return Array.from(touches).find(touch => touch.identifier === pointerId)
+}
+
+function beginRunnerTouchSwipe(event: TouchEvent) {
+  if (event.touches.length !== 1) return
+  const touch = event.changedTouches[0]
+  const stage = event.currentTarget
+  if (!touch) return
+  beginRunnerGesture(
+    'touch',
+    touch.identifier,
+    touch.clientX,
+    touch.clientY,
+    stage instanceof HTMLElement ? stage.clientWidth : 0,
+    event.target,
+  )
+}
+
+function updateRunnerSwipe(
+  input: 'pointer' | 'touch',
+  pointerId: number,
+  clientX: number,
+  clientY: number,
+) {
+  const start = runnerSwipeStart
+  if (!start || start.input !== input || start.pointerId !== pointerId) return false
+
+  const deltaX = clientX - start.x
+  const deltaY = clientY - start.y
+  if (!runnerSwipeDragging.value) {
+    if (Math.abs(deltaX) < 12 && Math.abs(deltaY) < 12) return false
+    if (Math.abs(deltaY) >= Math.abs(deltaX)) {
+      runnerSwipeStart = undefined
+      return false
+    }
+    const movingTowardExercise = !runnerExerciseVisible.value && deltaX < 0
+    const movingTowardProgress = runnerExerciseVisible.value && deltaX > 0
+    if (!movingTowardExercise && !movingTowardProgress) {
+      runnerSwipeStart = undefined
+      return false
+    }
+    runnerSwipeDragging.value = true
+  }
+
+  const width = Math.max(0, start.width)
+  runnerSwipeOffset.value = runnerExerciseVisible.value
+    ? Math.min(width, Math.max(0, deltaX))
+    : Math.max(-width, Math.min(0, deltaX))
+  return true
+}
+
+function moveRunnerSwipe(event: PointerEvent) {
+  if (event.pointerType === 'touch') return
+  const wasDragging = runnerSwipeDragging.value
+  if (!updateRunnerSwipe('pointer', event.pointerId, event.clientX, event.clientY)) return
+  if (event.cancelable) event.preventDefault()
+  if (wasDragging || !runnerSwipeDragging.value) return
+  try {
+    if (event.currentTarget instanceof HTMLElement) {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    }
+  } catch {
+    // Pointer capture is optional; the stable runner stage still receives ordinary pointer events.
+  }
+}
+
+function moveRunnerTouchSwipe(event: TouchEvent) {
+  const start = runnerSwipeStart
+  if (!start || start.input !== 'touch') return
+  const touch = runnerTouchWithId(event.touches, start.pointerId)
+  if (!touch) return
+  if (
+    updateRunnerSwipe('touch', touch.identifier, touch.clientX, touch.clientY)
+    && event.cancelable
+  ) event.preventDefault()
+}
+
+function finishRunnerGesture(input: 'pointer' | 'touch', pointerId: number) {
+  const start = runnerSwipeStart
+  if (!start || start.input !== input || start.pointerId !== pointerId) return
+
+  const shouldChangePanel = runnerSwipeDragging.value
+    && Math.abs(runnerSwipeOffset.value) >= Math.min(56, start.width * .16)
+  const wasShowingExercise = runnerExerciseVisible.value
+  resetRunnerSwipe()
+  if (!shouldChangePanel) return
+  if (wasShowingExercise) showRunnerProgress()
+  else showRunnerExercise()
+}
+
+function finishRunnerSwipe(event: PointerEvent) {
+  if (event.pointerType === 'touch') return
+  updateRunnerSwipe('pointer', event.pointerId, event.clientX, event.clientY)
+  finishRunnerGesture('pointer', event.pointerId)
+}
+
+function finishRunnerTouchSwipe(event: TouchEvent) {
+  const start = runnerSwipeStart
+  if (!start || start.input !== 'touch') return
+  const touch = runnerTouchWithId(event.changedTouches, start.pointerId)
+  if (!touch) return
+  updateRunnerSwipe('touch', touch.identifier, touch.clientX, touch.clientY)
+  finishRunnerGesture('touch', touch.identifier)
+}
+
+function cancelRunnerSwipe(event?: PointerEvent) {
+  if (
+    event
+    && (
+      runnerSwipeStart?.input !== 'pointer'
+      || runnerSwipeStart.pointerId !== event.pointerId
+    )
+  ) return
+  resetRunnerSwipe()
+}
+
+function cancelRunnerTouchSwipe(event: TouchEvent) {
+  const start = runnerSwipeStart
+  if (
+    !start
+    || start.input !== 'touch'
+    || (
+      event.changedTouches.length
+      && !runnerTouchWithId(event.changedTouches, start.pointerId)
+    )
+  ) return
+  resetRunnerSwipe()
+}
+
 function beginIntervalFlashcardSwipe(event: PointerEvent) {
   const review = session.value?.flashcardReview
   const startedFromTagControl = (event.target as Element | null)
@@ -2256,10 +2487,42 @@ async function runAgain(repetitions?: number) {
 
           <div
             class="runner-stage"
-            :class="{ 'runner-stage--with-review': flashcardPhase && session.flashcardReview }"
+            :class="{ 'runner-stage--swiping': runnerSwipeDragging }"
+            @pointerdown="beginRunnerSwipe"
+            @pointermove="moveRunnerSwipe"
+            @pointerup="finishRunnerSwipe"
+            @pointercancel="cancelRunnerSwipe"
+            @lostpointercapture="cancelRunnerSwipe"
+            @touchstart.passive="beginRunnerTouchSwipe"
+            @touchmove="moveRunnerTouchSwipe"
+            @touchend="finishRunnerTouchSwipe"
+            @touchcancel="cancelRunnerTouchSwipe"
           >
-            <div class="runner-stage__primary">
-              <section class="runner-main" :class="{ 'runner-main--with-review': flashcardPhase }">
+            <div class="runner-stage__track" :style="runnerStageTrackStyle">
+              <div
+                class="runner-stage__panel runner-stage__panel--exercise"
+                :aria-hidden="!runnerExerciseVisible"
+                :inert="runnerExerciseVisible ? undefined : true"
+              >
+                <ExerciseDetailsPanel
+                  v-if="runnerExercise"
+                  :exercise="runnerExercise"
+                  :active="runnerExerciseVisible"
+                  @show-progress="showRunnerProgress"
+                />
+              </div>
+
+              <div
+                class="runner-stage__panel runner-stage__original"
+                :class="{ 'runner-stage--with-review': flashcardPhase && session.flashcardReview }"
+                :aria-hidden="runnerExerciseVisible"
+                :inert="runnerExerciseVisible ? true : undefined"
+              >
+                <div class="runner-stage__primary">
+              <section
+                class="runner-main"
+                :class="{ 'runner-main--with-review': flashcardPhase }"
+              >
               <div class="runner-details">
                 <p class="runner-session">{{ session.name }}</p>
                 <p v-if="attributedTaskName" class="runner-task-link">
@@ -2270,6 +2533,18 @@ async function runAgain(repetitions?: number) {
               </div>
               <div class="runner-progress-stack">
                 <div class="runner-progress">
+                  <!-- <v-btn
+                    v-if="runnerExercise"
+                    class="runner-exercise-details-button"
+                    icon="mdi-dumbbell"
+                    variant="tonal"
+                    color="secondary"
+                    size="small"
+                    aria-label="Show exercise details"
+                    @touchstart.stop
+                    @pointerdown.stop
+                    @click.stop="showRunnerExercise"
+                  /> -->
                   <div class="progress-rings">
                     <IntervalTypeIcon
                       v-if="current.step.kind"
@@ -2451,6 +2726,8 @@ async function runAgain(repetitions?: number) {
               @toggle-playback="session.status === 'paused' ? resume() : pause()"
             />
 
+              </div>
+            </div>
           </div>
         </div>
       </transition>
@@ -2795,7 +3072,44 @@ async function runAgain(repetitions?: number) {
 .runner-header__actions { display: flex; align-items: center; justify-content: flex-end; gap: .125rem; }
 .runner-actions-button { min-width: 2.75rem; min-height: 2.75rem; }
 .runner-label { color: rgb(var(--v-theme-on-surface) / .52); font-size: .68rem; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
-.runner-stage { position: relative; display: flex; min-height: 0; flex: 1; flex-direction: column; isolation: isolate; }
+.runner-stage {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  isolation: isolate;
+  touch-action: pan-y;
+}
+.runner-stage__track {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex: 0 0 100%;
+  transition: transform 240ms cubic-bezier(.22, 1, .36, 1);
+  will-change: transform;
+}
+.runner-stage--swiping .runner-stage__track { transition: none; }
+.runner-stage__panel {
+  width: 100%;
+  height: 100%;
+  min-width: 100%;
+  min-height: 0;
+  flex: 0 0 100%;
+}
+.runner-stage__panel--exercise {
+  order: 2;
+  display: flex;
+  padding: .25rem;
+}
+.runner-stage__original {
+  position: relative;
+  order: 1;
+  display: flex;
+  flex-direction: column;
+  isolation: isolate;
+}
 .runner-stage__primary { display: contents; }
 .runner-type-backdrop {
   position: absolute;
@@ -2818,7 +3132,15 @@ async function runAgain(repetitions?: number) {
 .runner-progress-stack,
 .runner-progress,
 .next-copy { position: relative; z-index: 1; }
-.runner-main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.runner-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  touch-action: pan-y;
+}
 .runner-details { display: contents; }
 .runner-progress-stack { display: flex; width: 100%; flex-direction: column; align-items: center; }
 .runner-session { display: none; }
@@ -2833,7 +3155,15 @@ async function runAgain(repetitions?: number) {
   align-items: center;
 }
 .runner-main--with-review .runner-progress { margin: 1.25rem 0 1rem; }
-.runner-stage > .interval-review-card { z-index: 1; margin-top: 1rem; align-self: center; }
+.runner-exercise-details-button {
+  position: absolute;
+  z-index: 3;
+  top: .5rem;
+  right: .5rem;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+}
+.runner-stage__original > .interval-review-card { z-index: 1; margin-top: 1rem; align-self: center; }
 .runner-main--with-review .progress-rings { width: min(13.5rem, calc(100vw - 3rem)); }
 .runner-main--with-review .timer-value { font-size: 3.25rem; }
 .progress-rings {
@@ -3034,10 +3364,13 @@ async function runAgain(repetitions?: number) {
   }
 
   .runner-stage {
-    display: grid;
     min-width: 0;
     min-height: 0;
     padding-top: 1rem;
+  }
+
+  .runner-stage__original {
+    display: grid;
     grid-template-columns: minmax(0, 1.15fr) minmax(14rem, .85fr);
     grid-template-rows: minmax(0, 1fr) auto auto auto;
     gap: .5rem 1rem;
@@ -3131,7 +3464,7 @@ async function runAgain(repetitions?: number) {
     width: min(12rem, 50dvh, calc(100% - 1rem));
   }
 
-  .runner-stage > .interval-review-card {
+  .runner-stage__original > .interval-review-card {
     width: min(100%, 30rem);
     margin: 0;
     grid-column: 2;
@@ -3406,6 +3739,7 @@ async function runAgain(repetitions?: number) {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .runner-stage__track,
   .runner-type-backdrop {
     transition: none;
   }

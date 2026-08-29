@@ -1,0 +1,292 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "BackOnTrack Runtime Architecture",
+    "locale": "en",
+    "output": "runtime-architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/backontrackapp/app",
+      "revision": "bdd5453285434d822c5a324c6284994df30253a9"
+    }
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [44, 58],
+    "cols": 6,
+    "gapX": 58,
+    "gapY": 72,
+    "cellW": 164,
+    "cellH": 68
+  },
+  "components": [
+    {
+      "id": "people",
+      "type": "external",
+      "label": "People",
+      "sublabel": "Browser • Android • iOS",
+      "tag": "touch / pointer",
+      "row": 2,
+      "col": 0,
+      "sources": [
+        { "path": "README.md", "label": "supported clients" }
+      ]
+    },
+    {
+      "id": "vue_app",
+      "type": "frontend",
+      "label": "Vue application",
+      "sublabel": "Vue • Vuetify • Pinia",
+      "tag": "shared UI bundle",
+      "row": 2,
+      "col": 1,
+      "sources": [
+        { "path": "src/main.ts", "label": "runtime entrypoint" },
+        { "path": "src/router/index.ts", "label": "route graph" },
+        { "path": "src/layouts/AppShell.vue", "label": "application shell" }
+      ]
+    },
+    {
+      "id": "local_store",
+      "type": "database",
+      "label": "Local data plane",
+      "sublabel": "Dexie • IndexedDB",
+      "tag": "resources + outbox",
+      "row": 3,
+      "col": 2,
+      "sources": [
+        { "path": "src/lib/localDatabase.ts", "label": "local schema" },
+        { "path": "src/types/sync.ts", "label": "sync records" }
+      ]
+    },
+    {
+      "id": "sync_coordinator",
+      "type": "backend",
+      "label": "Sync runtime",
+      "sublabel": "foreground • SW • native runner",
+      "tag": "bootstrap + exchange",
+      "row": 3,
+      "col": 3,
+      "sources": [
+        { "path": "src/services/offlineSync.ts", "label": "foreground sync" },
+        { "path": "src/sw.ts", "label": "web worker" },
+        { "path": "public/runners/background.js", "label": "native runner" }
+      ]
+    },
+    {
+      "id": "native_bridge",
+      "type": "backend",
+      "label": "Native bridge",
+      "sublabel": "Capacitor • Android • iOS",
+      "tag": "native only",
+      "row": 0,
+      "col": 1,
+      "sources": [
+        { "path": "android/app/src/main/java/app/backontrack/android/MainActivity.java", "label": "Android plugins" },
+        { "path": "ios/App/App/AppDelegate.swift", "label": "iOS bridge" },
+        { "path": "capacitor.config.ts", "label": "Capacitor runtime" }
+      ]
+    },
+    {
+      "id": "device_services",
+      "type": "external",
+      "label": "Device services",
+      "sublabel": "Health • speech • alerts",
+      "tag": "OS permissions",
+      "row": 0,
+      "col": 0,
+      "sources": [
+        { "path": "android/app/src/main/AndroidManifest.xml", "label": "Android capabilities" },
+        { "path": "src/services/healthConnect.ts", "label": "Health Connect" },
+        { "path": "ios/App/App/Info.plist", "label": "iOS capabilities" }
+      ]
+    },
+    {
+      "id": "php_api",
+      "type": "backend",
+      "label": "PHP API",
+      "sublabel": "auth • sync • media • assistant",
+      "tag": "bearer protected",
+      "row": 2,
+      "col": 4,
+      "sources": [
+        { "path": "server/public/index.php", "label": "front controller" },
+        { "path": "server/src/Api.php", "label": "HTTP routes" },
+        { "path": "server/src/SyncService.php", "label": "merge engine" }
+      ]
+    },
+    {
+      "id": "sqlite_store",
+      "type": "database",
+      "label": "SQLite database",
+      "sublabel": "records • clocks • receipts",
+      "tag": "PDO transactions",
+      "row": 2,
+      "col": 5,
+      "sources": [
+        { "path": "server/src/Database.php", "label": "database runtime" },
+        { "path": "server/schema.sql", "label": "schema snapshot" },
+        { "path": "server/src/SyncService.php", "label": "sync persistence" }
+      ]
+    },
+    {
+      "id": "private_files",
+      "type": "database",
+      "label": "Private file store",
+      "sublabel": "images • audio • curated sets",
+      "tag": "beside data.db",
+      "row": 4,
+      "col": 4,
+      "sources": [
+        { "path": "server/src/Api.php", "label": "media I/O" },
+        { "path": "server/src/CuratedReviewSetCatalog.php", "label": "curated content" },
+        { "path": "server/README.md", "label": "storage layout" }
+      ]
+    },
+    {
+      "id": "openai_api",
+      "type": "external",
+      "label": "OpenAI API",
+      "sublabel": "Responses • SSE assistant",
+      "tag": "optional",
+      "row": 0,
+      "col": 5,
+      "sources": [
+        { "path": "server/src/AssistantService.php", "label": "Responses client" },
+        { "path": "server/src/Config.php", "label": "server-only config" }
+      ]
+    },
+    {
+      "id": "smtp_service",
+      "type": "external",
+      "label": "SMTP service",
+      "sublabel": "verification • password reset",
+      "tag": "optional TLS",
+      "row": 4,
+      "col": 5,
+      "sources": [
+        { "path": "server/src/Mailer.php", "label": "mail delivery" },
+        { "path": "server/src/Config.php", "label": "SMTP config" }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Client execution boundary",
+      "wraps": ["vue_app", "local_store", "sync_coordinator", "native_bridge"],
+      "pad": 24
+    },
+    {
+      "kind": "security-group",
+      "label": "Server-controlled data boundary",
+      "wraps": ["php_api", "sqlite_store", "private_files"],
+      "pad": 24
+    }
+  ],
+  "connections": [
+    {
+      "id": "people_use_app",
+      "from": "people",
+      "to": "vue_app",
+      "label": "interactive UI",
+      "variant": "emphasis"
+    },
+    {
+      "id": "optimistic_state",
+      "from": "vue_app",
+      "to": "local_store",
+      "label": "optimistic reads + writes",
+      "variant": "emphasis"
+    },
+    {
+      "id": "ordered_outbox",
+      "from": "local_store",
+      "to": "sync_coordinator",
+      "label": "outbox + cursor",
+      "variant": "emphasis"
+    },
+    {
+      "id": "foreground_exchange",
+      "from": "sync_coordinator",
+      "to": "php_api",
+      "label": "HTTPS bearer • /sync/*",
+      "variant": "emphasis"
+    },
+    {
+      "id": "direct_api",
+      "from": "vue_app",
+      "to": "php_api",
+      "label": "HTTPS API • media • NDJSON",
+      "variant": "security",
+      "route": "straight"
+    },
+    {
+      "id": "native_calls",
+      "from": "vue_app",
+      "to": "native_bridge",
+      "label": "Capacitor plugin calls"
+    },
+    {
+      "id": "os_capabilities",
+      "from": "native_bridge",
+      "to": "device_services",
+      "label": "permissioned OS APIs"
+    },
+    {
+      "id": "durable_records",
+      "from": "php_api",
+      "to": "sqlite_store",
+      "label": "SQLite / PDO",
+      "variant": "emphasis",
+      "labelAt": [1103, 412]
+    },
+    {
+      "id": "media_storage",
+      "from": "php_api",
+      "to": "private_files",
+      "label": "validated media I/O"
+    },
+    {
+      "id": "assistant_stream",
+      "from": "php_api",
+      "to": "openai_api",
+      "label": "Responses API • SSE",
+      "variant": "dashed"
+    },
+    {
+      "id": "account_email",
+      "from": "php_api",
+      "to": "smtp_service",
+      "label": "SMTP/TLS account mail",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Offline-first core",
+      "items": [
+        "Core reads and mutations complete against IndexedDB immediately.",
+        "An ordered outbox reconciles through idempotent, cursor-based exchange."
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Shared application",
+      "items": [
+        "One Vue bundle runs as a PWA or inside Android and iOS Capacitor shells.",
+        "Native bridges add background work, health data, speech, camera, timers, and alerts."
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Server authority",
+      "items": [
+        "The bearer-authenticated PHP API enforces ownership, validation, and merge rules.",
+        "SQLite and private media remain server-controlled; AI and SMTP are optional outbound integrations."
+      ]
+    }
+  ]
+}

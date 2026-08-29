@@ -31,3 +31,9 @@ Runs created from an interval that has since been archived remain in recent hist
 Selecting a recent run opens its action menu. **See details** reopens the saved completion summary; **Delete** asks for confirmation and removes the run from history immediately. Deleting a run also removes any Review history derived from that Interval, but does not reverse task progress already recorded by the completed session.
 
 When a completed or ended interval is not attributed to an exercise, the interval name remains the standalone completion title in both portrait and landscape. Exercise-attributed runs use the exercise identity as the title and keep the interval name as supporting source context.
+
+## Exercise details in the runner
+
+When a running interval is attributed to an exercise, the runner stage also provides an exercise-details panel. Swiping from right to left across the main runner area replaces the complete stage—including progress, playback controls, and the mini Review set card—with exercise details. Swiping from left to right across the exercise panel restores the original stage. Timer and exercise buttons provide the same navigation without a gesture.
+
+The exercise panel scrolls independently and presents instructions and tips immediately after the description, followed by body part and primary and secondary muscle tags. Exercises with start and peak illustrations switch instantly between those frames once per second without a fade; a single available illustration remains static, and reduced-motion preferences disable the frame animation.
