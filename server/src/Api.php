@@ -45,13 +45,13 @@ final class Api
     private const FLASHCARD_REVIEW_SETTING_FIELDS = [
         'mode', 'card_sides', 'invert_faces', 'indefinite', 'time_limit_seconds', 'max_cards', 'eject_behavior', 'eject_exclude_after', 'front_seconds', 'back_seconds',
         'back_speech_repeat_count', 'back_display',
-        'speech_enabled', 'front_language', 'back_language',
+        'speech_enabled', 'back_speech_rate', 'front_language', 'back_language',
         'sort_mode', 'sort_direction',
     ];
     private const FLASHCARD_REVIEW_PREFERENCE_FIELDS = [
         'mode', 'card_sides', 'invert_faces', 'indefinite', 'time_limit_seconds', 'max_cards', 'eject_behavior', 'eject_exclude_after', 'front_seconds', 'back_seconds',
         'back_speech_repeat_count', 'back_display',
-        'speech_enabled', 'front_language', 'back_language',
+        'speech_enabled', 'back_speech_rate', 'front_language', 'back_language',
         'sort_mode', 'sort_direction', 'excluded_cards',
     ];
     private readonly Mailer $mailer;
@@ -2993,6 +2993,7 @@ final class Api
                 'back_speech_repeat_count' => 1,
                 'back_display' => 'back',
                 'speech_enabled' => false,
+                'back_speech_rate' => 1.0,
                 'front_language' => '',
                 'back_language' => '',
                 'sort_order' => 0,
@@ -3084,7 +3085,7 @@ final class Api
                 'time_limit_seconds', 'max_cards', 'eject_behavior', 'eject_exclude_after', 'front_seconds', 'back_seconds',
                 'back_speech_repeat_count',
                 'back_display',
-                'speech_enabled', 'front_language', 'back_language',
+                'speech_enabled', 'back_speech_rate', 'front_language', 'back_language',
                 'sort_mode', 'sort_direction', 'sort_order', 'excluded_cards',
                 'archived',
             ]);
@@ -3196,6 +3197,12 @@ final class Api
 
     private function validateFlashcardSpeechSettings(array $values): void
     {
+        $backSpeechRate = (float) ($values['back_speech_rate'] ?? 1.0);
+        if (abs(($backSpeechRate * 4) - round($backSpeechRate * 4)) > 0.000001) {
+            throw new ApiException(422, 'Set the Back speech speed in 0.25× increments.', [
+                'back_speech_rate' => 'step:0.25',
+            ]);
+        }
         $timeLimitSeconds = (int) ($values['time_limit_seconds'] ?? 0);
         if ($timeLimitSeconds % 60 !== 0) {
             throw new ApiException(422, 'Set the Review set time limit in whole minutes.', [
@@ -3950,13 +3957,13 @@ final class Api
                     id, owner, name, icon, color, tags, mode, card_sides, invert_faces, indefinite, time_limit_seconds, max_cards, eject_behavior, eject_exclude_after,
                     front_seconds, back_seconds, back_speech_repeat_count,
                     back_display,
-                    speech_enabled, front_language, back_language, sort_mode, sort_direction, excluded_cards,
+                    speech_enabled, back_speech_rate, front_language, back_language, sort_mode, sort_direction, excluded_cards,
                     sort_order, created_at, updated_at
                  ) VALUES (
                     :id, :owner, :name, :icon, :color, :tags, :mode, :card_sides, :invert_faces, :indefinite, :time_limit_seconds, :max_cards, :eject_behavior, :eject_exclude_after,
                     :front_seconds, :back_seconds, :back_speech_repeat_count,
                     :back_display,
-                    :speech_enabled, :front_language, :back_language, :sort_mode, :sort_direction, :excluded_cards,
+                    :speech_enabled, :back_speech_rate, :front_language, :back_language, :sort_mode, :sort_direction, :excluded_cards,
                     :sort_order, :created_at, :updated_at
                  )',
             );
@@ -4484,7 +4491,7 @@ final class Api
                     front_seconds_snapshot, back_seconds_snapshot,
                     back_speech_repeat_count_snapshot,
                     back_display_snapshot,
-                    speech_enabled_snapshot, front_language_snapshot, back_language_snapshot, queue_state, reserve_card_ids,
+                    speech_enabled_snapshot, back_speech_rate_snapshot, front_language_snapshot, back_language_snapshot, queue_state, reserve_card_ids,
                     started_at, ended_at, updated_at, elapsed_seconds, total_cards, viewed_count,
                     success_count, error_count, ejected_count, task, program_step,
                     program_step_completion, task_date
@@ -4495,7 +4502,7 @@ final class Api
                     :tags_snapshot, :excluded_cards_snapshot, :front_seconds_snapshot, :back_seconds_snapshot,
                     :back_speech_repeat_count_snapshot,
                     :back_display_snapshot,
-                    :speech_enabled_snapshot, :front_language_snapshot, :back_language_snapshot, :queue_state, :reserve_card_ids,
+                    :speech_enabled_snapshot, :back_speech_rate_snapshot, :front_language_snapshot, :back_language_snapshot, :queue_state, :reserve_card_ids,
                     :started_at, :ended_at, :updated_at, 0, :total_cards, 0, 0, 0, 0,
                     :task, :program_step, :program_step_completion, :task_date
                  )',
@@ -4532,6 +4539,7 @@ final class Api
                 ) ? (int) $reviewSet['back_speech_repeat_count'] : 1,
                 'back_display_snapshot' => (string) $reviewSet['back_display'],
                 'speech_enabled_snapshot' => (bool) $reviewSet['speech_enabled'],
+                'back_speech_rate_snapshot' => (float) ($reviewSet['back_speech_rate'] ?? 1.0),
                 'front_language_snapshot' => (string) $reviewSet['front_language'],
                 'back_language_snapshot' => (string) $reviewSet['back_language'],
                 'queue_state' => json_encode($queue, JSON_THROW_ON_ERROR),
@@ -5053,16 +5061,17 @@ final class Api
         $fields = [
             'mode', 'card_sides', 'invert_faces', 'indefinite', 'time_limit_seconds', 'max_cards', 'eject_behavior', 'eject_exclude_after', 'front_seconds', 'back_seconds',
             'back_speech_repeat_count', 'back_display',
-            'speech_enabled', 'front_language', 'back_language',
+            'speech_enabled', 'back_speech_rate', 'front_language', 'back_language',
             'sort_mode', 'sort_direction',
         ];
         $this->allowOnlyFields($body, $fields);
         foreach ($fields as $field) {
             if (!array_key_exists($field, $body)) {
-                if (in_array($field, ['sort_direction', 'eject_behavior', 'eject_exclude_after'], true)) {
+                if (in_array($field, ['sort_direction', 'eject_behavior', 'eject_exclude_after', 'back_speech_rate'], true)) {
                     $body[$field] = match ($field) {
                         'sort_direction' => 'asc',
                         'eject_behavior' => 'remove',
+                        'back_speech_rate' => 1.0,
                         default => 3,
                     };
                     continue;
@@ -5092,6 +5101,9 @@ final class Api
             if (!in_array((string) $session['status'], ['running', 'paused'], true)) {
                 throw new ApiException(409, 'Only an active flashcard review can be adjusted.');
             }
+
+            $settings['sort_mode'] = (string) $session['sort_snapshot'];
+            $settings['sort_direction'] = (string) ($session['sort_direction_snapshot'] ?? 'asc');
 
             $indefinite = $settings['mode'] === 'passive' && (bool) $settings['indefinite'];
             $processed = (int) $session['viewed_count'] + (int) $session['ejected_count'];
@@ -5128,14 +5140,55 @@ final class Api
             $eventStatement->execute(['session' => $id, 'owner' => $owner, 'empty' => '']);
             $excluded = [];
             foreach ($eventStatement->fetchAll() as $event) {
-                if (!$indefinite || (string) $event['outcome'] === 'ejected') {
+                if (
+                    !$indefinite
+                    || in_array((string) $event['outcome'], ['ejected', 'eject'], true)
+                ) {
                     $excluded[(string) $event['card']] = true;
                 }
             }
-            $eligibleQueue = array_values(array_filter(
-                $selection['allQueue'],
-                static fn (array $card): bool => !isset($excluded[(string) $card['id']]),
-            ));
+            $selectedCards = [];
+            foreach ($selection['allQueue'] as $card) {
+                $selectedCards[(string) $card['id']] = $card;
+            }
+            $currentQueue = $this->decodeJsonColumn($session['queue_state'] ?? '[]');
+            $currentReserveCardIds = $this->decodeJsonColumn(
+                $session['reserve_card_ids'] ?? '[]',
+            );
+            $eligibleQueue = [];
+            $eligibleIds = [];
+            $appendEligible = static function (mixed $card, bool $preserveCurrent = false) use (
+                &$eligibleQueue,
+                &$eligibleIds,
+                $excluded,
+            ): void {
+                if (!is_array($card)) {
+                    return;
+                }
+                $cardId = (string) ($card['id'] ?? '');
+                if (
+                    $cardId === ''
+                    || (!$preserveCurrent && isset($excluded[$cardId]))
+                    || isset($eligibleIds[$cardId])
+                ) {
+                    return;
+                }
+                $eligibleIds[$cardId] = true;
+                $eligibleQueue[] = $card;
+            };
+            if (is_array($currentQueue)) {
+                foreach ($currentQueue as $card) {
+                    $appendEligible($card, true);
+                }
+            }
+            if (is_array($currentReserveCardIds)) {
+                foreach ($currentReserveCardIds as $cardId) {
+                    $appendEligible($selectedCards[(string) $cardId] ?? null);
+                }
+            }
+            foreach ($selection['allQueue'] as $card) {
+                $appendEligible($card);
+            }
             $remainingLimit = $indefinite
                 ? (int) $settings['max_cards']
                 : (int) $settings['max_cards'] - $processed;
@@ -5173,6 +5226,7 @@ final class Api
                     back_speech_repeat_count_snapshot = :back_speech_repeat_count_snapshot,
                     back_display_snapshot = :back_display_snapshot,
                     speech_enabled_snapshot = :speech_enabled_snapshot,
+                    back_speech_rate_snapshot = :back_speech_rate_snapshot,
                     front_language_snapshot = :front_language_snapshot,
                     back_language_snapshot = :back_language_snapshot,
                     queue_state = :queue_state,
@@ -5197,6 +5251,7 @@ final class Api
                 'back_speech_repeat_count_snapshot' => $settings['back_speech_repeat_count'],
                 'back_display_snapshot' => $settings['back_display'],
                 'speech_enabled_snapshot' => $settings['speech_enabled'],
+                'back_speech_rate_snapshot' => $settings['back_speech_rate'],
                 'front_language_snapshot' => $settings['front_language'],
                 'back_language_snapshot' => $settings['back_language'],
                 'queue_state' => json_encode($queue, JSON_THROW_ON_ERROR),
@@ -5629,6 +5684,7 @@ final class Api
                 : 1,
             'backDisplay' => (string) ($reviewSet['back_display'] ?? 'back'),
             'speechEnabled' => (bool) $reviewSet['speech_enabled'],
+            'backSpeechRate' => (float) ($reviewSet['back_speech_rate'] ?? 1.0),
             'frontLanguage' => (string) $reviewSet['front_language'],
             'backLanguage' => (string) $reviewSet['back_language'],
             'cards' => $selection['queue'],
@@ -8040,10 +8096,11 @@ final class Api
         $settings = [];
         foreach (self::FLASHCARD_REVIEW_SETTING_FIELDS as $field) {
             if (!array_key_exists($field, $body)) {
-                if (in_array($field, ['sort_direction', 'eject_behavior', 'eject_exclude_after'], true)) {
+                if (in_array($field, ['sort_direction', 'eject_behavior', 'eject_exclude_after', 'back_speech_rate'], true)) {
                     $body[$field] = match ($field) {
                         'sort_direction' => 'asc',
                         'eject_behavior' => 'remove',
+                        'back_speech_rate' => 1.0,
                         default => 3,
                     };
                 } else {
@@ -8083,6 +8140,7 @@ final class Api
                     => (bool) ($source[$field] ?? false),
                 'time_limit_seconds', 'max_cards', 'eject_exclude_after', 'front_seconds', 'back_seconds', 'back_speech_repeat_count'
                     => (int) ($source[$field] ?? 0),
+                'back_speech_rate' => (float) ($source[$field] ?? 1.0),
                 'sort_direction' => (string) ($source[$field] ?? 'asc'),
                 default => (string) ($source[$field] ?? ''),
             };
@@ -8104,13 +8162,13 @@ final class Api
                 review_set, account, mode, card_sides, invert_faces, indefinite, time_limit_seconds, max_cards, eject_behavior, eject_exclude_after,
                 front_seconds, back_seconds, back_speech_repeat_count,
                 back_display,
-                speech_enabled, front_language, back_language, sort_mode, sort_direction,
+                speech_enabled, back_speech_rate, front_language, back_language, sort_mode, sort_direction,
                 excluded_cards, updated_at
              ) VALUES (
                 :review_set, :account, :mode, :card_sides, :invert_faces, :indefinite, :time_limit_seconds, :max_cards, :eject_behavior, :eject_exclude_after,
                 :front_seconds, :back_seconds, :back_speech_repeat_count,
                 :back_display,
-                :speech_enabled, :front_language, :back_language, :sort_mode, :sort_direction, :excluded_cards, :updated_at
+                :speech_enabled, :back_speech_rate, :front_language, :back_language, :sort_mode, :sort_direction, :excluded_cards, :updated_at
              )
              ON CONFLICT(review_set, account) DO UPDATE SET
                 mode = excluded.mode,
@@ -8126,6 +8184,7 @@ final class Api
                 back_speech_repeat_count = excluded.back_speech_repeat_count,
                 back_display = excluded.back_display,
                 speech_enabled = excluded.speech_enabled,
+                back_speech_rate = excluded.back_speech_rate,
                 front_language = excluded.front_language,
                 back_language = excluded.back_language,
                 sort_mode = excluded.sort_mode,

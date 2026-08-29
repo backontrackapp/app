@@ -20,7 +20,7 @@ final class SyncService
     private const FLASHCARD_REVIEW_PREFERENCE_FIELDS = [
         'mode', 'card_sides', 'invert_faces', 'indefinite', 'time_limit_seconds', 'max_cards', 'front_seconds',
         'eject_behavior', 'eject_exclude_after', 'back_seconds', 'back_speech_repeat_count', 'back_display',
-        'speech_enabled', 'front_language', 'back_language', 'sort_mode',
+        'speech_enabled', 'back_speech_rate', 'front_language', 'back_language', 'sort_mode',
         'excluded_cards',
     ];
     /** @var array<string, list<array<string, mixed>>> */
@@ -1004,6 +1004,7 @@ final class SyncService
                 'back_speech_repeat_count' => 1,
                 'back_display' => 'back',
                 'speech_enabled' => false,
+                'back_speech_rate' => 1.0,
                 'front_language' => '',
                 'back_language' => '',
                 'sort_mode' => 'difficult',
@@ -1016,7 +1017,7 @@ final class SyncService
                     ...array_intersect_key($payload['settings'], array_flip([
                         'mode', 'card_sides', 'invert_faces', 'indefinite', 'time_limit_seconds', 'max_cards',
                         'eject_behavior', 'eject_exclude_after', 'front_seconds', 'back_seconds',
-                        'back_speech_repeat_count', 'back_display', 'speech_enabled',
+                        'back_speech_repeat_count', 'back_display', 'speech_enabled', 'back_speech_rate',
                         'front_language', 'back_language', 'sort_mode', 'sort_direction',
                     ])),
                 ];
@@ -2875,7 +2876,7 @@ final class SyncService
             foreach ([
                 'mode', 'card_sides', 'invert_faces', 'indefinite', 'time_limit_seconds', 'max_cards', 'front_seconds',
                 'eject_behavior', 'eject_exclude_after', 'back_seconds', 'back_speech_repeat_count', 'back_display',
-                'speech_enabled', 'front_language', 'back_language', 'sort_mode',
+                'speech_enabled', 'back_speech_rate', 'front_language', 'back_language', 'sort_mode',
                 'excluded_cards',
             ] as $field) {
                 $result[$field] = match ($field) {
@@ -2912,11 +2913,11 @@ final class SyncService
             'INSERT INTO flashcard_review_set_preferences (
                 review_set, account, mode, card_sides, invert_faces, indefinite, time_limit_seconds, max_cards, eject_behavior, eject_exclude_after,
                 front_seconds, back_seconds, back_speech_repeat_count, back_display,
-                speech_enabled, front_language, back_language, sort_mode, excluded_cards, updated_at
+                speech_enabled, back_speech_rate, front_language, back_language, sort_mode, excluded_cards, updated_at
              ) VALUES (
                 :review_set, :account, :mode, :card_sides, :invert_faces, :indefinite, :time_limit_seconds, :max_cards, :eject_behavior, :eject_exclude_after,
                 :front_seconds, :back_seconds, :back_speech_repeat_count, :back_display,
-                :speech_enabled, :front_language, :back_language, :sort_mode, :excluded_cards, :updated_at
+                :speech_enabled, :back_speech_rate, :front_language, :back_language, :sort_mode, :excluded_cards, :updated_at
              ) ON CONFLICT(review_set, account) DO UPDATE SET
                 mode = excluded.mode, card_sides = excluded.card_sides,
                 invert_faces = excluded.invert_faces,
@@ -2929,6 +2930,7 @@ final class SyncService
                 back_speech_repeat_count = excluded.back_speech_repeat_count,
                 back_display = excluded.back_display,
                 speech_enabled = excluded.speech_enabled,
+                back_speech_rate = excluded.back_speech_rate,
                 front_language = excluded.front_language,
                 back_language = excluded.back_language,
                 sort_mode = excluded.sort_mode,

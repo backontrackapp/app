@@ -52,6 +52,7 @@ public class BackgroundFlashcardService extends Service {
     private ReviewSetAudioFocus reviewSetAudioFocus;
     private boolean speechReady;
     private boolean speechOverAmplified;
+    private float backSpeechRate = 1.0f;
     private boolean running;
     private boolean finished;
     private boolean indefinite;
@@ -214,6 +215,10 @@ public class BackgroundFlashcardService extends Service {
         frontLanguage = config.optString("frontLanguage", "").trim();
         backLanguage = config.optString("backLanguage", "").trim();
         speechOverAmplified = config.optBoolean("overAmplified", false);
+        backSpeechRate = (float) Math.max(
+            0.25,
+            Math.min(1.0, config.optDouble("backSpeechRate", 1.0))
+        );
         baseElapsedMs = Math.max(0L, config.optLong("elapsedMs", 0L));
         configuredElapsedMs = SystemClock.elapsedRealtime();
         lastTickElapsedMs = configuredElapsedMs;
@@ -337,6 +342,8 @@ public class BackgroundFlashcardService extends Service {
             availability == TextToSpeech.LANG_MISSING_DATA
             || availability == TextToSpeech.LANG_NOT_SUPPORTED
         ) return;
+        float speechRate = "back".equals(side) ? backSpeechRate : 1.0f;
+        if (speech.setSpeechRate(speechRate) == TextToSpeech.ERROR) return;
         String utteranceId = "backontrack-background-flashcard-" + System.nanoTime();
         int result = volumeBoost.speak(
             speech,

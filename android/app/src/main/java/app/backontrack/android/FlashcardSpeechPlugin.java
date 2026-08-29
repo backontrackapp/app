@@ -182,6 +182,12 @@ public class FlashcardSpeechPlugin extends Plugin {
             return;
         }
         overAmplificationEnabled = Boolean.TRUE.equals(call.getBoolean("overAmplified", false));
+        double requestedSpeechRate = call.getDouble("speechRate", 1.0);
+        float speechRate = (float) Math.max(0.25, Math.min(1.0, requestedSpeechRate));
+        if (speech.setSpeechRate(speechRate) == TextToSpeech.ERROR) {
+            call.reject("The speech speed could not be applied.");
+            return;
+        }
         backgroundIntervalSpeechKey = "";
         String utteranceId = "backontrack-flashcard-" + System.nanoTime();
         int result = volumeBoost.speak(

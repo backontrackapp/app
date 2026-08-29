@@ -9,6 +9,7 @@ import {
   type FlashcardSpeechTextPart,
   updateFlashcardSpeechWord,
 } from '@/services/spokenText'
+import { normalizeFlashcardBackSpeechRate } from '@/services/flashcards'
 import type {
   BackgroundFlashcardReviewState,
   FlashcardReviewSession,
@@ -34,6 +35,7 @@ interface FlashcardSpeechPlugin {
     text: string
     language: string
     overAmplified: boolean
+    speechRate?: number
     backgroundIntervalSpeechKey?: string
   }): Promise<{ utteranceId?: string }>
   playRecording(options: {
@@ -65,6 +67,7 @@ interface FlashcardSpeechPlugin {
     backLanguage: string
     elapsedMs: number
     overAmplified: boolean
+    backSpeechRate?: number
   }): Promise<void>
   getBackgroundState(): Promise<{ state?: BackgroundFlashcardReviewState }>
   stopBackground(options: { clearState: boolean }): Promise<void>
@@ -80,6 +83,7 @@ let nativeSpeechPlaybackListener: Promise<PluginListenerHandle> | undefined
 let estimatedSpeechTimers: number[] = []
 let activeNativeSpeechText = ''
 let activeNativeSpeechLanguage = ''
+let activeNativeSpeechRate = 1
 let activeNativeSpeechUtteranceId = ''
 
 function speechWordRanges(text: string, language: string) {
@@ -112,11 +116,12 @@ function speechWordForRange(
   }
 }
 
-function startEstimatedSpeech(text: string, language: string) {
+function startEstimatedSpeech(text: string, language: string, speechRate = 1) {
   clearEstimatedSpeech()
   const words = speechWordRanges(text, language)
   if (!flashcardSpeechWordTrackingIsActive() || !words.length || typeof window === 'undefined') return
-  const millisecondsPerWord = speechLanguageUsesPinyin(language) ? 260 : 340
+  const millisecondsPerWord = (speechLanguageUsesPinyin(language) ? 260 : 340)
+    / normalizeFlashcardBackSpeechRate(speechRate)
   words.forEach((word, index) => {
     estimatedSpeechTimers.push(window.setTimeout(() => {
       updateFlashcardSpeechWord({
@@ -138,7 +143,7 @@ async function ensureNativeSpeechPlaybackListener() {
   nativeSpeechPlaybackListener = NativeFlashcardSpeech.addListener('speechPlayback', event => {
     if (!activeNativeSpeechUtteranceId || event.utteranceId !== activeNativeSpeechUtteranceId) return
     if (event.state === 'start') {
-      startEstimatedSpeech(activeNativeSpeechText, activeNativeSpeechLanguage)
+      startEstimatedSpeech(activeNativeSpeechText, activeNativeSpeechLanguage, activeNativeSpeechRate)
     } else {
       clearEstimatedSpeech()
       clearFlashcardSpeechWordTracking()
@@ -307,6 +312,7 @@ export async function speakFlashcardText(
   language: string,
   backgroundIntervalSpeechKey = '',
   audioUrl = '',
+  speechRate = 1,
 ) {
   const wordHandler = takePreparedFlashcardSpeechWordTracking()
   const content = text.trim()
@@ -314,6 +320,7 @@ export async function speakFlashcardText(
   clearEstimatedSpeech()
   activeNativeSpeechText = ''
   activeNativeSpeechLanguage = ''
+  activeNativeSpeechRate = 1
   activeNativeSpeechUtteranceId = ''
   if (recording) {
     try {
@@ -339,12 +346,14 @@ export async function speakFlashcardText(
     clearFlashcardSpeechWordTracking()
     activeNativeSpeechText = content
     activeNativeSpeechLanguage = language
+    activeNativeSpeechRate = normalizeFlashcardBackSpeechRate(speechRate)
     try {
       await ensureNativeSpeechPlaybackListener()
       const result = await NativeFlashcardSpeech.speak({
         text: content,
         language,
         overAmplified: speechOverAmplificationEnabled,
+        ...(activeNativeSpeechRate === 1 ? {} : { speechRate: activeNativeSpeechRate }),
         ...(backgroundIntervalSpeechKey ? { backgroundIntervalSpeechKey } : {}),
       })
       activeNativeSpeechUtteranceId = result?.utteranceId || ''
@@ -378,6 +387,7 @@ export async function speakFlashcardText(
   let receivedBoundary = false
   utterance.lang = voice.lang
   utterance.voice = voice
+  utterance.rate = normalizeFlashcardBackSpeechRate(speechRate)
   if (speechOverAmplificationEnabled) utterance.volume = 1
   await new Promise<void>((resolve, reject) => {
     let settled = false
@@ -399,7 +409,7 @@ export async function speakFlashcardText(
       settle(new Error('The browser did not start speech synthesis.'))
     }, 2000)
     utterance.onstart = () => {
-      startEstimatedSpeech(content, language)
+      startEstimatedSpeech(content, language, speechRate)
       settle()
     }
     utterance.onboundary = event => {
@@ -483,6 +493,7 @@ export async function stopFlashcardSpeech() {
   clearFlashcardSpeechWordTracking()
   activeNativeSpeechText = ''
   activeNativeSpeechLanguage = ''
+  activeNativeSpeechRate = 1
   activeNativeSpeechUtteranceId = ''
   if (activeRecordedAudio) {
     activeRecordedAudio.pause()
@@ -571,6 +582,9 @@ export async function syncBackgroundFlashcardReview(
       backLanguage: session.backLanguage,
       elapsedMs: Math.max(0, Math.round(elapsedMs)),
       overAmplified: speechOverAmplificationEnabled,
+      ...(normalizeFlashcardBackSpeechRate(session.backSpeechRate) === 1
+        ? {}
+        : { backSpeechRate: normalizeFlashcardBackSpeechRate(session.backSpeechRate) }),
     })
     nativeBackgroundActive = true
     return true

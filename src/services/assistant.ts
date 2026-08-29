@@ -5,6 +5,7 @@ import {
   flashcardEjectExcludes,
   flashcardEjectLoadsNext,
   flashcardReviewSettingsAreValid,
+  normalizeFlashcardBackSpeechRate,
 } from '@/services/flashcards'
 import { notoEmojiImageUrl } from '@/services/emojis'
 import type {
@@ -82,6 +83,14 @@ function nullableInteger(value: unknown, minimum: number, maximum: number, field
   return parsed
 }
 
+function nullableNumber(value: unknown, minimum: number, maximum: number, field: string) {
+  if (value === null || value === undefined) return undefined
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < minimum || value > maximum) {
+    throw new Error(`${field} must be between ${minimum} and ${maximum}.`)
+  }
+  return value
+}
+
 function nullableChoice<T extends string>(value: unknown, choices: readonly T[], field: string) {
   if (value === null || value === undefined) return undefined
   if (typeof value !== 'string' || !choices.includes(value as T)) {
@@ -113,6 +122,7 @@ function reviewSetDraft(reviewSet: FlashcardReviewSet): FlashcardReviewSetDraft 
     backSpeechRepeatCount: reviewSet.backSpeechRepeatCount,
     backDisplay: reviewSet.backDisplay || 'back',
     speechEnabled: reviewSet.speechEnabled,
+    backSpeechRate: reviewSet.backSpeechRate,
     frontLanguage: reviewSet.frontLanguage,
     backLanguage: reviewSet.backLanguage,
     sortMode: reviewSet.sortMode,
@@ -148,6 +158,7 @@ function reviewSetChanges(
   add('Back speech repeats', current.backSpeechRepeatCount, draft.backSpeechRepeatCount)
   add('Back value', current.backDisplay || 'back', draft.backDisplay || 'back')
   add('Read aloud', current.speechEnabled, draft.speechEnabled)
+  add('Back speech speed', `${current.backSpeechRate}×`, `${draft.backSpeechRate}×`)
   add('Front language', current.frontLanguage, draft.frontLanguage)
   add('Back language', current.backLanguage, draft.backLanguage)
   add('Card order', current.sortMode, draft.sortMode)
@@ -228,6 +239,7 @@ export function assistantReadToolResult(
               back_speech_repeat_count: set.backSpeechRepeatCount,
               back_display: set.backDisplay || 'back',
               speech_enabled: set.speechEnabled,
+              back_speech_rate: set.backSpeechRate,
               front_language: set.frontLanguage,
               back_language: set.backLanguage,
               sort_mode: set.sortMode,
@@ -453,6 +465,12 @@ export function assistantWritePlan(
     ) ?? draft.backDisplay
     draft.speechEnabled = nullableBoolean(call.arguments.speech_enabled, 'Read aloud')
       ?? draft.speechEnabled
+    const backSpeechRate = nullableNumber(
+      call.arguments.back_speech_rate, 0.25, 1, 'Back speech speed',
+    )
+    draft.backSpeechRate = backSpeechRate === undefined
+      ? draft.backSpeechRate
+      : normalizeFlashcardBackSpeechRate(backSpeechRate)
     if (call.arguments.front_language !== null && call.arguments.front_language !== undefined) {
       if (typeof call.arguments.front_language !== 'string') throw new Error('The front language is invalid.')
       draft.frontLanguage = call.arguments.front_language.trim().slice(0, 35)

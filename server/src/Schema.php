@@ -87,6 +87,7 @@ final class Schema
                     'back_speech_repeat_count' => self::integer(1, 5),
                     'back_display' => self::choice(['back', 'transliteration'], true),
                     'speech_enabled' => self::boolean(),
+                    'back_speech_rate' => self::number(0.25, 1.0),
                     'front_language' => self::text(35),
                     'back_language' => self::text(35),
                     'sort_mode' => self::choice([
@@ -315,6 +316,7 @@ final class Schema
                     'back_speech_repeat_count_snapshot' => self::integer(1, 5),
                     'back_display_snapshot' => self::choice(['back', 'transliteration'], true),
                     'speech_enabled_snapshot' => self::boolean(),
+                    'back_speech_rate_snapshot' => self::number(0.25, 1.0),
                     'front_language_snapshot' => self::text(35),
                     'back_language_snapshot' => self::text(35),
                     'queue_state' => self::json(2000000, true),

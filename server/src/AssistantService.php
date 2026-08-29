@@ -317,6 +317,7 @@ final class AssistantService
                 'back_speech_repeat_count' => ['type' => ['integer', 'null'], 'minimum' => 1, 'maximum' => 5],
                 'back_display' => ['type' => ['string', 'null'], 'enum' => ['back', 'transliteration', null]],
                 'speech_enabled' => ['type' => ['boolean', 'null']],
+                'back_speech_rate' => ['type' => ['number', 'null'], 'minimum' => 0.25, 'maximum' => 1],
                 'front_language' => ['type' => ['string', 'null']],
                 'back_language' => ['type' => ['string', 'null']],
                 'sort_mode' => [
@@ -329,7 +330,7 @@ final class AssistantService
                 'time_limit_minutes', 'max_cards', 'load_next_on_eject', 'exclude_on_eject',
                 'exclude_after_ejections',
                 'front_seconds', 'back_seconds', 'back_speech_repeat_count',
-                'back_display', 'speech_enabled', 'front_language', 'back_language',
+                'back_display', 'speech_enabled', 'back_speech_rate', 'front_language', 'back_language',
                 'sort_mode', 'sort_direction',
             ]),
             $this->tool('update_flashcards', 'Edit existing cards owned by the current user. Use this tool to add, replace, or clear card notes; edit front, back, or transliteration text; or assign an official Noto Emoji image. Cards may come from the Card library or one owned Review set. Read the cards first and use null for every unchanged field.', [

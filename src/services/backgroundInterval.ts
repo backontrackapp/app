@@ -46,6 +46,7 @@ interface BackgroundIntervalPlugin {
       backSeconds: number
       backSpeechRepeatCount: number
       speechEnabled: boolean
+      backSpeechRate?: number
       frontLanguage: string
       backLanguage: string
       overAmplified: boolean
@@ -123,6 +124,10 @@ export async function syncBackgroundInterval(session: IntervalSession) {
               backSeconds: session.flashcardReview.backSeconds,
               backSpeechRepeatCount: session.flashcardReview.backSpeechRepeatCount,
               speechEnabled: !session.flashcardReview.speechPaused,
+              ...(session.flashcardReview.backSpeechRate
+                && session.flashcardReview.backSpeechRate !== 1
+                ? { backSpeechRate: session.flashcardReview.backSpeechRate }
+                : {}),
               frontLanguage: session.flashcardReview.frontLanguage,
               backLanguage: session.flashcardReview.backLanguage,
               overAmplified: flashcardSpeechOverAmplificationIsEnabled(),

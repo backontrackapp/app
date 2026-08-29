@@ -10,13 +10,16 @@ import {
   MAX_FLASHCARD_BACK_SPEECH_REPEATS,
   MAX_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
   MAX_FLASHCARD_SESSION_CARDS,
+  MAX_FLASHCARD_BACK_SPEECH_RATE,
   MAX_FLASHCARD_EJECT_EXCLUDE_AFTER,
   MIN_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
   MIN_FLASHCARD_BACK_SPEECH_REPEATS,
   MIN_FLASHCARD_EJECT_EXCLUDE_AFTER,
+  MIN_FLASHCARD_BACK_SPEECH_RATE,
   flashcardEjectBehavior,
   flashcardEjectExcludes,
   flashcardEjectLoadsNext,
+  normalizeFlashcardBackSpeechRate,
 } from '@/services/flashcards'
 import {
   defaultFlashcardSpeechLanguage,
@@ -145,6 +148,12 @@ const speechLanguages = computed(() => speechLanguageOptions([
   settings.value.frontLanguage,
   settings.value.backLanguage,
 ]))
+const backSpeechRate = computed({
+  get: () => normalizeFlashcardBackSpeechRate(settings.value.backSpeechRate),
+  set: (value: number) => {
+    settings.value.backSpeechRate = normalizeFlashcardBackSpeechRate(value)
+  },
+})
 
 watch(cardLimit, ({ minimum, maximum }) => {
   if (settings.value.maxCards < minimum) settings.value.maxCards = minimum
@@ -422,6 +431,19 @@ function updateSpeechEnabled(enabled: boolean | null) {
                 Each repeat adds the configured back duration before advancing to the next card.
               </p>
             </div>
+            <div v-if="settings.cardSides !== 'front'" class="back-speech-rate-setting">
+              <LabeledSlider
+                v-model="backSpeechRate"
+                title="Back speech speed"
+                :min="MIN_FLASHCARD_BACK_SPEECH_RATE"
+                :max="MAX_FLASHCARD_BACK_SPEECH_RATE"
+                :step="0.25"
+                :value-label="`${backSpeechRate}×`"
+                min-label="0.25×"
+                max-label="1×"
+                aria-label="Back text-to-speech speed"
+              />
+            </div>
             <p class="speech-background-hint">
               <v-icon icon="mdi-cellphone-sound" size="18" />
               Passive reviews keep speaking on Android while the app is in the background or the screen is locked.
@@ -436,6 +458,7 @@ function updateSpeechEnabled(enabled: boolean | null) {
         v-model="settings.sortMode"
         label="Card order"
         :items="FLASHCARD_REVIEW_SORT_OPTIONS"
+        :disabled="session"
         item-title="title"
         item-value="value"
       >
@@ -450,10 +473,15 @@ function updateSpeechEnabled(enabled: boolean | null) {
         variant="tonal"
         size="small"
         class="sort-direction-toggle mt-2"
+        :disabled="session"
       >
         <v-btn value="asc" prepend-icon="mdi-sort-ascending">ASC</v-btn>
         <v-btn value="desc" prepend-icon="mdi-sort-descending">DESC</v-btn>
       </v-btn-toggle>
+      <p v-if="session" class="mode-hint mt-3">
+        <v-icon icon="mdi-lock-outline" size="18" />
+        Card order is fixed after a session starts.
+      </p>
       <v-divider class="my-5" />
       <LabeledSlider
         v-model="sliderMaxCards"
@@ -595,6 +623,7 @@ function updateSpeechEnabled(enabled: boolean | null) {
 .setting-row p { margin-top: .15rem; color: rgba(var(--v-theme-on-surface), .5); font-size: .7rem; }
 .speech-language-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .speech-repeat-setting,
+.back-speech-rate-setting,
 .speech-background-hint { grid-column: 1 / -1; }
 .speech-background-hint { display: flex; align-items: flex-start; gap: .5rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .72rem; line-height: 1.5; }
 .speech-background-hint .v-icon { flex: 0 0 auto; }
@@ -602,6 +631,7 @@ function updateSpeechEnabled(enabled: boolean | null) {
   .passive-settings,
   .speech-language-fields { grid-template-columns: 1fr; }
   .speech-repeat-setting,
+  .back-speech-rate-setting,
   .speech-background-hint { grid-column: auto; }
 }
 </style>

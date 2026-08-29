@@ -297,6 +297,8 @@ final class CuratedReviewSetCatalog
                 : $default;
         $integer = static fn (string $key, int $default): int => array_key_exists($key, $row)
             && trim($row[$key]) !== '' ? (int) $row[$key] : $default;
+        $number = static fn (string $key, float $default): float => array_key_exists($key, $row)
+            && trim($row[$key]) !== '' && is_numeric($row[$key]) ? (float) $row[$key] : $default;
         $timeLimitSeconds = max(0, min(86340, $integer('time_limit_seconds', 0)));
         $timeLimitSeconds = intdiv($timeLimitSeconds, 60) * 60;
         return [
@@ -315,6 +317,10 @@ final class CuratedReviewSetCatalog
                 ? 'transliteration'
                 : 'back',
             'speechEnabled' => $boolean('speech_enabled', false),
+            'backSpeechRate' => max(
+                0.25,
+                min(1.0, round($number('back_speech_rate', 1.0) * 4) / 4),
+            ),
             'frontLanguage' => '',
             'backLanguage' => '',
             'sortMode' => in_array($row['sort_mode'] ?? '', ['difficult', 'easiest', 'never_reviewed', 'least_recent', 'recently_added', 'random'], true) ? $row['sort_mode'] : 'difficult',

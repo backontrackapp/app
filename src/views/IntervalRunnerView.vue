@@ -193,6 +193,7 @@ const flashcardSettingsDraft = reactive<FlashcardReviewSettings>({
   backSpeechRepeatCount: 1,
   backDisplay: 'back',
   speechEnabled: false,
+  backSpeechRate: 1,
   frontLanguage: '',
   backLanguage: '',
   sortMode: 'difficult',
@@ -757,8 +758,9 @@ async function speakCurrentFlashcardSide(allowPaused = false) {
         spokenFlashcardWord.value = word
       }
     })
-    if (audio) await speakFlashcardText(text, language, phase.key, audio)
-    else await speakFlashcardText(text, language, phase.key)
+    const speechRate = phase.side === 'back' ? review.backSpeechRate : 1
+    if (audio) await speakFlashcardText(text, language, phase.key, audio, speechRate)
+    else await speakFlashcardText(text, language, phase.key, '', speechRate)
   } catch {
     spokenFlashcardWord.value = undefined
     // Speech is optional during intervals; timer playback continues without an inline warning.
@@ -1944,6 +1946,7 @@ async function openFlashcardSettings() {
     backSpeechRepeatCount: review.backSpeechRepeatCount,
     backDisplay: review.backDisplay || 'back',
     speechEnabled: review.speechEnabled,
+    backSpeechRate: review.backSpeechRate,
     frontLanguage: review.frontLanguage,
     backLanguage: review.backLanguage,
     sortMode: review.sortMode,
@@ -1995,6 +1998,7 @@ async function saveFlashcardSettings(target: FlashcardSettingsApplyTarget = 'ses
         backSpeechRepeatCount: flashcardSettingsDraft.backSpeechRepeatCount,
         backDisplay: flashcardSettingsDraft.backDisplay || 'back',
         speechEnabled: flashcardSettingsDraft.speechEnabled,
+        backSpeechRate: flashcardSettingsDraft.backSpeechRate,
         frontLanguage: flashcardSettingsDraft.frontLanguage,
         backLanguage: flashcardSettingsDraft.backLanguage,
         sortMode: flashcardSettingsDraft.sortMode,

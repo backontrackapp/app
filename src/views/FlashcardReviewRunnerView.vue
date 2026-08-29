@@ -114,6 +114,7 @@ const sessionSettingsDraft = reactive<FlashcardReviewSettings>({
   backSpeechRepeatCount: 1,
   backDisplay: 'back',
   speechEnabled: false,
+  backSpeechRate: 1,
   frontLanguage: '',
   backLanguage: '',
   sortMode: 'difficult',
@@ -980,8 +981,9 @@ async function speakCurrentSide(allowPaused = false) {
     prepareFlashcardSpeechWordTracking(word => {
       if (request === speechRequest && speechKey(true) === key) spokenWord.value = word
     })
-    if (audio) await speakFlashcardText(text, language, '', audio)
-    else await speakFlashcardText(text, language)
+    const speechRate = side === 'back' ? value.backSpeechRate : 1
+    if (audio) await speakFlashcardText(text, language, '', audio, speechRate)
+    else await speakFlashcardText(text, language, '', '', speechRate)
     if (holdPassiveDuration) await waitForFlashcardSpeechCompletion()
     if (request === speechRequest) speechPlaybackWarning.value = ''
   } catch {
@@ -1311,6 +1313,7 @@ function copySessionSettings(value: FlashcardReviewSession) {
     backSpeechRepeatCount: value.backSpeechRepeatCount,
     backDisplay: value.backDisplay || 'back',
     speechEnabled: value.speechEnabled,
+    backSpeechRate: value.backSpeechRate,
     frontLanguage: value.frontLanguage,
     backLanguage: value.backLanguage,
     sortMode: value.sortMode,

@@ -271,6 +271,7 @@ export interface IntervalFlashcardReviewSnapshot {
   backSpeechRepeatCount: number
   backDisplay?: FlashcardBackDisplay
   speechEnabled: boolean
+  backSpeechRate: number
   speechPaused?: boolean
   speechPausedElapsedMs?: number
   playbackOffsetMs?: number
@@ -499,6 +500,7 @@ export interface FlashcardReviewSettings {
   backSpeechRepeatCount: number
   backDisplay?: FlashcardBackDisplay
   speechEnabled: boolean
+  backSpeechRate: number
   frontLanguage: string
   backLanguage: string
   sortMode: FlashcardReviewSort

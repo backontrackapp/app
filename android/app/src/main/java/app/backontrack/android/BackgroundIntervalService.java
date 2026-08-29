@@ -86,7 +86,9 @@ public class BackgroundIntervalService extends Service {
     private String pendingReviewSpeechText = "";
     private String pendingReviewSpeechLanguage = "";
     private String pendingReviewRecordingUrl = "";
+    private float pendingReviewSpeechRate = 1.0f;
     private boolean reviewSpeechOverAmplified;
+    private float reviewBackSpeechRate = 1.0f;
     private boolean appWasVisible;
 
     private final Runnable ticker = new Runnable() {
@@ -301,6 +303,10 @@ public class BackgroundIntervalService extends Service {
             Math.min(5, review.optInt("backSpeechRepeatCount", 1))
         );
         reviewBackDurationMs = reviewBaseBackDurationMs * reviewBackSpeechRepeatCount;
+        reviewBackSpeechRate = (float) Math.max(
+            0.25,
+            Math.min(1.0, review.optDouble("backSpeechRate", 1.0))
+        );
         String configuredCardSides = review.optString("cardSides", "both");
         reviewCardSides = "front".equals(configuredCardSides) || "back".equals(configuredCardSides)
             ? configuredCardSides
@@ -503,6 +509,7 @@ public class BackgroundIntervalService extends Service {
         pendingReviewSpeechLanguage = "front".equals(phase.side)
             ? reviewFrontLanguage
             : reviewBackLanguage;
+        pendingReviewSpeechRate = "back".equals(phase.side) ? reviewBackSpeechRate : 1.0f;
         pendingReviewRecordingUrl = "front".equals(phase.side)
             ? card.frontAudio
             : card.backAudio;
@@ -520,6 +527,7 @@ public class BackgroundIntervalService extends Service {
         String recordingUrl = pendingReviewRecordingUrl;
         String text = pendingReviewSpeechText;
         String language = pendingReviewSpeechLanguage;
+        float speechRate = pendingReviewSpeechRate;
         pendingReviewRecordingUrl = "";
         if (!recordingUrl.isEmpty()) {
             pendingReviewSpeechText = "";
@@ -528,17 +536,17 @@ public class BackgroundIntervalService extends Service {
             if (volumeBoost != null) volumeBoost.stop();
             recordingPlayer.play(
                 recordingUrl,
-                () -> speakSynthesizedReview(text, language),
+                () -> speakSynthesizedReview(text, language, speechRate),
                 () -> running
                     && !MainActivity.isAppVisible()
                     && currentStepPlaysFlashcardReview(SystemClock.elapsedRealtime())
             );
             return;
         }
-        speakSynthesizedReview(text, language);
+        speakSynthesizedReview(text, language, speechRate);
     }
 
-    private void speakSynthesizedReview(String text, String language) {
+    private void speakSynthesizedReview(String text, String language, float speechRate) {
         if (!speechReady || speech == null) {
             pendingReviewSpeechText = text;
             pendingReviewSpeechLanguage = language;
@@ -557,6 +565,7 @@ public class BackgroundIntervalService extends Service {
             availability == TextToSpeech.LANG_MISSING_DATA
             || availability == TextToSpeech.LANG_NOT_SUPPORTED
         ) return;
+        if (speech.setSpeechRate(speechRate) == TextToSpeech.ERROR) return;
         String utteranceId = "backontrack-background-interval-flashcard-" + System.nanoTime();
         int result = volumeBoost.speak(
             speech,

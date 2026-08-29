@@ -25,6 +25,9 @@ export const MAX_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS = 23 * 3600 + 59 * 60
 export const MIN_FLASHCARD_BACK_SPEECH_REPEATS = 1
 export const MAX_FLASHCARD_BACK_SPEECH_REPEATS = 5
 export const DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS = 1
+export const MIN_FLASHCARD_BACK_SPEECH_RATE = 0.25
+export const MAX_FLASHCARD_BACK_SPEECH_RATE = 1
+export const DEFAULT_FLASHCARD_BACK_SPEECH_RATE = 1
 export const DEFAULT_FLASHCARD_REVIEW_CARD_SIDES: FlashcardReviewCardSides = 'both'
 export const MIN_FLASHCARD_EJECT_EXCLUDE_AFTER = 1
 export const MAX_FLASHCARD_EJECT_EXCLUDE_AFTER = 20
@@ -230,6 +233,7 @@ export function flashcardReviewSettingsSignature(settings: FlashcardReviewSettin
     backSpeechRepeatCount: settings.backSpeechRepeatCount,
     backDisplay: settings.backDisplay || 'back',
     speechEnabled: settings.speechEnabled,
+    backSpeechRate: normalizeFlashcardBackSpeechRate(settings.backSpeechRate),
     frontLanguage: settings.frontLanguage,
     backLanguage: settings.backLanguage,
     sortMode: settings.sortMode,
@@ -250,6 +254,9 @@ export function flashcardReviewSettingsAreValid(
     && Number.isInteger(settings.backSpeechRepeatCount)
     && settings.backSpeechRepeatCount >= MIN_FLASHCARD_BACK_SPEECH_REPEATS
     && settings.backSpeechRepeatCount <= MAX_FLASHCARD_BACK_SPEECH_REPEATS
+    && settings.backSpeechRate >= MIN_FLASHCARD_BACK_SPEECH_RATE
+    && settings.backSpeechRate <= MAX_FLASHCARD_BACK_SPEECH_RATE
+    && normalizeFlashcardBackSpeechRate(settings.backSpeechRate) === settings.backSpeechRate
     && Number.isInteger(settings.timeLimitSeconds || 0)
     && (settings.timeLimitSeconds || 0) >= 0
     && (settings.timeLimitSeconds || 0) <= MAX_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS
@@ -649,6 +656,7 @@ export function createFlashcardReviewPreviewSession(
       : DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
     backDisplay: reviewSet.backDisplay || 'back',
     speechEnabled: reviewSet.speechEnabled,
+    backSpeechRate: normalizeFlashcardBackSpeechRate(reviewSet.backSpeechRate),
     frontLanguage: reviewSet.frontLanguage,
     backLanguage: reviewSet.backLanguage,
     queue,
@@ -693,6 +701,7 @@ export function createIntervalFlashcardReviewSnapshot(
       : DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
     backDisplay: reviewSet.backDisplay || 'back',
     speechEnabled: reviewSet.speechEnabled,
+    backSpeechRate: normalizeFlashcardBackSpeechRate(reviewSet.backSpeechRate),
     frontLanguage: reviewSet.frontLanguage,
     backLanguage: reviewSet.backLanguage,
     cards: queue,
@@ -715,6 +724,14 @@ export function normalizeFlashcardBackSpeechRepeatCount(value: number) {
   return Math.min(
     MAX_FLASHCARD_BACK_SPEECH_REPEATS,
     Math.max(MIN_FLASHCARD_BACK_SPEECH_REPEATS, Math.round(value)),
+  )
+}
+
+export function normalizeFlashcardBackSpeechRate(value: number) {
+  if (!Number.isFinite(value)) return DEFAULT_FLASHCARD_BACK_SPEECH_RATE
+  return Math.min(
+    MAX_FLASHCARD_BACK_SPEECH_RATE,
+    Math.max(MIN_FLASHCARD_BACK_SPEECH_RATE, Math.round(value * 4) / 4),
   )
 }
 
