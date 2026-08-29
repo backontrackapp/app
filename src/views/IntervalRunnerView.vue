@@ -1266,16 +1266,23 @@ async function startTemplate(
     repetitionDialog.value = false
     repetitionDefinition.value = undefined
     pendingRepetitionStart.value = undefined
-    previewSession.value = undefined
     await router.replace({
       name: 'interval-runner',
       params: { sessionId: started.id },
       query: route.query.from === 'tasks' ? { from: 'tasks' } : {},
     })
-    displayRemainingMs.value = started.runtime.remainingMs
-    if (started.status === 'running') {
-      await syncNativeTimer(started)
-      wakeLock = await requestIntervalWakeLock()
+
+    // A normal route handoff mounts the running session separately. Keep this
+    // preview intact until then so the welcome screen remains under the incoming
+    // runner instead of exposing an empty frame. Finish locally only when the
+    // router host kept the preview route instance mounted.
+    if (typeof route.params.templateId === 'string') {
+      previewSession.value = undefined
+      displayRemainingMs.value = started.runtime.remainingMs
+      if (started.status === 'running') {
+        await syncNativeTimer(started)
+        wakeLock = await requestIntervalWakeLock()
+      }
     }
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : 'Could not start the interval.'
@@ -2133,230 +2140,108 @@ async function runAgain(repetitions?: number) {
     </v-alert>
     <v-alert v-if="error" type="error" variant="tonal">{{ error }}</v-alert>
 
-    <transition name="runner-completion" mode="out-in">
-      <RunnerStartScreen
-        v-if="!error && session && isTemplatePreview"
-        key="start"
-        class="runner-view"
-        :title="runnerIdentityTitle"
-        :summary="runnerIdentitySummary"
-        :task-name="startTaskName"
-        :icon="sessionIcon"
-        :image="runnerIdentityImage"
-        :image-alt="attributedExercise?.name"
-        :color="sessionColor"
-        primary-label="Start interval"
-        cancel-label="Cancel interval"
-        :busy="starting"
-        @start="requestStartTemplate()"
-        @cancel="router.replace(returnTo)"
-      />
+    <div class="runner-screen-stage">
+      <transition name="runner-screen">
+        <RunnerStartScreen
+          v-if="!error && session && isTemplatePreview"
+          key="start"
+          class="runner-screen runner-view"
+          :title="runnerIdentityTitle"
+          :summary="runnerIdentitySummary"
+          :task-name="startTaskName"
+          :icon="sessionIcon"
+          :image="runnerIdentityImage"
+          :image-alt="attributedExercise?.name"
+          :color="sessionColor"
+          primary-label="Start interval"
+          cancel-label="Cancel interval"
+          :busy="starting"
+          @start="requestStartTemplate()"
+          @cancel="router.replace(returnTo)"
+        />
 
-      <section
-        v-else-if="!error && session && finished"
-        key="briefing"
-        class="finish-card runner-view runner-view--briefing"
-      >
-        <div
-          class="finish-icon"
-          :class="{ 'finish-icon--image': runnerIdentityImage }"
-          :style="{ background: sessionColor }"
+        <section
+          v-else-if="!error && session && finished"
+          key="briefing"
+          class="finish-card runner-screen runner-view runner-view--briefing"
         >
-          <v-img
-            v-if="runnerIdentityImage"
-            class="finish-image"
-            :src="runnerIdentityImage"
-            :alt="attributedExercise?.name || runnerIdentityTitle"
-            cover
-            eager
+          <div
+            class="finish-icon"
+            :class="{ 'finish-icon--image': runnerIdentityImage }"
+            :style="{ background: sessionColor }"
           >
-            <template #error>
-              <ContentIcon :icon="sessionIcon" size="2.125rem" />
+            <v-img
+              v-if="runnerIdentityImage"
+              class="finish-image"
+              :src="runnerIdentityImage"
+              :alt="attributedExercise?.name || runnerIdentityTitle"
+              cover
+              eager
+            >
+              <template #error>
+                <ContentIcon :icon="sessionIcon" size="2.125rem" />
+              </template>
+            </v-img>
+            <ContentIcon v-else :icon="sessionIcon" size="2.125rem" />
+          </div>
+          <p class="runner-label finish-status">
+            <span>{{ session.status === 'completed' ? 'Session completed' : 'Session ended' }}</span>
+            <template v-if="completionIdentityTitle !== session.name">
+              <span class="finish-status__separator">·</span>
+              <span class="finish-status__interval">{{ session.name }}</span>
             </template>
-          </v-img>
-          <ContentIcon v-else :icon="sessionIcon" size="2.125rem" />
-        </div>
-        <p class="runner-label finish-status">
-          <span>{{ session.status === 'completed' ? 'Session completed' : 'Session ended' }}</span>
-          <template v-if="completionIdentityTitle !== session.name">
-            <span class="finish-status__separator">·</span>
-            <span class="finish-status__interval">{{ session.name }}</span>
-          </template>
-        </p>
-        <h1 class="display-title">
-          {{ completionIdentityTitle }}<span class="text-secondary">.</span>
-        </h1>
-        <p v-if="completionIdentityTitle !== session.name" class="finish-source">{{ session.name }}</p>
-        <div class="finish-stats">
-          <div><span>Planned</span><strong>{{ formatIntervalDuration(session.plannedSeconds) }}</strong></div>
-          <div><span>Elapsed</span><strong>{{ formatIntervalDuration(session.elapsedSeconds) }}</strong></div>
-          <div><span>Intervals</span><strong>{{ Math.min(session.runtime.stepIndex, current?.totalSteps || session.runtime.stepIndex) }}</strong></div>
-        </div>
-        <div v-if="session.note" class="finish-note">
-          <v-icon icon="mdi-note-text-outline" size="22" />
-          <p>{{ session.note }}</p>
-        </div>
-        <div class="finish-actions">
-          <v-btn
-            class="finish-actions__done"
-            color="secondary"
-            size="x-large"
-            prepend-icon="mdi-check-bold"
-            :to="returnTo"
-          >
-            Done
-          </v-btn>
-          <v-btn variant="tonal" size="large" prepend-icon="mdi-replay" :loading="starting" @click="runAgain()">Run again</v-btn>
-          <v-btn variant="outlined" size="large" prepend-icon="mdi-note-plus-outline" @click="openNoteDialog">
-            {{ session.note ? 'Edit note' : 'Add note' }}
-          </v-btn>
-        </div>
-      </section>
-
-      <div
-        v-else-if="!error && session && current"
-        key="runner"
-        class="runner-view runner-view--active"
-      >
-        <header
-          class="runner-header"
-          :class="{ 'runner-header--with-review': flashcardPhase && session.flashcardReview }"
-        >
-          <v-btn icon="mdi-chevron-down" variant="text" aria-label="Leave runner" :to="returnTo" />
-          <div class="runner-header__title text-center min-width-0">
-            <div class="runner-header__standard-title">
-              <p class="runner-label">Interval {{ current.index + 1 }} of {{ current.totalSteps }}</p>
-              <strong class="text-truncate d-block">{{ session.name }}</strong>
-            </div>
-            <div class="runner-header__review-title">
-              <strong class="text-truncate">{{ session.name }}</strong>
-              <span class="runner-label">Interval {{ current.index + 1 }} of {{ current.totalSteps }}</span>
-            </div>
+          </p>
+          <h1 class="display-title">
+            {{ completionIdentityTitle }}<span class="text-secondary">.</span>
+          </h1>
+          <p v-if="completionIdentityTitle !== session.name" class="finish-source">{{ session.name }}</p>
+          <div class="finish-stats">
+            <div><span>Planned</span><strong>{{ formatIntervalDuration(session.plannedSeconds) }}</strong></div>
+            <div><span>Elapsed</span><strong>{{ formatIntervalDuration(session.elapsedSeconds) }}</strong></div>
+            <div><span>Intervals</span><strong>{{ Math.min(session.runtime.stepIndex, current?.totalSteps || session.runtime.stepIndex) }}</strong></div>
           </div>
-          <div class="runner-header__actions">
+          <div v-if="session.note" class="finish-note">
+            <v-icon icon="mdi-note-text-outline" size="22" />
+            <p>{{ session.note }}</p>
+          </div>
+          <div class="finish-actions">
             <v-btn
-              icon="mdi-dots-vertical"
-              variant="text"
-              class="runner-actions-button"
-              aria-label="Interval actions"
-              :disabled="sessionActionsDisabled"
-              @touchstart.stop
-              @click.stop="sessionActionsSheet = true"
-            />
+              class="finish-actions__done"
+              color="secondary"
+              size="x-large"
+              prepend-icon="mdi-check-bold"
+              :to="returnTo"
+            >
+              Done
+            </v-btn>
+            <v-btn variant="tonal" size="large" prepend-icon="mdi-replay" :loading="starting" @click="runAgain()">Run again</v-btn>
+            <v-btn variant="outlined" size="large" prepend-icon="mdi-note-plus-outline" @click="openNoteDialog">
+              {{ session.note ? 'Edit note' : 'Add note' }}
+            </v-btn>
           </div>
-        </header>
+        </section>
 
         <div
-          class="runner-stage"
-          :class="{ 'runner-stage--with-review': flashcardPhase && session.flashcardReview }"
+          v-else-if="!error && session && current"
+          key="runner"
+          class="runner-screen runner-view runner-view--active"
         >
-          <div class="runner-stage__primary">
-            <section class="runner-main" :class="{ 'runner-main--with-review': flashcardPhase }">
-            <div class="runner-details">
-              <p class="runner-session">{{ session.name }}</p>
-              <p v-if="attributedTaskName" class="runner-task-link">
-                Completes {{ attributedTaskName }}
-              </p>
-              <p class="runner-label runner-position">Interval {{ current.index + 1 }} of {{ current.totalSteps }}</p>
-              <h1 class="runner-step">{{ current.step.name }}</h1>
-            </div>
-            <div class="runner-progress-stack">
-              <div class="runner-progress">
-                <div class="progress-rings">
-                  <IntervalTypeIcon
-                    v-if="current.step.kind"
-                    class="runner-type-backdrop"
-                    :kind="current.step.kind"
-                    size="clamp(8rem, 44vw, 8rem)"
-                    :animated="session.status === 'running'"
-                  />
-                  <v-progress-circular
-                    v-if="showTotalProgress"
-                    class="progress-ring progress-ring--total"
-                    :model-value="progress.total"
-                    :width="7"
-                    color="info"
-                    bg-color="surface-variant"
-                    :aria-label="`Total progress: ${Math.round(progress.total)}%`"
-                  />
-                  <v-progress-circular
-                    v-if="showRoundProgress"
-                    class="progress-ring progress-ring--round"
-                    :model-value="progress.round"
-                    :width="7"
-                    color="warning"
-                    bg-color="surface-variant"
-                    :aria-label="`Current round progress: ${Math.round(progress.round || 0)}%`"
-                  />
-                  <v-progress-circular
-                    class="progress-ring progress-ring--item"
-                    :model-value="progress.item"
-                    :width="12"
-                    color="secondary"
-                    bg-color="surface-variant"
-                    :aria-label="`Current item progress: ${Math.round(progress.item)}%`"
-                  />
-                  <div
-                    v-if="!currentConfirmation"
-                    ref="progressRingsContent"
-                    class="progress-rings__content"
-                  >
-                    <span
-                      :key="timerEffectKey"
-                      ref="timerValueElement"
-                      class="timer-value"
-                      :class="{
-                        'timer-value--count': timerEffect === 'count',
-                      }"
-                    >
-                      {{ remainingLabel }}
-                    </span>
-                  </div>
-                </div>
+          <header
+            class="runner-header"
+            :class="{ 'runner-header--with-review': flashcardPhase && session.flashcardReview }"
+          >
+            <v-btn icon="mdi-chevron-down" variant="text" aria-label="Leave runner" :to="returnTo" />
+            <div class="runner-header__title text-center min-width-0">
+              <div class="runner-header__standard-title">
+                <p class="runner-label">Interval {{ current.index + 1 }} of {{ current.totalSteps }}</p>
+                <strong class="text-truncate d-block">{{ session.name }}</strong>
+              </div>
+              <div class="runner-header__review-title">
+                <strong class="text-truncate">{{ session.name }}</strong>
+                <span class="runner-label">Interval {{ current.index + 1 }} of {{ current.totalSteps }}</span>
               </div>
             </div>
-            <p class="next-copy">{{ next ? `Next: ${next.step.name}` : 'Final interval' }}</p>
-            </section>
-
-            <footer class="runner-controls runner-controls--landscape">
-              <v-btn
-                v-if="currentConfirmation"
-                color="secondary"
-                class="runner-confirm-button"
-                append-icon="mdi-arrow-right"
-                :loading="starting || syncing"
-                :disabled="!isTemplatePreview && session.status !== 'running'"
-                @touchstart.stop
-                @click.stop="isTemplatePreview ? requestStartTemplate() : confirmCurrent()"
-              >
-                {{ isTemplatePreview ? playActionLabel : 'Continue' }}
-              </v-btn>
-              <template v-else>
-                <v-btn
-                  icon="mdi-skip-previous"
-                  variant="tonal"
-                  :disabled="isTemplatePreview || current.index === 0"
-                  aria-label="Previous interval"
-                  @click="previous"
-                />
-                <v-btn
-                  :icon="session.status === 'paused' ? 'mdi-play' : 'mdi-pause'"
-                  color="secondary"
-                  class="runner-pause-button"
-                  :loading="starting"
-                  :aria-label="session.status === 'paused' ? playActionLabel : 'Pause'"
-                  @touchstart.stop
-                  @click.stop="isTemplatePreview ? requestStartTemplate() : session.status === 'paused' ? resume() : pause()"
-                />
-                <v-btn icon="mdi-skip-next" variant="tonal" aria-label="Next interval" :disabled="isTemplatePreview" @click="skip" />
-              </template>
-              <v-btn
-                icon="mdi-chevron-left"
-                variant="text"
-                class="runner-back-button"
-                aria-label="Leave runner"
-                :to="returnTo"
-              />
+            <div class="runner-header__actions">
               <v-btn
                 icon="mdi-dots-vertical"
                 variant="text"
@@ -2366,86 +2251,210 @@ async function runAgain(repetitions?: number) {
                 @touchstart.stop
                 @click.stop="sessionActionsSheet = true"
               />
-            </footer>
-          </div>
+            </div>
+          </header>
 
-          <footer class="runner-controls runner-controls--portrait">
-            <v-btn
-              v-if="currentConfirmation"
-              class="runner-confirm-button"
-              color="secondary"
-              size="x-large"
-              append-icon="mdi-arrow-right"
-              :loading="starting || syncing"
-              :disabled="!isTemplatePreview && session.status !== 'running'"
-              @touchstart.stop
-              @click.stop="isTemplatePreview ? requestStartTemplate() : confirmCurrent()"
-            >
-              {{ isTemplatePreview ? playActionLabel : 'Continue' }}
-            </v-btn>
-            <template v-else>
-              <v-btn icon="mdi-skip-previous" variant="tonal" size="large" aria-label="Previous interval" :disabled="isTemplatePreview || current.index === 0" @click="previous" />
+          <div
+            class="runner-stage"
+            :class="{ 'runner-stage--with-review': flashcardPhase && session.flashcardReview }"
+          >
+            <div class="runner-stage__primary">
+              <section class="runner-main" :class="{ 'runner-main--with-review': flashcardPhase }">
+              <div class="runner-details">
+                <p class="runner-session">{{ session.name }}</p>
+                <p v-if="attributedTaskName" class="runner-task-link">
+                  Completes {{ attributedTaskName }}
+                </p>
+                <p class="runner-label runner-position">Interval {{ current.index + 1 }} of {{ current.totalSteps }}</p>
+                <h1 class="runner-step">{{ current.step.name }}</h1>
+              </div>
+              <div class="runner-progress-stack">
+                <div class="runner-progress">
+                  <div class="progress-rings">
+                    <IntervalTypeIcon
+                      v-if="current.step.kind"
+                      class="runner-type-backdrop"
+                      :kind="current.step.kind"
+                      size="clamp(8rem, 44vw, 8rem)"
+                      :animated="session.status === 'running'"
+                    />
+                    <v-progress-circular
+                      v-if="showTotalProgress"
+                      class="progress-ring progress-ring--total"
+                      :model-value="progress.total"
+                      :width="7"
+                      color="info"
+                      bg-color="surface-variant"
+                      :aria-label="`Total progress: ${Math.round(progress.total)}%`"
+                    />
+                    <v-progress-circular
+                      v-if="showRoundProgress"
+                      class="progress-ring progress-ring--round"
+                      :model-value="progress.round"
+                      :width="7"
+                      color="warning"
+                      bg-color="surface-variant"
+                      :aria-label="`Current round progress: ${Math.round(progress.round || 0)}%`"
+                    />
+                    <v-progress-circular
+                      class="progress-ring progress-ring--item"
+                      :model-value="progress.item"
+                      :width="12"
+                      color="secondary"
+                      bg-color="surface-variant"
+                      :aria-label="`Current item progress: ${Math.round(progress.item)}%`"
+                    />
+                    <div
+                      v-if="!currentConfirmation"
+                      ref="progressRingsContent"
+                      class="progress-rings__content"
+                    >
+                      <span
+                        :key="timerEffectKey"
+                        ref="timerValueElement"
+                        class="timer-value"
+                        :class="{
+                          'timer-value--count': timerEffect === 'count',
+                        }"
+                      >
+                        {{ remainingLabel }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <p class="next-copy">{{ next ? `Next: ${next.step.name}` : 'Final interval' }}</p>
+              </section>
+
+              <footer class="runner-controls runner-controls--landscape">
+                <v-btn
+                  v-if="currentConfirmation"
+                  color="secondary"
+                  class="runner-confirm-button"
+                  append-icon="mdi-arrow-right"
+                  :loading="starting || syncing"
+                  :disabled="!isTemplatePreview && session.status !== 'running'"
+                  @touchstart.stop
+                  @click.stop="isTemplatePreview ? requestStartTemplate() : confirmCurrent()"
+                >
+                  {{ isTemplatePreview ? playActionLabel : 'Continue' }}
+                </v-btn>
+                <template v-else>
+                  <v-btn
+                    icon="mdi-skip-previous"
+                    variant="tonal"
+                    :disabled="isTemplatePreview || current.index === 0"
+                    aria-label="Previous interval"
+                    @click="previous"
+                  />
+                  <v-btn
+                    :icon="session.status === 'paused' ? 'mdi-play' : 'mdi-pause'"
+                    color="secondary"
+                    class="runner-pause-button"
+                    :loading="starting"
+                    :aria-label="session.status === 'paused' ? playActionLabel : 'Pause'"
+                    @touchstart.stop
+                    @click.stop="isTemplatePreview ? requestStartTemplate() : session.status === 'paused' ? resume() : pause()"
+                  />
+                  <v-btn icon="mdi-skip-next" variant="tonal" aria-label="Next interval" :disabled="isTemplatePreview" @click="skip" />
+                </template>
+                <v-btn
+                  icon="mdi-chevron-left"
+                  variant="text"
+                  class="runner-back-button"
+                  aria-label="Leave runner"
+                  :to="returnTo"
+                />
+                <v-btn
+                  icon="mdi-dots-vertical"
+                  variant="text"
+                  class="runner-actions-button"
+                  aria-label="Interval actions"
+                  :disabled="sessionActionsDisabled"
+                  @touchstart.stop
+                  @click.stop="sessionActionsSheet = true"
+                />
+              </footer>
+            </div>
+
+            <footer class="runner-controls runner-controls--portrait">
               <v-btn
-                :icon="session.status === 'paused' ? 'mdi-play' : 'mdi-pause'"
+                v-if="currentConfirmation"
+                class="runner-confirm-button"
                 color="secondary"
                 size="x-large"
-                :loading="starting"
-                :aria-label="session.status === 'paused' ? playActionLabel : 'Pause'"
+                append-icon="mdi-arrow-right"
+                :loading="starting || syncing"
+                :disabled="!isTemplatePreview && session.status !== 'running'"
                 @touchstart.stop
-                @click.stop="isTemplatePreview ? requestStartTemplate() : session.status === 'paused' ? resume() : pause()"
-              />
-              <v-btn icon="mdi-skip-next" variant="tonal" size="large" aria-label="Skip interval" :disabled="isTemplatePreview" @click="skip" />
-            </template>
-          </footer>
+                @click.stop="isTemplatePreview ? requestStartTemplate() : confirmCurrent()"
+              >
+                {{ isTemplatePreview ? playActionLabel : 'Continue' }}
+              </v-btn>
+              <template v-else>
+                <v-btn icon="mdi-skip-previous" variant="tonal" size="large" aria-label="Previous interval" :disabled="isTemplatePreview || current.index === 0" @click="previous" />
+                <v-btn
+                  :icon="session.status === 'paused' ? 'mdi-play' : 'mdi-pause'"
+                  color="secondary"
+                  size="x-large"
+                  :loading="starting"
+                  :aria-label="session.status === 'paused' ? playActionLabel : 'Pause'"
+                  @touchstart.stop
+                  @click.stop="isTemplatePreview ? requestStartTemplate() : session.status === 'paused' ? resume() : pause()"
+                />
+                <v-btn icon="mdi-skip-next" variant="tonal" size="large" aria-label="Skip interval" :disabled="isTemplatePreview" @click="skip" />
+              </template>
+            </footer>
 
-          <ReviewSetCard
-            v-if="flashcardPhase && session.flashcardReview"
-            dense
-            :card="displayedIntervalFlashcard || flashcardPhase.card"
-            :side="flashcardPhase.side"
-            :card-sides="session.flashcardReview.cardSides"
-            :invert-faces="session.flashcardReview.invertFaces"
-            :back-display="flashcardBackDisplay"
-            :disabled="flashcardContextDisabled"
-            :transition-direction="intervalFlashcardTransitionDirection"
-            :set-name="session.flashcardReview.name"
-            :card-position="flashcardPhase.cardIndex + 1"
-            :card-count="session.flashcardReview.cards.length"
-            :paused="!flashcardReviewPlaybackEnabled"
-            :speech-enabled="session.flashcardReview.speechEnabled"
-            :speech-language="flashcardPhase.side === 'front'
-              ? session.flashcardReview.frontLanguage
-              : session.flashcardReview.backLanguage"
-            :spoken-word="spokenFlashcardWord"
-            :progress="flashcardPhase.progress"
-            progress-color="info"
-            :progress-aria-label="flashcardReviewPlaybackEnabled
-              ? `${Math.round(flashcardPhase.progress)}% through the ${flashcardPhase.side}`
-              : `Review set paused at ${Math.round(flashcardPhase.progress)}% through the ${flashcardPhase.side}`"
-            show-tag-actions
-            :quick-tags="intervalQuickTags"
-            :can-tag="canTagCurrentFlashcard"
-            ejectable
-            :ejecting="flashcardEjecting"
-            :eject-disabled="isTemplatePreview || syncing || flashcardEjecting"
-            @pointer-down="beginIntervalFlashcardSwipe"
-            @pointer-move="moveIntervalFlashcardSwipe"
-            @pointer-up="finishIntervalFlashcardSwipe"
-            @pointer-cancel="cancelIntervalFlashcardSwipe"
-            @lost-pointer-capture="cancelIntervalFlashcardSwipe"
-            @activate="openFlashcardContext"
-            @after-enter="finishIntervalFlashcardTransition"
-            @eject="ejectIntervalFlashcard"
-            @toggle-tag="toggleIntervalFlashcardTag({ name: $event })"
-            @previous="navigateIntervalFlashcard('previous', $event)"
-            @next="navigateIntervalFlashcard('next', $event)"
-            @flip="showIntervalFlashcardSide"
-            @toggle-playback="session.status === 'paused' ? resume() : pause()"
-          />
+            <ReviewSetCard
+              v-if="flashcardPhase && session.flashcardReview"
+              dense
+              :card="displayedIntervalFlashcard || flashcardPhase.card"
+              :side="flashcardPhase.side"
+              :card-sides="session.flashcardReview.cardSides"
+              :invert-faces="session.flashcardReview.invertFaces"
+              :back-display="flashcardBackDisplay"
+              :disabled="flashcardContextDisabled"
+              :transition-direction="intervalFlashcardTransitionDirection"
+              :set-name="session.flashcardReview.name"
+              :card-position="flashcardPhase.cardIndex + 1"
+              :card-count="session.flashcardReview.cards.length"
+              :paused="!flashcardReviewPlaybackEnabled"
+              :speech-enabled="session.flashcardReview.speechEnabled"
+              :speech-language="flashcardPhase.side === 'front'
+                ? session.flashcardReview.frontLanguage
+                : session.flashcardReview.backLanguage"
+              :spoken-word="spokenFlashcardWord"
+              :progress="flashcardPhase.progress"
+              progress-color="info"
+              :progress-aria-label="flashcardReviewPlaybackEnabled
+                ? `${Math.round(flashcardPhase.progress)}% through the ${flashcardPhase.side}`
+                : `Review set paused at ${Math.round(flashcardPhase.progress)}% through the ${flashcardPhase.side}`"
+              show-tag-actions
+              :quick-tags="intervalQuickTags"
+              :can-tag="canTagCurrentFlashcard"
+              ejectable
+              :ejecting="flashcardEjecting"
+              :eject-disabled="isTemplatePreview || syncing || flashcardEjecting"
+              @pointer-down="beginIntervalFlashcardSwipe"
+              @pointer-move="moveIntervalFlashcardSwipe"
+              @pointer-up="finishIntervalFlashcardSwipe"
+              @pointer-cancel="cancelIntervalFlashcardSwipe"
+              @lost-pointer-capture="cancelIntervalFlashcardSwipe"
+              @activate="openFlashcardContext"
+              @after-enter="finishIntervalFlashcardTransition"
+              @eject="ejectIntervalFlashcard"
+              @toggle-tag="toggleIntervalFlashcardTag({ name: $event })"
+              @previous="navigateIntervalFlashcard('previous', $event)"
+              @next="navigateIntervalFlashcard('next', $event)"
+              @flip="showIntervalFlashcardSide"
+              @toggle-playback="session.status === 'paused' ? resume() : pause()"
+            />
 
+          </div>
         </div>
-      </div>
-    </transition>
+      </transition>
+    </div>
 
     <RunnerSessionActions
       v-model="sessionActionsSheet"
@@ -2780,21 +2789,6 @@ async function runAgain(repetitions?: number) {
   min-height: 0;
   flex: 1;
   flex-direction: column;
-}
-.runner-completion-enter-active {
-  transition: opacity 220ms ease, transform 240ms cubic-bezier(.22, 1, .36, 1);
-}
-.runner-completion-leave-active {
-  transition: opacity 160ms ease, transform 180ms cubic-bezier(.22, 1, .36, 1);
-  pointer-events: none;
-}
-.runner-completion-enter-from {
-  opacity: 0;
-  transform: translateY(1.5rem);
-}
-.runner-completion-leave-to {
-  opacity: 0;
-  transform: translateY(-1rem);
 }
 .runner-header { display: grid; width: 100%; max-width: 54.25rem; margin-inline: auto; grid-template-columns: 3rem minmax(0, 1fr) auto; align-items: center; }
 .runner-header__review-title { display: none; }
@@ -3343,8 +3337,7 @@ async function runAgain(repetitions?: number) {
     flex-direction: column;
   }
 
-  .runner-page--finished {
-    display: grid;
+  .runner-page--finished .runner-screen-stage {
     place-items: center;
   }
 
@@ -3413,18 +3406,8 @@ async function runAgain(repetitions?: number) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .runner-completion-enter-active,
-  .runner-completion-leave-active {
-    transition: opacity 160ms ease;
-  }
-
   .runner-type-backdrop {
     transition: none;
-  }
-
-  .runner-completion-enter-from,
-  .runner-completion-leave-to {
-    transform: none;
   }
 }
 </style>

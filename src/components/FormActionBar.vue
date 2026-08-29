@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { Keyboard } from '@capacitor/keyboard'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import { mobileKeyboardVisible } from '@/services/mobileKeyboardViewport'
+import { isNativeAndroidOrIosApp } from '@/services/platformAccess'
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   primaryText?: string
   loading?: boolean
   primaryDisabled?: boolean
@@ -40,6 +43,39 @@ const emit = defineEmits<{
 }>()
 
 const discardDialog = ref(false)
+let cancelPressHidKeyboard = false
+
+function hideKeyboardForFocusedField() {
+  if (!isNativeAndroidOrIosApp() || !mobileKeyboardVisible.value) return false
+
+  const activeElement = document.activeElement
+  const isField = activeElement instanceof HTMLInputElement
+    || activeElement instanceof HTMLTextAreaElement
+    || activeElement instanceof HTMLSelectElement
+    || (activeElement instanceof HTMLElement && activeElement.isContentEditable)
+
+  if (!isField) return false
+
+  void Keyboard.hide().catch(() => undefined)
+  return true
+}
+
+function prepareCancelPress(event: MouseEvent) {
+  cancelPressHidKeyboard = hideKeyboardForFocusedField()
+  if (cancelPressHidKeyboard) event.stopPropagation()
+}
+
+function cancel() {
+  const keyboardOnly = cancelPressHidKeyboard || hideKeyboardForFocusedField()
+  cancelPressHidKeyboard = false
+  if (keyboardOnly) return
+
+  if (props.hasChanges) {
+    discardDialog.value = true
+  } else {
+    emit('cancel')
+  }
+}
 
 function discardChanges() {
   discardDialog.value = false
@@ -68,7 +104,8 @@ function discardChanges() {
         variant="text"
         type="button"
         :disabled="cancelDisabled || loading"
-        @click="hasChanges ? discardDialog = true : emit('cancel')"
+        @mousedown="prepareCancelPress"
+        @click="cancel"
       >
         Cancel
       </v-btn>

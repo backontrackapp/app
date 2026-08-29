@@ -1673,180 +1673,185 @@ async function leaveRunner() {
         </template>
       </v-alert>
 
-      <RunnerStartScreen
-        v-if="isReviewSetPreview"
-        class="px-4"
-        :title="session.name"
-        :summary="previewSummary"
-        :task-name="startTaskName"
-        :icon="currentReviewSet?.icon || 'mdi-cards-outline'"
-        :color="currentReviewSet?.color || '#C7F464'"
-        primary-label="Start review"
-        cancel-label="Cancel review"
-        :busy="busy"
-        @start="startPreviewReview()"
-        @cancel="leaveRunner"
-      />
+      <div class="runner-screen-stage">
+        <transition name="runner-screen">
+          <RunnerStartScreen
+            v-if="isReviewSetPreview"
+            key="start"
+            class="runner-screen px-4"
+            :title="session.name"
+            :summary="previewSummary"
+            :task-name="startTaskName"
+            :icon="currentReviewSet?.icon || 'mdi-cards-outline'"
+            :color="currentReviewSet?.color || '#C7F464'"
+            primary-label="Start review"
+            cancel-label="Cancel review"
+            :busy="busy"
+            @start="startPreviewReview()"
+            @cancel="leaveRunner"
+          />
 
-      <section v-else-if="isFinished" class="completion-panel">
-        <div
-          class="completion-panel__icon"
-          :style="{ background: currentReviewSet?.color || '#C7F464' }"
-        >
-          <ContentIcon :icon="currentReviewSet?.icon || 'mdi-cards-outline'" size="3rem" />
-        </div>
-        <h1 class="display-title">{{ session.status === 'completed' ? 'Review complete' : 'Review ended' }}</h1>
-        <p class="muted">
-          {{ session.status === 'completed'
-            ? timeLimitReached && session.queue.length
-              ? 'You reached the time limit.'
-              : session.indefinite
-              ? 'Your looping review has been completed.'
-              : 'You reached the end of the queue.'
-            : 'Your partial progress has been saved.' }}
-        </p>
-        <div class="completion-stats">
-          <div><strong>{{ formatReviewDuration(session.elapsedSeconds) }}</strong><span>Active time</span></div>
-          <div><strong>{{ session.viewedCount }}</strong><span>Viewed</span></div>
-          <div v-if="session.mode === 'manual'"><strong>{{ session.successCount }}</strong><span>Success</span></div>
-          <div v-if="session.mode === 'manual'"><strong>{{ session.errorCount }}</strong><span>Errors</span></div>
-          <div v-if="accuracy !== undefined"><strong>{{ accuracy }}%</strong><span>Accuracy</span></div>
-          <div><strong>{{ session.ejectedCount }}</strong><span>Ejected</span></div>
-        </div>
-        <v-btn class="completion-panel__done" size="x-large" color="secondary" @click="router.replace(exitDestination)">Done</v-btn>
-      </section>
-
-      <section v-else-if="currentCard" class="runner-body">
-        <div class="runner-meta">
-          <div>
-            <v-icon :icon="session.mode === 'passive' ? 'mdi-play-speed' : 'mdi-gesture-tap'" size="18" />
-            <span>{{ session.mode === 'passive' ? 'Passive' : 'Manual' }}</span>
-          </div>
-          <span class="runner-meta__card-count">{{ currentCardPosition }} of {{ session.queue.length }}</span>
-          <span class="runner-meta__elapsed">
-            {{ formatReviewDuration(elapsedSeconds) }}<template v-if="session.timeLimitSeconds">
-              / {{ formatReviewDuration(session.timeLimitSeconds) }}
-            </template>
-          </span>
-        </div>
-
-        <ReviewSetCard
-          ref="reviewCardPane"
-          :card="displayedCard || currentCard"
-          :side="currentSpeechSide"
-          :mode="session.mode"
-          :card-sides="session.cardSides"
-          :invert-faces="session.invertFaces"
-          :back-display="currentBackDisplay"
-          :disabled="busy"
-          :revealed="revealed"
-          :speech-enabled="session.speechEnabled"
-          :speech-language="currentSpeechLanguage"
-          :spoken-word="spokenWord"
-          :can-replay="canReplayCurrentSide"
-          :transition-direction="reviewCardTransitionDirection"
-          :progress="passiveProgress"
-          :show-tag-actions="Boolean(store.tags)"
-          :quick-tags="quickTags"
-          :can-tag="canTagCurrentCard"
-          ejectable
-          :eject-disabled="isReviewSetPreview || !currentCard"
-          @pointer-down="beginReviewCardSwipe"
-          @pointer-move="moveReviewCardSwipe"
-          @pointer-up="finishReviewCardSwipe"
-          @pointer-cancel="cancelReviewCardSwipe"
-          @lost-pointer-capture="cancelReviewCardSwipe"
-          @activate="handleReviewCardTap"
-          @replay="replayCurrentSide"
-          @speak-word="speakPressedWord"
-          @after-enter="finishReviewCardTransition"
-          @toggle-tag="toggleCurrentCardTag({ name: $event })"
-          @eject="ejectCurrentCard"
-          @previous="navigateLeft"
-          @next="navigateRight"
-          @flip="showReviewCardSide"
-          @toggle-playback="session.mode === 'passive'
-            && (session.status === 'paused' ? resumeReview() : pauseReview(false))"
-        />
-
-        <div v-if="session.mode === 'manual'" class="grading-actions">
-          <v-btn
-            v-if="session.cardSides === 'both' && !revealed"
-            size="large"
-            color="secondary"
-            prepend-icon="mdi-eye-outline"
-            :disabled="busy || session.status === 'paused'"
-            @click="revealed = true"
-          >
-            {{ session.invertFaces ? 'Show front' : 'Show answer' }}
-          </v-btn>
-          <template v-else>
-            <v-btn
-              size="large"
-              color="error"
-              variant="tonal"
-              prepend-icon="mdi-close-thick"
-              :loading="busy"
-              :disabled="session.status !== 'running'"
-              @click="performAction('error')"
+          <section v-else-if="isFinished" key="completion" class="completion-panel runner-screen">
+            <div
+              class="completion-panel__icon"
+              :style="{ background: currentReviewSet?.color || '#C7F464' }"
             >
-              Error
-            </v-btn>
-            <v-btn
-              size="large"
-              color="success"
-              prepend-icon="mdi-check-bold"
-              :loading="busy"
-              :disabled="session.status !== 'running'"
-              @click="performAction('success')"
+              <ContentIcon :icon="currentReviewSet?.icon || 'mdi-cards-outline'" size="3rem" />
+            </div>
+            <h1 class="display-title">{{ session.status === 'completed' ? 'Review complete' : 'Review ended' }}</h1>
+            <p class="muted">
+              {{ session.status === 'completed'
+                ? timeLimitReached && session.queue.length
+                  ? 'You reached the time limit.'
+                  : session.indefinite
+                  ? 'Your looping review has been completed.'
+                  : 'You reached the end of the queue.'
+                : 'Your partial progress has been saved.' }}
+            </p>
+            <div class="completion-stats">
+              <div><strong>{{ formatReviewDuration(session.elapsedSeconds) }}</strong><span>Active time</span></div>
+              <div><strong>{{ session.viewedCount }}</strong><span>Viewed</span></div>
+              <div v-if="session.mode === 'manual'"><strong>{{ session.successCount }}</strong><span>Success</span></div>
+              <div v-if="session.mode === 'manual'"><strong>{{ session.errorCount }}</strong><span>Errors</span></div>
+              <div v-if="accuracy !== undefined"><strong>{{ accuracy }}%</strong><span>Accuracy</span></div>
+              <div><strong>{{ session.ejectedCount }}</strong><span>Ejected</span></div>
+            </div>
+            <v-btn class="completion-panel__done" size="x-large" color="secondary" @click="router.replace(exitDestination)">Done</v-btn>
+          </section>
+
+          <section v-else-if="currentCard" key="runner" class="runner-body runner-screen">
+            <div class="runner-meta">
+              <div>
+                <v-icon :icon="session.mode === 'passive' ? 'mdi-play-speed' : 'mdi-gesture-tap'" size="18" />
+                <span>{{ session.mode === 'passive' ? 'Passive' : 'Manual' }}</span>
+              </div>
+              <span class="runner-meta__card-count">{{ currentCardPosition }} of {{ session.queue.length }}</span>
+              <span class="runner-meta__elapsed">
+                {{ formatReviewDuration(elapsedSeconds) }}<template v-if="session.timeLimitSeconds">
+                  / {{ formatReviewDuration(session.timeLimitSeconds) }}
+                </template>
+              </span>
+            </div>
+
+            <ReviewSetCard
+              ref="reviewCardPane"
+              :card="displayedCard || currentCard"
+              :side="currentSpeechSide"
+              :mode="session.mode"
+              :card-sides="session.cardSides"
+              :invert-faces="session.invertFaces"
+              :back-display="currentBackDisplay"
+              :disabled="busy"
+              :revealed="revealed"
+              :speech-enabled="session.speechEnabled"
+              :speech-language="currentSpeechLanguage"
+              :spoken-word="spokenWord"
+              :can-replay="canReplayCurrentSide"
+              :transition-direction="reviewCardTransitionDirection"
+              :progress="passiveProgress"
+              :show-tag-actions="Boolean(store.tags)"
+              :quick-tags="quickTags"
+              :can-tag="canTagCurrentCard"
+              ejectable
+              :eject-disabled="isReviewSetPreview || !currentCard"
+              @pointer-down="beginReviewCardSwipe"
+              @pointer-move="moveReviewCardSwipe"
+              @pointer-up="finishReviewCardSwipe"
+              @pointer-cancel="cancelReviewCardSwipe"
+              @lost-pointer-capture="cancelReviewCardSwipe"
+              @activate="handleReviewCardTap"
+              @replay="replayCurrentSide"
+              @speak-word="speakPressedWord"
+              @after-enter="finishReviewCardTransition"
+              @toggle-tag="toggleCurrentCardTag({ name: $event })"
+              @eject="ejectCurrentCard"
+              @previous="navigateLeft"
+              @next="navigateRight"
+              @flip="showReviewCardSide"
+              @toggle-playback="session.mode === 'passive'
+                && (session.status === 'paused' ? resumeReview() : pauseReview(false))"
+            />
+
+            <div v-if="session.mode === 'manual'" class="grading-actions">
+              <v-btn
+                v-if="session.cardSides === 'both' && !revealed"
+                size="large"
+                color="secondary"
+                prepend-icon="mdi-eye-outline"
+                :disabled="busy || session.status === 'paused'"
+                @click="revealed = true"
+              >
+                {{ session.invertFaces ? 'Show front' : 'Show answer' }}
+              </v-btn>
+              <template v-else>
+                <v-btn
+                  size="large"
+                  color="error"
+                  variant="tonal"
+                  prepend-icon="mdi-close-thick"
+                  :loading="busy"
+                  :disabled="session.status !== 'running'"
+                  @click="performAction('error')"
+                >
+                  Error
+                </v-btn>
+                <v-btn
+                  size="large"
+                  color="success"
+                  prepend-icon="mdi-check-bold"
+                  :loading="busy"
+                  :disabled="session.status !== 'running'"
+                  @click="performAction('success')"
+                >
+                  Success
+                </v-btn>
+              </template>
+            </div>
+
+            <footer
+              class="review-navigation"
+              :class="{ 'review-navigation--manual': session.mode === 'manual' }"
+              aria-label="Review navigation"
             >
-              Success
-            </v-btn>
-          </template>
-        </div>
+              <div class="review-navigation__control">
+                <v-btn
+                  icon="mdi-skip-previous"
+                  variant="tonal"
+                  size="large"
+                  aria-label="Previous card"
+                  :disabled="!canNavigateCards"
+                  @click="navigateLeft"
+                />
+              </div>
+              <div v-if="session.mode === 'passive'" class="review-navigation__control">
+                <v-btn
+                  :icon="session.status === 'paused' ? 'mdi-play' : 'mdi-pause'"
+                  color="secondary"
+                  size="x-large"
+                  :aria-label="isReviewSetPreview
+                    ? 'Start review'
+                    : session.status === 'paused' ? 'Resume review' : 'Pause review'"
+                  @touchstart.stop
+                  @click.stop="isReviewSetPreview
+                    ? startPreviewReview()
+                    : session.status === 'paused' ? resumeReview() : pauseReview(false)"
+                />
+              </div>
+              <div class="review-navigation__control">
+                <v-btn
+                  icon="mdi-skip-next"
+                  variant="tonal"
+                  size="large"
+                  aria-label="Next card"
+                  :disabled="!canNavigateCards"
+                  @click="navigateRight"
+                />
+              </div>
+            </footer>
 
-        <footer
-          class="review-navigation"
-          :class="{ 'review-navigation--manual': session.mode === 'manual' }"
-          aria-label="Review navigation"
-        >
-          <div class="review-navigation__control">
-            <v-btn
-              icon="mdi-skip-previous"
-              variant="tonal"
-              size="large"
-              aria-label="Previous card"
-              :disabled="!canNavigateCards"
-              @click="navigateLeft"
-            />
-          </div>
-          <div v-if="session.mode === 'passive'" class="review-navigation__control">
-            <v-btn
-              :icon="session.status === 'paused' ? 'mdi-play' : 'mdi-pause'"
-              color="secondary"
-              size="x-large"
-              :aria-label="isReviewSetPreview
-                ? 'Start review'
-                : session.status === 'paused' ? 'Resume review' : 'Pause review'"
-              @touchstart.stop
-              @click.stop="isReviewSetPreview
-                ? startPreviewReview()
-                : session.status === 'paused' ? resumeReview() : pauseReview(false)"
-            />
-          </div>
-          <div class="review-navigation__control">
-            <v-btn
-              icon="mdi-skip-next"
-              variant="tonal"
-              size="large"
-              aria-label="Next card"
-              :disabled="!canNavigateCards"
-              @click="navigateRight"
-            />
-          </div>
-        </footer>
-
-      </section>
+          </section>
+        </transition>
+      </div>
     </div>
 
     <RunnerSessionActions
@@ -2084,7 +2089,7 @@ async function leaveRunner() {
     display: none;
   }
 
-  .review-screen--finished > .completion-panel {
+  .review-screen--finished > .runner-screen-stage > .completion-panel {
     display: grid;
     width: min(100%, 56rem);
     margin: auto;

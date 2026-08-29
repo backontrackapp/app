@@ -16,6 +16,8 @@ Starting a saved or Quick interval while another interval is active opens a warn
 
 When an interval is opened from a task, its start panel shows the task name beneath the interval summary. Standalone interval launches omit this task context.
 
+The start panel remains mounted until the running route has committed. Start, active, and completion screens follow one forward horizontal transition: the next screen enters from the right while the previous screen exits left. The panels remain pinned to the same layout area instead of rendering an empty intermediate frame or shifting the page. Reduced-motion preferences keep the crossfade without directional movement.
+
 ## Interval sounds
 
 Settings provides a sound choice for each interval type. In addition to packaged cues and a silent option, **Speak Step Name** uses text-to-speech to announce the interval step's title when that step begins. Its preview announces the interval type name. The first step is cued when a saved, quick, or repeated interval starts, and each later step is cued when the run advances; navigating backward remains silent. Spoken step names also work while an interval runs in the background on Android.
