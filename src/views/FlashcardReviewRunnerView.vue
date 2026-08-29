@@ -456,7 +456,7 @@ onMounted(async () => {
     }
     const autoResume = !isReviewSetPreview.value
       && session.value?.status === 'paused'
-      && (session.value.mode === 'manual' || route.query.autoplay === '1')
+      && route.query.autoplay === '1'
     if (autoResume) {
       await resumeReview()
     } else {
@@ -1615,7 +1615,11 @@ async function leaveRunner() {
       <v-btn color="secondary" @click="router.replace(exitDestination)">Back to Flashcards</v-btn>
     </div>
 
-    <div v-else-if="session" class="review-screen">
+    <div
+      v-else-if="session"
+      class="review-screen"
+      :class="{ 'review-screen--finished': isFinished }"
+    >
       <header v-if="!isReviewSetPreview" class="runner-header">
         <v-btn
           icon="mdi-chevron-down"
@@ -2069,6 +2073,72 @@ async function leaveRunner() {
 }
 
 @media (orientation: landscape) and (max-height: 43.75rem) {
+  .review-screen--finished {
+    padding-top: max(1rem, env(safe-area-inset-top));
+    padding-right: max(1rem, env(safe-area-inset-right));
+    padding-left: max(1rem, env(safe-area-inset-left));
+  }
+
+  .review-screen--finished > .runner-header,
+  .review-screen--finished > .review-progress {
+    display: none;
+  }
+
+  .review-screen--finished > .completion-panel {
+    display: grid;
+    width: min(100%, 56rem);
+    margin: auto;
+    padding: clamp(.75rem, 3dvh, 1.25rem);
+    flex: 0 1 auto;
+    grid-template-columns: auto minmax(10rem, 1fr) minmax(9rem, auto);
+    grid-template-rows: auto auto auto;
+    align-items: center;
+    gap: .35rem clamp(.75rem, 3vw, 2rem);
+    overflow-y: auto;
+    border-radius: 1.75rem;
+    background: rgb(var(--v-theme-surface) / .72);
+    text-align: left;
+  }
+
+  .review-screen--finished .completion-panel__icon {
+    width: 5rem;
+    height: 5rem;
+    grid-column: 1;
+    grid-row: 1 / -1;
+    border-radius: 1.125rem;
+  }
+
+  .review-screen--finished .completion-panel h1 {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: end;
+    font-size: clamp(1.8rem, 6vw, 3.5rem);
+  }
+
+  .review-screen--finished .completion-panel > .muted {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .review-screen--finished .completion-stats {
+    margin: .5rem 0 0;
+    grid-column: 2;
+    grid-row: 3;
+    gap: .4rem;
+  }
+
+  .review-screen--finished .completion-stats > div {
+    padding: .5rem;
+  }
+
+  .review-screen--finished .completion-panel__done {
+    width: clamp(9rem, 28vw, 18rem);
+    min-width: 0;
+    grid-column: 3;
+    grid-row: 1 / -1;
+    align-self: center;
+  }
+
   .runner-header {
     max-width: none;
     min-height: calc(3rem + max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem)));

@@ -10,6 +10,7 @@
     "api:migrate": "php server/migrate.php",
     "db:cleanup": "bash scripts/cleanup-database.sh",
     "audio:normalize": "node scripts/normalize-mp3.mjs",
+    "exercises:presentations": "node scripts/generate-exercise-presentations.mjs",
     "build": "vue-tsc --noEmit && vite build",
     "build:dev": "vue-tsc --noEmit && vite build --mode dev && node scripts/configure-dev-htaccess.mjs",
     "build:prod": "vue-tsc --noEmit && vite build --mode prod",

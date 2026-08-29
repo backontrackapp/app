@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { flashcardSpeechTextParts, pinyinTextParts, pinyinTone } from '@/services/spokenText'
+import type { FlashcardSpeechTextPart } from '@/services/spokenText'
 import type { FlashcardSpeechWord } from '@/types/domain'
+
+const COMMA_CHARACTER = /^[,\u060c\u07f8\u1363\u1802\u1808\u2e32\u2e34\u2e41\u2e49\u2e4c\u3001\ua4fe\ua60d\ua6f5\ufe10\ufe11\ufe50\ufe51\uff0c\uff64]/u
 
 const props = withDefaults(defineProps<{
   text: string
@@ -33,16 +36,39 @@ const emit = defineEmits<{
 const parts = computed(() => props.pinyin
   ? pinyinTextParts(props.text)
   : flashcardSpeechTextParts(props.text, props.language))
+const renderedParts = computed(() => parts.value.flatMap((part) => {
+  if (part.wordIndex !== undefined || !COMMA_CHARACTER.test(part.value)) return [part]
+  const commaLength = [...part.value][0]?.length || 0
+  if (!commaLength || commaLength === part.value.length) return [part]
+  return [
+    { ...part, value: part.value.slice(0, commaLength), end: part.start + commaLength },
+    { ...part, value: part.value.slice(commaLength), start: part.start + commaLength },
+  ]
+}))
 const partGroups = computed(() => {
   const groups: Array<{
-    parts: typeof parts.value
+    parts: FlashcardSpeechTextPart[]
     unbroken: boolean
   }> = []
 
-  parts.value.forEach((part) => {
-    const unbroken = props.pinyin && part.wordIndex !== undefined
+  renderedParts.value.forEach((part) => {
     const previousGroup = groups.at(-1)
-    if (unbroken && previousGroup?.unbroken) previousGroup.parts.push(part)
+    const previousPart = previousGroup?.parts.at(-1)
+    if (
+      part.wordIndex === undefined
+      && COMMA_CHARACTER.test(part.value)
+      && previousPart?.wordIndex !== undefined
+    ) {
+      previousGroup.parts.push(part)
+      previousGroup.unbroken = true
+      return
+    }
+    const unbroken = props.pinyin && part.wordIndex !== undefined
+    if (
+      unbroken
+      && previousGroup?.unbroken
+      && previousGroup.parts.at(-1)?.wordIndex !== undefined
+    ) previousGroup.parts.push(part)
     else groups.push({ parts: [part], unbroken })
   })
 

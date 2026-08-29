@@ -31,6 +31,24 @@ export interface ExerciseDataset {
   exercises: ExerciseDatasetRecord[]
 }
 
+export interface ExercisePresentationRecord {
+  id: string
+  name: string
+  image: string
+}
+
+export interface ExercisePresentationDataset {
+  schemaVersion: number
+  count: number
+  exercises: ExercisePresentationRecord[]
+}
+
+export interface ExercisePresentation {
+  id: string
+  name: string
+  imageUrl: string
+}
+
 export interface ExerciseOption {
   id: string
   name: string

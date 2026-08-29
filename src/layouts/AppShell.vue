@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Capacitor } from '@capacitor/core'
 import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
@@ -52,6 +52,7 @@ const discardAllIssuesDialog = ref(false)
 const discardingAllIssues = ref(false)
 const syncSheet = ref(false)
 const assistantPanel = ref(false)
+const initialContentLoading = ref(true)
 const pageTransition = ref('page-level-forward')
 const pageTransitionStage = ref<HTMLElement>()
 const pendingMainNavigationPath = ref<string>()
@@ -80,6 +81,8 @@ let earlyLeavingPage: HTMLElement | undefined
 let earlyLeavingRoute: string | undefined
 let earlyLeaveResetTimer: number | undefined
 let routeScrollUnlockFrame: number | undefined
+let initialContentRevealFrame: number | undefined
+let shellMounted = false
 
 const items = computed(() => visibleMainNavItems(
   storedMenuOrder.value ?? auth.user?.settings?.mainMenuOrder,
@@ -406,20 +409,59 @@ function scheduleLocalRefresh() {
 }
 
 function waitForTaskLoad() {
-  if (!taskStore.loading) return Promise.resolve()
+  return waitForStoreLoad(() => taskStore.loading)
+}
+
+function waitForStoreLoad(loading: () => boolean) {
+  if (!loading()) return Promise.resolve()
   return new Promise<void>((resolve) => {
-    const stop = watch(() => taskStore.loading, (loading) => {
-      if (loading) return
+    const stop = watch(loading, (active) => {
+      if (active) return
       stop()
       resolve()
     })
   })
 }
 
+async function loadInitialStore(
+  loading: () => boolean,
+  load: () => Promise<unknown>,
+) {
+  if (loading()) {
+    await waitForStoreLoad(loading)
+    return
+  }
+  await load()
+}
+
+async function prepareInitialContent() {
+  // Child mounted hooks run first, so reuse any route-specific store requests
+  // that are already in flight instead of issuing duplicates from the shell.
+  const loads = [
+    loadInitialStore(() => taskStore.loading, () => taskStore.load()),
+    loadInitialStore(() => intervalStore.loading, () => intervalStore.load()),
+    loadInitialStore(() => flashcardStore.loading, () => flashcardStore.load()),
+    loadInitialStore(() => trackingStore.loading, () => trackingStore.load()),
+  ]
+  if (journalStore.loading) loads.push(waitForStoreLoad(() => journalStore.loading))
+  await Promise.allSettled(loads)
+  await nextTick()
+  if (!shellMounted) return
+
+  if (reducedMotion.value) {
+    initialContentLoading.value = false
+    return
+  }
+  initialContentRevealFrame = window.requestAnimationFrame(() => {
+    initialContentRevealFrame = undefined
+    if (!shellMounted) return
+    initialContentLoading.value = false
+  })
+}
+
 async function checkDesktopTaskNotificationPermission() {
   try {
     if (taskStore.loading) await waitForTaskLoad()
-    else await taskStore.load()
     const permitted = await requestDesktopTaskReminderPermission(taskStore.tasks)
     if (permitted) await taskStore.syncTaskReminders()
   } catch {
@@ -433,16 +475,15 @@ watch(immersive, (active) => {
 }, { immediate: true })
 
 onMounted(() => {
+  shellMounted = true
   window.addEventListener(MAIN_MENU_ORDER_CHANGED_EVENT, refreshStoredMenuSettings)
   window.addEventListener(MAIN_MENU_VISIBILITY_CHANGED_EVENT, refreshStoredMenuSettings)
   window.addEventListener('storage', refreshStoredMenuSettings)
   window.addEventListener(localDataChangedEvent, scheduleLocalRefresh)
   void syncStore.refresh()
-  void Promise.allSettled([
-    !intervalStore.loading ? intervalStore.load() : Promise.resolve(),
-    !flashcardStore.loading ? flashcardStore.load() : Promise.resolve(),
-  ])
-  if (isBrowser && mdAndUp.value) void checkDesktopTaskNotificationPermission()
+  void prepareInitialContent().then(() => {
+    if (shellMounted && isBrowser && mdAndUp.value) void checkDesktopTaskNotificationPermission()
+  })
   if (isAndroid) {
     mainNavigationPreloadTimer = window.setTimeout(() => {
       mainNavigationPreloadTimer = undefined
@@ -452,6 +493,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  shellMounted = false
   setForegroundSyncDeferred(false)
   stopDocumentTitleAnimation()
   removeTransitionGuard()
@@ -468,6 +510,9 @@ onBeforeUnmount(() => {
   if (mainNavigationPreloadTimer !== undefined) window.clearTimeout(mainNavigationPreloadTimer)
   if (committedMainNavigationClickTimer !== undefined) {
     window.clearTimeout(committedMainNavigationClickTimer)
+  }
+  if (initialContentRevealFrame !== undefined) {
+    window.cancelAnimationFrame(initialContentRevealFrame)
   }
 })
 
@@ -591,7 +636,7 @@ function releaseLeavingPage(element: Element) {
       </div>
     </v-navigation-drawer>
 
-    <transition name="app-chrome">
+    <transition name="app-chrome" appear>
       <header
         v-if="!immersive && !mobileKeyboardVisible"
         class="app-bar"
@@ -669,7 +714,28 @@ function releaseLeavingPage(element: Element) {
         'app-scroll--with-bar': !immersive && !mobileKeyboardVisible,
       }"
     >
-      <div ref="pageTransitionStage" class="page-transition-stage">
+      <transition name="initial-content-loader">
+        <div
+          v-if="initialContentLoading"
+          class="initial-content-loader"
+          :class="{
+            'initial-content-loader--with-bar': !immersive && !mobileKeyboardVisible,
+            'initial-content-loader--with-nav': !mdAndUp && !immersive && !mobileKeyboardVisible,
+          }"
+          role="status"
+          aria-label="Loading app data"
+        >
+          <v-progress-circular indeterminate color="secondary" size="3rem" width="4" />
+        </div>
+      </transition>
+
+      <div
+        ref="pageTransitionStage"
+        class="page-transition-stage"
+        :class="{ 'page-transition-stage--initial-loading': initialContentLoading }"
+        :aria-hidden="initialContentLoading"
+        :inert="initialContentLoading"
+      >
         <router-view v-slot="{ Component, route: viewRoute }">
           <transition
             :name="pageTransition"
@@ -683,7 +749,7 @@ function releaseLeavingPage(element: Element) {
       </div>
     </v-main>
 
-    <transition name="bottom-nav">
+    <transition name="bottom-nav" appear>
       <nav
         v-if="!mdAndUp && !immersive && !mobileKeyboardVisible"
         class="bottom-nav"
@@ -958,12 +1024,21 @@ function releaseLeavingPage(element: Element) {
   transform: scale(.72);
 }
 
-.app-chrome-enter-active,
-.app-chrome-leave-active {
-  transition: opacity 200ms ease;
+.app-chrome-enter-active {
+  transition:
+    opacity 180ms ease,
+    transform 220ms cubic-bezier(.22, 1, .36, 1);
 }
 
-.app-chrome-enter-from,
+.app-chrome-leave-active {
+  transition: opacity 160ms ease;
+}
+
+.app-chrome-enter-from {
+  opacity: 0;
+  transform: translateY(-100%);
+}
+
 .app-chrome-leave-to {
   opacity: 0;
 }
@@ -1169,6 +1244,45 @@ function releaseLeavingPage(element: Element) {
   display: grid;
   min-width: 0;
   overflow-x: clip;
+  opacity: 1;
+  transition: opacity 220ms ease;
+}
+
+.page-transition-stage--initial-loading {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.initial-content-loader {
+  position: fixed;
+  z-index: 3;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+}
+
+.initial-content-loader--with-bar {
+  top: calc(3.75rem + max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem)));
+}
+
+.initial-content-loader--with-nav {
+  bottom: calc(
+    4.5rem + max(
+      env(safe-area-inset-bottom, 0rem),
+      var(--safe-area-inset-bottom, 0rem)
+    )
+  );
+}
+
+.initial-content-loader-leave-active {
+  transition: opacity 160ms ease;
+}
+
+.initial-content-loader-leave-to {
+  opacity: 0;
 }
 
 .page-transition-stage > * {
@@ -1182,6 +1296,9 @@ function releaseLeavingPage(element: Element) {
     left: 17rem;
   }
 
+  .initial-content-loader {
+    left: 17rem;
+  }
 }
 
 </style>
@@ -1310,12 +1427,21 @@ html.route-navigation-scroll-lock {
 .page-depth-higher-leave-to > :not(.page-action-area) { transform: translateY(1rem); }
 
 @media (prefers-reduced-motion: reduce) {
+  .app-chrome-enter-active,
+  .app-chrome-leave-active,
+  .bottom-nav-enter-active,
+  .bottom-nav-leave-active,
+  .initial-content-loader-leave-active,
+  .page-transition-stage,
   .app-bar__ai-control,
   .app-bar-ai-button-enter-active,
   .app-bar-ai-button-leave-active {
     transition-duration: .01ms !important;
   }
 
+  .app-chrome-enter-from,
+  .bottom-nav-enter-from,
+  .bottom-nav-leave-to,
   .app-bar-ai-button-enter-from,
   .app-bar-ai-button-leave-to {
     transform: none;

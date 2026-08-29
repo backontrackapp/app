@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { isValid, parseISO } from 'date-fns'
 import fitty, { type FittyInstance } from 'fitty'
 import { useRoute, useRouter } from 'vue-router'
@@ -79,7 +79,7 @@ import {
   MIN_GLOBAL_REPETITIONS,
   validateIntervalDefinition,
 } from '@/services/intervals'
-import { loadExerciseOptions } from '@/services/exercises'
+import { exercisePresentationById } from '@/services/exercisePresentations'
 import { programStepRequirementName } from '@/services/programStepCompletions'
 import { toDateKey } from '@/services/schedule'
 import { intervalRunnerSessionMenuItems } from '@/services/runnerSessionActions'
@@ -104,17 +104,12 @@ import type {
   RunnerSessionAction,
   TaskProgress,
 } from '@/types/domain'
-import type { ExerciseOption } from '@/types/exercise'
 
 const route = useRoute()
 const router = useRouter()
 const store = useIntervalStore()
 const flashcardStore = useFlashcardStore()
 const taskStore = useTaskStore()
-const exerciseOptions = shallowRef<ExerciseOption[]>([])
-const exerciseOptionsById = computed(() => new Map(
-  exerciseOptions.value.map(exercise => [exercise.id, exercise]),
-))
 const displayRemainingMs = ref(0)
 const progressRingsContent = ref<HTMLElement>()
 const timerValueElement = ref<HTMLElement>()
@@ -448,13 +443,16 @@ const attributedProgramStepCompletion = computed(() => {
 })
 const attributedExercise = computed(() => {
   const exerciseId = attributedProgramStepCompletion.value?.exercise
-  return exerciseId ? exerciseOptionsById.value.get(exerciseId) : undefined
+  return exercisePresentationById(exerciseId)
 })
 const runnerIdentityTitle = computed(() => programStepRequirementName(
   attributedProgramStepCompletion.value,
   attributedExercise.value?.name,
   session.value?.name || 'Interval',
 ))
+const completionIdentityTitle = computed(() => attributedExercise.value
+  ? runnerIdentityTitle.value
+  : session.value?.name || 'Interval')
 const runnerIdentityImage = computed(() => attributedExercise.value?.imageUrl)
 const runnerIdentitySummary = computed(() => {
   if (!session.value) return ''
@@ -611,9 +609,6 @@ watch(remainingLabel, () => {
 
 onMounted(async () => {
   runnerMounted = true
-  void loadExerciseOptions('en')
-    .then(options => { exerciseOptions.value = options })
-    .catch(() => { /* Runner panels retain the Interval identity if the catalog is unavailable. */ })
   try {
     await Promise.all([
       store.loaded ? Promise.resolve() : store.load(),
@@ -2173,6 +2168,7 @@ async function runAgain(repetitions?: number) {
             :src="runnerIdentityImage"
             :alt="attributedExercise?.name || runnerIdentityTitle"
             cover
+            eager
           >
             <template #error>
               <ContentIcon :icon="sessionIcon" size="2.125rem" />
@@ -2182,16 +2178,15 @@ async function runAgain(repetitions?: number) {
         </div>
         <p class="runner-label finish-status">
           <span>{{ session.status === 'completed' ? 'Session completed' : 'Session ended' }}</span>
-          <span class="finish-status__separator">·</span>
-          <span class="finish-status__interval">{{ session.name }}</span>
+          <template v-if="completionIdentityTitle !== session.name">
+            <span class="finish-status__separator">·</span>
+            <span class="finish-status__interval">{{ session.name }}</span>
+          </template>
         </p>
-        <h1
-          class="display-title"
-          :class="{ 'finish-title--interval': runnerIdentityTitle === session.name }"
-        >
-          {{ runnerIdentityTitle }}<span class="text-secondary">.</span>
+        <h1 class="display-title">
+          {{ completionIdentityTitle }}<span class="text-secondary">.</span>
         </h1>
-        <p v-if="runnerIdentityTitle !== session.name" class="finish-source">{{ session.name }}</p>
+        <p v-if="completionIdentityTitle !== session.name" class="finish-source">{{ session.name }}</p>
         <div class="finish-stats">
           <div><span>Planned</span><strong>{{ formatIntervalDuration(session.plannedSeconds) }}</strong></div>
           <div><span>Elapsed</span><strong>{{ formatIntervalDuration(session.elapsedSeconds) }}</strong></div>
@@ -2897,7 +2892,11 @@ async function runAgain(repetitions?: number) {
 .runner-controls--landscape { display: none; }
 .finish-card { width: 100%; max-width: 620px; margin: auto; text-align: center; }
 .finish-icon { display: grid; width: 4.5rem; height: 4.5rem; margin: 0 auto 1rem; place-items: center; border-radius: 1.5rem; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); }
-.finish-icon--image { overflow: hidden; }
+.finish-icon--image {
+  overflow: hidden;
+  border: .0625rem solid rgb(var(--v-theme-on-surface) / .12);
+  background: rgb(var(--v-theme-surface-variant)) !important;
+}
 .finish-image { width: 100% !important; height: 100% !important; }
 .finish-image :deep(.v-img__img) { object-fit: cover; }
 .finish-status__separator,
@@ -2940,7 +2939,6 @@ async function runAgain(repetitions?: number) {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .finish-title--interval,
   .finish-source { display: none; }
 }
 .note-dialog-heading { display: flex; align-items: center; gap: 12px; }

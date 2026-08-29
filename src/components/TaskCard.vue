@@ -433,6 +433,7 @@ onBeforeUnmount(() => {
                 :src="requirement.image"
                 :alt="requirement.imageAlt || requirement.title"
                 cover
+                eager
               >
                 <template #error>
                   <ContentIcon icon="mdi-dumbbell" size="1.125rem" />

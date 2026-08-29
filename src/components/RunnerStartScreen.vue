@@ -80,6 +80,7 @@ onBeforeUnmount(() => {
           :src="image"
           :alt="imageAlt || title"
           cover
+          eager
         >
           <template #error>
             <ContentIcon :icon="icon" size="2.25rem" />
@@ -159,7 +160,11 @@ onBeforeUnmount(() => {
   background: rgb(var(--v-theme-secondary));
   color: rgb(var(--v-theme-on-secondary));
 }
-.runner-start-screen__icon--image { overflow: hidden; }
+.runner-start-screen__icon--image {
+  overflow: hidden;
+  border: .0625rem solid rgb(var(--v-theme-on-surface) / .12);
+  background: rgb(var(--v-theme-surface-variant)) !important;
+}
 .runner-start-screen__image {
   width: 100% !important;
   height: 100% !important;

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Capacitor } from '@capacitor/core'
 import { App } from '@capacitor/app'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { addDays, format, isAfter, isBefore, parseISO, startOfDay, startOfWeek, subDays } from 'date-fns'
 import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
@@ -20,7 +20,7 @@ import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
 import { dateSwipe as vDateSwipe } from '@/directives/dateSwipe'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { reviewSetCardCount } from '@/services/flashcards'
-import { loadExerciseOptions } from '@/services/exercises'
+import { exercisePresentationById } from '@/services/exercisePresentations'
 import { isNativeHealthConnectSupported } from '@/services/healthConnect'
 import { isHealthConnectEntry } from '@/services/healthConnectEntries'
 import { formatIntervalDuration, intervalDuration } from '@/services/intervals'
@@ -51,7 +51,6 @@ import type {
   TaskProgress,
   TrackingTracker,
 } from '@/types/domain'
-import type { ExerciseOption } from '@/types/exercise'
 
 const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
 const HEALTH_CONNECT_RESUME_DELAY_MS = 500
@@ -128,10 +127,6 @@ const reorderingTasks = ref(false)
 const reorderingQuickLogs = ref(false)
 const dateSwipeFeedback = ref<InstanceType<typeof DateSwipeFeedback>>()
 const quickLogStrip = ref<HTMLElement>()
-const exerciseOptions = shallowRef<ExerciseOption[]>([])
-const exerciseOptionsById = computed(() => new Map(
-  exerciseOptions.value.map(exercise => [exercise.id, exercise]),
-))
 
 function changeTaskDate(amount: number) {
   selectedDate.value = addDays(selectedDate.value, amount)
@@ -228,9 +223,7 @@ function programStepRequirementItems(progress: TaskProgress): ProgramStepRequire
   return completions.map((completion, index) => {
     const sourceName = completionSourceName(completion)
     const customLabel = completion.label?.trim()
-    const exercise = completion.exercise
-      ? exerciseOptionsById.value.get(completion.exercise)
-      : undefined
+    const exercise = exercisePresentationById(completion.exercise)
     const requirementName = programStepRequirementName(completion, exercise?.name, sourceName)
     const title = completions.length > 1 ? `${index + 1}. ${requirementName}` : requirementName
     const locked = Boolean(progress.locked)
@@ -703,9 +696,6 @@ onMounted(async () => {
     if (todayPage.value) nextTaskResizeObserver.observe(todayPage.value)
   }
   scheduleNextIncompleteTask()
-  void loadExerciseOptions('en')
-    .then(options => { exerciseOptions.value = options })
-    .catch(() => { /* Requirements keep their existing type presentation if the catalog is unavailable. */ })
   try {
     await Promise.all([store.load(), intervalStore.load(), flashcardStore.load(), trackingStore.load()])
   } catch { /* Store error states are displayed in the view. */ }

@@ -95,6 +95,7 @@ On the host, place a copy of `.env.prod` named `.env` at the project root becaus
 - `pnpm typecheck` — validate TypeScript and Vue templates
 - `pnpm test` — run unit tests
 - `pnpm test:api` — exercise the PHP API against a temporary database copy
+- `pnpm exercises:presentations` — regenerate the lightweight exercise presentation index after replacing the RepDB snapshot
 - `pnpm build` — type-check and create a production build
 - `pnpm build:dev` — build with `.env.dev`, block crawlers, and restrict LiteSpeed access using the `BACKONTRACK_REQUIRE_IPS` process variable supplied by the deployment workflow
 - `pnpm build:prod` — build using the private `.env.prod` hosting configuration
