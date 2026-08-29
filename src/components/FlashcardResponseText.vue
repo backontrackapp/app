@@ -86,6 +86,10 @@ function partUsesToneColors(part: ResponsePart) {
   return props.colorizePinyin && (part.kind === 'back' || part.kind === 'transliteration')
 }
 
+function partUsesPinyinSyllables(part: ResponsePart) {
+  return props.colorizePinyin && part.kind === 'transliteration'
+}
+
 function toneSource(part: ResponsePart) {
   if (part.kind !== 'back') return ''
   if (props.transliteration) return props.transliteration
@@ -219,7 +223,7 @@ onBeforeUnmount(() => {
         :active-word-end="activeWordEnd(parts[0])"
         :colorize-pinyin="partUsesToneColors(parts[0])"
         :tone-source="toneSource(parts[0])"
-        :pinyin="parts[0].kind === 'transliteration'"
+        :pinyin="partUsesPinyinSyllables(parts[0])"
         class="flashcard-response-text__part flashcard-response-text__primary text-secondary"
         :data-response-part="parts[0].kind"
         data-response-presentation="primary"
@@ -240,7 +244,7 @@ onBeforeUnmount(() => {
         :active-word-end="activeWordEnd(part)"
         :colorize-pinyin="partUsesToneColors(part)"
         :tone-source="toneSource(part)"
-        :pinyin="part.kind === 'transliteration'"
+        :pinyin="partUsesPinyinSyllables(part)"
         class="flashcard-response-text__part flashcard-response-text__supporting"
         :data-response-part="part.kind"
         data-response-presentation="supporting"
@@ -262,7 +266,7 @@ onBeforeUnmount(() => {
         :active-word-end="activeWordEnd(parts[0])"
         :colorize-pinyin="partUsesToneColors(parts[0])"
         :tone-source="toneSource(parts[0])"
-        :pinyin="parts[0].kind === 'transliteration'"
+        :pinyin="partUsesPinyinSyllables(parts[0])"
         class="flashcard-response-text__part flashcard-response-text__primary text-secondary"
         :data-response-part="parts[0].kind"
         data-response-presentation="primary"
@@ -290,7 +294,7 @@ onBeforeUnmount(() => {
           :active-word-end="activeWordEnd(part)"
           :colorize-pinyin="partUsesToneColors(part)"
           :tone-source="toneSource(part)"
-          :pinyin="part.kind === 'transliteration'"
+          :pinyin="partUsesPinyinSyllables(part)"
         />
       </component>
     </template>
