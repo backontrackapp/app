@@ -272,7 +272,7 @@ async function signInWithPasskey() {
           </div>
 
           <div v-else-if="pageFlow === 'verify'" class="text-center" aria-live="polite">
-            <v-progress-circular v-if="auth.loading" indeterminate color="secondary" size="3rem" class="mb-5" />
+            <v-progress-circular v-if="auth.loading" indeterminate color="secondary" :size="48" class="mb-5" />
             <v-icon v-else :icon="success ? 'mdi-check-circle-outline' : 'mdi-link-off'" :color="success ? 'success' : 'error'" size="3rem" class="mb-5" />
             <v-alert v-if="success" type="success" variant="tonal" class="mb-5 text-left" density="compact">
               {{ success }}

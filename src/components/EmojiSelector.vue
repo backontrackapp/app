@@ -184,7 +184,7 @@ watch(() => props.modelValue, (value) => {
       </div>
 
       <div v-if="loading" class="emoji-selector__state" aria-live="polite">
-        <v-progress-circular indeterminate color="secondary" size="2rem" />
+        <v-progress-circular indeterminate color="secondary" :size="32" />
         <p>Loading emoji…</p>
       </div>
 

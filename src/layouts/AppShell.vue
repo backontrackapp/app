@@ -725,7 +725,7 @@ function releaseLeavingPage(element: Element) {
           role="status"
           aria-label="Loading app data"
         >
-          <v-progress-circular indeterminate color="secondary" size="3rem" width="4" />
+          <v-progress-circular indeterminate color="secondary" :size="48" width="4" />
         </div>
       </transition>
 

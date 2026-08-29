@@ -1629,7 +1629,7 @@ async function saveTaskLogEntry() {
           class="task-schedule-section task-all-day-group"
           :class="timedProgressGroups.length ? 'mt-6 mt-md-0' : undefined"
         >
-          <h3 class="task-schedule-label task-all-day-label">All day</h3>
+          <h3 class="task-schedule-label task-all-day-label">At any point</h3>
           <div class="task-stack task-all-day-stack">
             <div
               v-for="item in allDayProgress"

@@ -348,7 +348,7 @@ onBeforeUnmount(() => {
             v-if="stepSyncIndicatorVisible"
             class="task-sync-progress"
             indeterminate
-            size="1.125rem"
+            :size="18"
             color="secondary"
             :width="2"
           />

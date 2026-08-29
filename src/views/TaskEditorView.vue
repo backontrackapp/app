@@ -966,7 +966,7 @@ async function deleteTaskPermanently() {
       <v-card class="surface-card field-stack pa-5 mb-4">
         <div>
           <h2 class="text-body-1 font-weight-black">Time</h2>
-          <p class="text-body-2 muted mt-1">Place this task in the all-day list or at a specific time.</p>
+          <p class="text-body-2 muted mt-1">Place this task at any point or at a specific time.</p>
         </div>
         <div>
           <v-btn-toggle
@@ -977,7 +977,7 @@ async function deleteTaskPermanently() {
             mandatory
           >
             <v-btn value="all_day" prepend-icon="mdi-calendar-blank-outline">
-              All day
+              At any point
             </v-btn>
             <v-btn value="time_based" prepend-icon="mdi-clock-outline">
               Time based
