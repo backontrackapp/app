@@ -299,6 +299,21 @@ final class Api
                     $this->jsonBody(),
                 ));
             }
+            if (
+                $method === 'POST'
+                && preg_match(
+                    '#^/flashcard-review-sets/([a-zA-Z0-9_-]{1,64})/delete/?$#',
+                    $path,
+                    $reviewSetDeleteMatches,
+                ) === 1
+            ) {
+                $body = $this->jsonBody();
+                $body['review_set_id'] = $reviewSetDeleteMatches[1];
+                $this->respond($this->syncService->deleteFlashcardReviewSet(
+                    $this->authenticate(),
+                    $body,
+                ));
+            }
             if ($method === 'POST' && $path === '/auth/passkeys/register/options') {
                 $this->passkeyRegistrationOptions();
             }

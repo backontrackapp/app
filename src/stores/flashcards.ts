@@ -1586,21 +1586,67 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     return reviewSet
   }
 
-  async function deleteReviewSet(id: string) {
+  async function deleteReviewSet(id: string, deleteCards = false, cardIds: string[] = []) {
     error.value = ''
     const previousReviewSets = reviewSets.value
+    const previousCards = cards.value
+    const reviewSetSnapshots = reviewSets.value.map(reviewSet => ({
+      reviewSet,
+      includedCards: [...(reviewSet.includedCards || [])],
+      matchingCardCount: reviewSet.matchingCardCount,
+    }))
     const previousSessionSets = new Map(sessions.value.map(session => [session.id, session.reviewSet]))
+    const sessionSnapshots = sessions.value.map(session => ({
+      session,
+      queue: session.queue.map(card => ({ ...card, tags: [...card.tags] })),
+      totalCards: session.totalCards,
+    }))
+    const deletedIds = new Set(deleteCards ? cardIds : [])
     reviewSets.value = reviewSets.value.filter(set => set.id !== id)
+    const applyDeletedCards = () => {
+      if (!deletedIds.size) return
+      cards.value = cards.value.filter(card => !deletedIds.has(card.id))
+      reviewSets.value.forEach((reviewSet) => {
+        if (reviewSet.selectionMode === 'cards') {
+          reviewSet.includedCards = (reviewSet.includedCards || [])
+            .filter(cardId => !deletedIds.has(cardId))
+        }
+        if (reviewSet.owner === api.authStore.record?.id) {
+          reviewSet.matchingCardCount = cards.value
+            .filter(card => cardMatchesReviewSet(card, reviewSet)).length
+        }
+      })
+      sessions.value.forEach((session) => {
+        session.queue = session.queue.filter(card => !deletedIds.has(card.id))
+        session.totalCards = session.indefinite
+          ? session.queue.length
+          : session.viewedCount + session.ejectedCount + session.queue.length
+      })
+    }
+    applyDeletedCards()
     sessions.value.forEach((session) => {
       if (session.reviewSet === id) session.reviewSet = undefined
     })
     try {
-      await api.collection('flashcard_review_sets').delete(id)
-      useSnackbarStore().showDeletion('Review set')
+      const response = await api.deleteFlashcardReviewSet(id, deleteCards)
+      response.deleted_ids.forEach(cardId => deletedIds.add(cardId))
+      applyDeletedCards()
+      useSnackbarStore().showDeletion(deletedIds.size
+        ? `Review set and ${deletedIds.size === 1 ? 'card' : `${deletedIds.size} cards`}`
+        : 'Review set')
     } catch (cause) {
       reviewSets.value = previousReviewSets
+      cards.value = previousCards
+      reviewSetSnapshots.forEach(({ reviewSet, includedCards, matchingCardCount }) => {
+        reviewSet.includedCards = includedCards
+        reviewSet.matchingCardCount = matchingCardCount
+      })
       sessions.value.forEach((session) => {
         session.reviewSet = previousSessionSets.get(session.id)
+      })
+      sessionSnapshots.forEach(({ session, queue, totalCards }) => {
+        session.queue = queue
+        session.totalCards = totalCards
       })
       const tasks = cause instanceof ApiError && Array.isArray(cause.details.tasks)
         ? cause.details.tasks.map(item => typeof item === 'object' && item && 'name' in item ? String(item.name) : '').filter(Boolean)
@@ -1608,8 +1654,11 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       const intervals = cause instanceof ApiError && Array.isArray(cause.details.intervals)
         ? cause.details.intervals.map(item => typeof item === 'object' && item && 'name' in item ? String(item.name) : '').filter(Boolean)
         : []
+      const programSteps = cause instanceof ApiError && Array.isArray(cause.details.programSteps)
+        ? cause.details.programSteps.map(item => typeof item === 'object' && item && 'name' in item ? String(item.name) : '').filter(Boolean)
+        : []
       error.value = cause instanceof Error
-        ? `${cause.message}${tasks.length ? ` Attached tasks: ${tasks.join(', ')}.` : ''}${intervals.length ? ` Attached intervals: ${intervals.join(', ')}.` : ''}`
+        ? `${cause.message}${tasks.length ? ` Attached tasks: ${tasks.join(', ')}.` : ''}${programSteps.length ? ` Attached program steps: ${programSteps.join(', ')}.` : ''}${intervals.length ? ` Attached intervals: ${intervals.join(', ')}.` : ''}`
         : 'Could not delete this Review set.'
       throw cause
     }

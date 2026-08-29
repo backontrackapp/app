@@ -319,6 +319,22 @@ final class SyncService
         }
     }
 
+    public function deleteFlashcardReviewSet(array $user, array $body): array
+    {
+        $pdo = $this->database->pdo;
+        $pdo->exec('BEGIN IMMEDIATE');
+        try {
+            $result = $this->applyReviewSetDelete($body, (string) $user['id']);
+            $pdo->exec('COMMIT');
+            return ['deleted_ids' => $result['deletedIds']];
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->exec('ROLLBACK');
+            }
+            throw $exception;
+        }
+    }
+
     private function applyOperation(array $operation, string $account, string $clientId): array
     {
         $operationId = $this->identifier($operation['operationId'] ?? null, 'operationId', 120);
@@ -635,6 +651,10 @@ final class SyncService
                 $account,
                 $clientId,
             );
+        }
+
+        if ($command === 'review_set.delete') {
+            return $this->applyReviewSetDelete($payload, $account);
         }
 
         if ($command === 'review_set_preferences.patch') {
@@ -1459,6 +1479,42 @@ final class SyncService
         return $current === $incoming;
     }
 
+    private function applyReviewSetDelete(array $payload, string $account): array
+    {
+        $reviewSetId = $this->recordId($payload['review_set_id'] ?? null);
+        $deleteCards = $payload['delete_cards'] ?? false;
+        if (!is_bool($deleteCards)) {
+            throw new ApiException(422, 'The Review set card deletion choice is invalid.');
+        }
+        $reviewSet = $this->ownedRecord('flashcard_review_sets', $reviewSetId, $account);
+        $cards = $deleteCards
+            ? array_values(array_filter(
+                $this->matchingCards($reviewSet),
+                static fn (array $card): bool => !(bool) ($card['archived'] ?? false),
+            ))
+            : [];
+        $reviewSetConfig = Schema::collection('flashcard_review_sets');
+        $cardConfig = Schema::collection('flashcards');
+        if ($reviewSetConfig === null || $cardConfig === null) {
+            throw new ApiException(500, 'Flashcard schema is unavailable.');
+        }
+
+        $response = $this->deleteOwnedRecord(
+            'flashcard_review_sets',
+            $reviewSetConfig,
+            $reviewSetId,
+            $account,
+        );
+        $deletedIds = [];
+        foreach ($cards as $card) {
+            $cardId = (string) $card['id'];
+            $this->deleteOwnedRecord('flashcards', $cardConfig, $cardId, $account);
+            $deletedIds[] = $cardId;
+        }
+        $this->resetReadCaches();
+        return [...$response, 'deletedIds' => $deletedIds];
+    }
+
     private function deleteOwnedRecord(string $resource, array $config, string $recordId, string $account): array
     {
         $current = $this->ownedRecord($resource, $recordId, $account);
@@ -1502,6 +1558,10 @@ final class SyncService
             }
         }
         if ($resource === 'flashcards') {
+            $imageFilename = $this->validSquareImageFilename($current['image_file'] ?? null);
+            if ($imageFilename !== null) {
+                $this->removeFlashcardImageFileIfUnused($imageFilename);
+            }
             foreach (['front', 'back'] as $side) {
                 $filename = $this->validFlashcardAudioFilename(
                     $current[$side . '_audio_file'] ?? null,
@@ -1735,6 +1795,8 @@ final class SyncService
         } elseif ($resource === 'flashcard_tags') {
             $this->removeTagFromJsonRecords('flashcards', $recordId, $account);
             $this->removeTagFromJsonRecords('flashcard_review_sets', $recordId, $account);
+        } elseif ($resource === 'flashcard_review_sets') {
+            $this->deleteReviewSetRelations($recordId, $account);
         } elseif ($resource === 'flashcards') {
             $pdo->prepare("UPDATE flashcard_review_events SET card = '' WHERE card = :id")
                 ->execute(['id' => $recordId]);
@@ -1775,6 +1837,116 @@ final class SyncService
         }
         $pdo->prepare("DELETE FROM {$resource} WHERE id = :id AND owner = :owner")
             ->execute(['id' => $recordId, 'owner' => $account]);
+    }
+
+    private function deleteReviewSetRelations(string $reviewSetId, string $account): void
+    {
+        $pdo = $this->database->pdo;
+        $tasks = $pdo->prepare(
+            'SELECT id, name FROM tasks
+             WHERE flashcard_review_set = :id AND owner = :owner
+             ORDER BY sort_order, name',
+        );
+        $tasks->execute(['id' => $reviewSetId, 'owner' => $account]);
+        $attachedTasks = $tasks->fetchAll();
+        $steps = $pdo->prepare(<<<'SQL'
+            SELECT program_steps.id, program_steps.name, tasks.name AS task_name
+             FROM program_steps
+             JOIN tasks ON tasks.id = program_steps.task AND tasks.owner = program_steps.owner
+             WHERE program_steps.owner = :owner AND (
+                program_steps.flashcard_review_set = :id
+                OR EXISTS (
+                    SELECT 1 FROM json_each(program_steps.completions)
+                    WHERE json_extract(json_each.value, '$.type') = 'flashcards'
+                      AND json_extract(json_each.value, '$.flashcardReviewSet') = :id
+                )
+             )
+             ORDER BY tasks.sort_order, program_steps.sort_order, program_steps.name
+            SQL);
+        $steps->execute(['id' => $reviewSetId, 'owner' => $account]);
+        $attachedSteps = $steps->fetchAll();
+        $intervals = $pdo->prepare(
+            'SELECT id, name FROM interval_templates
+             WHERE flashcard_review_set = :id AND owner = :owner
+             ORDER BY sort_order, name',
+        );
+        $intervals->execute(['id' => $reviewSetId, 'owner' => $account]);
+        $attachedIntervals = $intervals->fetchAll();
+        if ($attachedTasks !== [] || $attachedSteps !== [] || $attachedIntervals !== []) {
+            throw new ApiException(
+                409,
+                'This Review set is attached to one or more tasks, program steps, or intervals. Reassign them first.',
+                [
+                    'tasks' => array_map(static fn (array $task): array => [
+                        'id' => (string) $task['id'],
+                        'name' => (string) $task['name'],
+                    ], $attachedTasks),
+                    'programSteps' => array_map(static fn (array $step): array => [
+                        'id' => (string) $step['id'],
+                        'name' => (string) $step['name'],
+                        'taskName' => (string) $step['task_name'],
+                    ], $attachedSteps),
+                    'intervals' => array_map(static fn (array $interval): array => [
+                        'id' => (string) $interval['id'],
+                        'name' => (string) $interval['name'],
+                    ], $attachedIntervals),
+                ],
+            );
+        }
+
+        $recipients = $pdo->prepare(
+            'SELECT recipient FROM flashcard_review_set_shares WHERE review_set = :id',
+        );
+        $recipients->execute(['id' => $reviewSetId]);
+        foreach ($recipients->fetchAll(PDO::FETCH_COLUMN) as $recipient) {
+            $this->detachReviewSetFromAccount($reviewSetId, (string) $recipient);
+        }
+        $pdo->prepare("UPDATE flashcard_review_sessions SET review_set = '' WHERE review_set = :id")
+            ->execute(['id' => $reviewSetId]);
+        $pdo->prepare('DELETE FROM flashcard_review_set_preferences WHERE review_set = :id')
+            ->execute(['id' => $reviewSetId]);
+        $pdo->prepare('DELETE FROM flashcard_review_set_shares WHERE review_set = :id')
+            ->execute(['id' => $reviewSetId]);
+    }
+
+    private function detachReviewSetFromAccount(string $reviewSetId, string $account): void
+    {
+        $pdo = $this->database->pdo;
+        foreach (['tasks', 'interval_templates'] as $table) {
+            $pdo->prepare(
+                "UPDATE {$table} SET flashcard_review_set = ''
+                 WHERE flashcard_review_set = :review_set AND owner = :owner",
+            )->execute(['review_set' => $reviewSetId, 'owner' => $account]);
+        }
+        $steps = $pdo->prepare('SELECT id, flashcard_review_set, completions FROM program_steps WHERE owner = :owner');
+        $steps->execute(['owner' => $account]);
+        $update = $pdo->prepare(
+            "UPDATE program_steps SET flashcard_review_set = '', completions = :completions
+             WHERE id = :id AND owner = :owner",
+        );
+        foreach ($steps->fetchAll() as $step) {
+            $completions = json_decode((string) $step['completions'], true);
+            $completions = is_array($completions) ? $completions : [];
+            $changed = (string) ($step['flashcard_review_set'] ?? '') === $reviewSetId;
+            foreach ($completions as &$completion) {
+                if (
+                    is_array($completion)
+                    && ($completion['type'] ?? '') === 'flashcards'
+                    && ($completion['flashcardReviewSet'] ?? '') === $reviewSetId
+                ) {
+                    $completion['flashcardReviewSet'] = '';
+                    $changed = true;
+                }
+            }
+            unset($completion);
+            if ($changed) {
+                $update->execute([
+                    'completions' => json_encode($completions, JSON_THROW_ON_ERROR),
+                    'id' => $step['id'],
+                    'owner' => $account,
+                ]);
+            }
+        }
     }
 
     private function removeTagFromJsonRecords(string $table, string $tagId, string $account): void

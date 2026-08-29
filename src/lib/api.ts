@@ -1196,6 +1196,114 @@ class ApiClient {
     return request<RecordModel[]>('/flashcard-review-sets', {}, this.authStore)
   }
 
+  async deleteFlashcardReviewSet(reviewSetId: string, deleteCards: boolean) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const reviewSet = await getLocalRecord(accountId, 'flashcard_review_sets', reviewSetId)
+      if (!reviewSet) throw new ApiError(404, 'Review set not found.')
+
+      const [tasks, intervals, programSteps] = await Promise.all([
+        listLocalRecords(accountId, 'tasks'),
+        listLocalRecords(accountId, 'interval_templates'),
+        listLocalRecords(accountId, 'program_steps'),
+      ])
+      const attachedTasks = tasks.filter(task => task.flashcard_review_set === reviewSetId)
+      const attachedIntervals = intervals.filter(interval => interval.flashcard_review_set === reviewSetId)
+      const attachedSteps = programSteps.filter(step => (
+        step.flashcard_review_set === reviewSetId
+        || (Array.isArray(step.completions) && step.completions.some(completion => (
+          completion
+          && typeof completion === 'object'
+          && completion.type === 'flashcards'
+          && completion.flashcardReviewSet === reviewSetId
+        )))
+      ))
+      if (attachedTasks.length || attachedIntervals.length || attachedSteps.length) {
+        const taskNames = new Map(tasks.map(task => [task.id, String(task.name || '')]))
+        throw new ApiError(
+          409,
+          'This Review set is attached to one or more tasks, program steps, or intervals. Reassign them first.',
+          {
+            tasks: attachedTasks.map(task => ({ id: task.id, name: String(task.name || '') })),
+            programSteps: attachedSteps.map(step => ({
+              id: step.id,
+              name: String(step.name || ''),
+              taskName: taskNames.get(String(step.task || '')) || '',
+            })),
+            intervals: attachedIntervals.map(interval => ({
+              id: interval.id,
+              name: String(interval.name || ''),
+            })),
+          },
+        )
+      }
+
+      const localCards = await listLocalRecords(accountId, 'flashcards')
+      const selectedTags = Array.isArray(reviewSet.tags) ? reviewSet.tags : []
+      const includedCards = Array.isArray(reviewSet.included_cards) ? reviewSet.included_cards : []
+      const deletedCardIds = deleteCards
+        ? localCards.filter(card => (
+            card.archived !== true
+            && (reviewSet.selection_mode === 'cards'
+              ? includedCards.includes(card.id)
+              : !selectedTags.length
+                || (Array.isArray(card.tags) && card.tags.some((tag: string) => selectedTags.includes(tag))))
+          )).map(card => card.id)
+        : []
+      const deletedIds = new Set(deletedCardIds)
+      const now = new Date().toISOString()
+      const reviewSets = await listLocalRecords(accountId, 'flashcard_review_sets')
+      const changes: Array<{
+        resource: string
+        id: string
+        patch: Record<string, any>
+        deleted?: boolean
+      }> = deletedCardIds.map(id => ({
+        resource: 'flashcards', id, patch: {}, deleted: true,
+      }))
+
+      for (const set of reviewSets) {
+        if (set.id === reviewSetId || set.selection_mode !== 'cards') continue
+        const currentIds = Array.isArray(set.included_cards) ? set.included_cards : []
+        const nextIds = currentIds.filter((id: string) => !deletedIds.has(id))
+        if (nextIds.length === currentIds.length) continue
+        const patch = { included_cards: nextIds, updated_at: now }
+        changes.push({ resource: 'flashcard_review_sets', id: set.id, patch })
+        if (await getLocalRecord(accountId, 'accessible_flashcard_review_sets', set.id)) {
+          changes.push({
+            resource: 'accessible_flashcard_review_sets',
+            id: set.id,
+            patch: { ...patch, matching_card_count: nextIds.length },
+          })
+        }
+      }
+
+      changes.push({
+        resource: 'flashcard_review_sets', id: reviewSetId, patch: {}, deleted: true,
+      })
+      if (await getLocalRecord(accountId, 'accessible_flashcard_review_sets', reviewSetId)) {
+        changes.push({
+          resource: 'accessible_flashcard_review_sets',
+          id: reviewSetId,
+          patch: {},
+          deleted: true,
+        })
+      }
+      await putLocalCommandWithResourceChanges(
+        accountId,
+        'review_set.delete',
+        { review_set_id: reviewSetId, delete_cards: deleteCards },
+        changes,
+      )
+      return { deleted_ids: deletedCardIds }
+    }
+    return request<{ deleted_ids: string[] }>(
+      `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/delete`,
+      { method: 'POST', body: { delete_cards: deleteCards } },
+      this.authStore,
+    )
+  }
+
   async updateFlashcardReviewSetPreferences(
     reviewSetId: string,
     settings: FlashcardReviewSettings & { excludedCards?: string[] },

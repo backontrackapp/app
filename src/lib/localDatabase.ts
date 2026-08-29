@@ -482,6 +482,7 @@ export async function putLocalCommandWithResourceChanges(
     id: string
     patch: Record<string, any>
     create?: Record<string, any>
+    deleted?: boolean
   }>,
 ) {
   const plainPayload = cloneSyncRecord(payload)
@@ -516,7 +517,7 @@ export async function putLocalCommandWithResourceChanges(
         id: change.id,
         revision: current?.revision || 0,
         fieldClocks,
-        deleted: false,
+        deleted: change.deleted === true,
         data,
         locallyModified: false,
       })

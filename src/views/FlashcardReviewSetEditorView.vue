@@ -335,28 +335,19 @@ function runRetirementAction(action: ContentRetirementActionId) {
 
 async function remove() {
   if (!draft.id) return
+  const deleteCards = deleteCardsWithReviewSet.value
   const cardIds = deleteCardsWithReviewSet.value
     ? orderedMatchingCards.value.map(card => card.id)
     : []
   deleting.value = true
   error.value = ''
-  let reviewSetDeleted = false
   try {
-    await store.deleteReviewSet(draft.id)
-    reviewSetDeleted = true
-    if (cardIds.length) await store.bulkUpdateCards('delete', cardIds)
+    await store.deleteReviewSet(draft.id, deleteCards, cardIds)
     deleteDialog.value = false
     await router.replace('/flashcards')
   } catch (cause) {
     deleteDialog.value = false
-    if (reviewSetDeleted) {
-      store.error = cause instanceof Error
-        ? `The Review set was deleted, but its cards could not be deleted: ${cause.message}`
-        : 'The Review set was deleted, but its cards could not be deleted.'
-      await router.replace('/flashcards')
-    } else {
-      error.value = store.error || (cause instanceof Error ? cause.message : 'Could not delete this Review set.')
-    }
+    error.value = store.error || (cause instanceof Error ? cause.message : 'Could not delete this Review set.')
   } finally {
     deleting.value = false
   }

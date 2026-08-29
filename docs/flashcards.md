@@ -38,7 +38,7 @@ Individual flashcard editors use an archive/restore action in place of direct de
 
 Opening a card editor from a card list preserves that list’s visible order and current position. Below a divider under the delete, cancel, and save actions, arrow buttons update the mounted editor directly from its offline card list without running route navigation or changing its scroll position, while the centered position reports the current card as **X of Y**; navigation asks for confirmation before discarding unsaved changes.
 
-Deleting an owned Review set asks whether its currently matching cards should also be deleted. Card deletion is off by default; when selected, those cards are removed from the Card library and every other Review set after the Review set itself is successfully deleted.
+Deleting an owned Review set asks whether its currently matching cards should also be deleted. Card deletion is off by default; when selected, the Review set and those cards are removed together in one operation, and the cards also disappear from the Card library and every other Review set.
 
 ## Recent session history
 
