@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { addDays, format } from 'date-fns'
 import ContentIcon from '@/components/ContentIcon.vue'
 import { useResponsiveChartWidth } from '@/services/responsiveChart'
@@ -35,6 +35,8 @@ const screenTimeTracker: TrackingTracker = {
 }
 
 const selectedDayIndex = ref<number>()
+const tooltipVisible = ref(false)
+let tooltipTimer: number | undefined
 const inactiveTrackerIds = ref(new Set(readInactiveTrackingChartTrackerIds()))
 const { chartRoot, chartWidth } = useResponsiveChartWidth()
 const chartHeight = 125
@@ -46,6 +48,10 @@ const todayKey = format(new Date(), 'yyyy-MM-dd')
 const plotWidth = computed(() => Math.max(1, chartWidth.value - plotLeft - plotRight))
 const plotHeight = chartHeight - plotTop - plotBottom
 const groupWidth = computed(() => plotWidth.value / 7)
+
+onBeforeUnmount(() => {
+  if (tooltipTimer !== undefined) window.clearTimeout(tooltipTimer)
+})
 
 const days = computed(() => Array.from({ length: 7 }, (_, index) => {
   const date = addDays(props.weekStart, index)
@@ -129,10 +135,16 @@ const readoutDayIndex = computed(() => {
 const readoutDay = computed(() => readoutDayIndex.value === undefined
   ? undefined
   : days.value[readoutDayIndex.value])
-const readoutValues = computed(() => availableSeries.value.map(item => ({
+const tooltipRows = computed(() => activeSeries.value.map(item => ({
   tracker: item.tracker,
   value: readoutDayIndex.value === undefined ? null : item.values[readoutDayIndex.value] ?? null,
 })))
+const tooltipStyle = computed(() => {
+  const index = readoutDayIndex.value ?? 0
+  return index <= 3
+    ? { right: '.5rem' }
+    : { left: '.5rem' }
+})
 const selectedTrackerIds = computed<string[]>({
   get: () => availableSeries.value
     .filter(item => !inactiveTrackerIds.value.has(item.tracker.id))
@@ -148,18 +160,13 @@ const selectedTrackerIds = computed<string[]>({
     storeInactiveTrackingChartTrackerIds([...next])
   },
 })
-const legendOptions = computed(() => readoutValues.value.map(({ tracker, value }) => {
-  const valueLabel = legendHasNoValue(tracker, value) ? '' : legendValue(tracker, value as number)
-  return {
-    value: tracker.id,
-    title: tracker.name,
-    selectionTitle: valueLabel ? `${tracker.name} (${valueLabel})` : tracker.name,
-    valueLabel,
-    color: tracker.color,
-    icon: tracker.icon || trackingCategoryIcon(tracker.category),
-    line: isLineTracker(tracker),
-  }
-}))
+const legendOptions = computed(() => availableSeries.value.map(({ tracker }) => ({
+  value: tracker.id,
+  title: tracker.name,
+  color: tracker.color,
+  icon: tracker.icon || trackingCategoryIcon(tracker.category),
+  line: isLineTracker(tracker),
+})))
 const ariaLabel = computed(() => {
   const start = days.value[0]?.date
   const end = days.value.at(-1)?.date
@@ -218,8 +225,35 @@ function legendValue(tracker: TrackingTracker, value: number) {
   return formatTrackingValue(tracker, value)
 }
 
+function tooltipValue(tracker: TrackingTracker, value: number | null) {
+  return legendHasNoValue(tracker, value) ? 'Not logged' : legendValue(tracker, value as number)
+}
+
+function tooltipAriaLabel() {
+  if (!tooltipVisible.value || !readoutDay.value) return ariaLabel.value
+  const values = tooltipRows.value
+    .map(({ tracker, value }) => `${tracker.name}: ${tooltipValue(tracker, value)}`)
+    .join('. ')
+  return `${ariaLabel.value} ${format(readoutDay.value.date, 'EEEE, MMMM d')}. ${values}`
+}
+
 function legendHasNoValue(tracker: TrackingTracker, value: number | null) {
   return value === null || (tracker.kind === 'event' && value === 0)
+}
+
+function showTooltip() {
+  tooltipVisible.value = true
+  if (tooltipTimer !== undefined) window.clearTimeout(tooltipTimer)
+  tooltipTimer = window.setTimeout(() => {
+    tooltipVisible.value = false
+    tooltipTimer = undefined
+  }, 3000)
+}
+
+function hideTooltip() {
+  if (tooltipTimer !== undefined) window.clearTimeout(tooltipTimer)
+  tooltipTimer = undefined
+  tooltipVisible.value = false
 }
 
 function selectFromPointer(event: PointerEvent) {
@@ -230,10 +264,13 @@ function selectFromPointer(event: PointerEvent) {
   const dayIndex = Math.max(0, Math.min(6, Math.floor((x - plotLeft) / groupWidth.value)))
   if (dayIndex > lastSelectableDayIndex.value) return
   selectedDayIndex.value = dayIndex
+  showTooltip()
 }
 
 function clearPointerSelection(event: PointerEvent) {
-  if (event.pointerType === 'mouse') selectedDayIndex.value = undefined
+  if (event.pointerType !== 'mouse') return
+  selectedDayIndex.value = undefined
+  hideTooltip()
 }
 
 function onKeydown(event: KeyboardEvent) {
@@ -245,98 +282,123 @@ function onKeydown(event: KeyboardEvent) {
   else if (event.key === 'End') selectedDayIndex.value = lastSelectableDayIndex.value
   else if (event.key === 'ArrowLeft') selectedDayIndex.value = Math.max(0, readoutDayIndex.value - 1)
   else selectedDayIndex.value = Math.min(lastSelectableDayIndex.value, readoutDayIndex.value + 1)
+  showTooltip()
 }
 </script>
 
 <template>
   <div ref="chartRoot" class="weekly-chart" :aria-busy="loading">
     <div
-      v-if="loading || series.length"
-      class="chart-plot"
-      :tabindex="loading ? -1 : 0"
-      role="img"
-      :aria-label="loading ? 'Loading tracking values for the visible week.' : ariaLabel"
-      @keydown="onKeydown"
+      v-if="!loading && readoutDay"
+      :class="['chart-tooltip', { 'chart-tooltip--visible': tooltipVisible }]"
+      :style="tooltipStyle"
+      aria-hidden="true"
     >
-      <svg
-        :viewBox="`0 0 ${chartWidth} ${chartHeight}`"
-        aria-hidden="true"
-        @pointerdown="selectFromPointer"
-        @pointermove="selectFromPointer"
-        @pointerleave="clearPointerSelection"
+      <strong class="chart-tooltip__date">{{ format(readoutDay.date, 'EEE, MMM d') }}</strong>
+      <div
+        v-for="({ tracker, value }) in tooltipRows"
+        :key="tracker.id"
+        class="chart-tooltip__row"
       >
-        <line
-          v-for="step in [0, .25, .5, .75, 1]"
-          :key="step"
-          :x1="plotLeft"
-          :x2="chartWidth - plotRight"
-          :y1="plotTop + plotHeight * step"
-          :y2="plotTop + plotHeight * step"
-          class="grid-line"
-        />
-
-        <rect
-          v-if="!loading && readoutDayIndex !== undefined"
-          :x="plotLeft + readoutDayIndex * groupWidth + 3"
-          :y="plotTop"
-          :width="groupWidth - 6"
-          :height="plotHeight"
-          rx="8"
-          class="selected-day"
-        />
-
-        <template v-if="!loading">
-          <template v-for="(item, seriesIndex) in activeBarSeries" :key="item.tracker.id">
-            <rect
-              v-for="(value, dayIndex) in item.values"
-              v-show="value !== null"
-              :key="`${item.tracker.id}-${days[dayIndex]?.key}`"
-              :x="barX(dayIndex, seriesIndex)"
-              :y="barY(value, item.max)"
-              :width="barWidth()"
-              :height="normalizedBarHeight(value, item.max)"
-              :fill="item.tracker.color"
-              rx="2"
-              class="chart-bar"
-            >
-              <title>{{ days[dayIndex]?.label }} · {{ item.tracker.name }}: {{ value === null ? 'Not logged' : formatTrackingValue(item.tracker, value) }}</title>
-            </rect>
-          </template>
-
-          <template v-for="item in activeLineSeries" :key="item.tracker.id">
-            <path
-              :d="linePath(item.values, item.lineMin, item.lineMax)"
-              :stroke="item.tracker.color"
-              class="chart-line"
-            />
-            <circle
-              v-for="(value, dayIndex) in item.values"
-              v-show="value !== null"
-              :key="`${item.tracker.id}-${days[dayIndex]?.key}`"
-              :cx="lineX(dayIndex)"
-              :cy="value === null ? plotTop + plotHeight : lineY(value, item.lineMin, item.lineMax)"
-              :fill="item.tracker.color"
-              r="3.5"
-              class="chart-line-dot"
-            >
-              <title>{{ days[dayIndex]?.label }} · {{ item.tracker.name }}: {{ value === null ? 'Not logged' : formatTrackingValue(item.tracker, value) }}</title>
-            </circle>
-          </template>
-        </template>
-
-        <text
-          v-for="(day, index) in days"
-          :key="day.key"
-          :x="plotLeft + index * groupWidth + groupWidth / 2"
-          :y="chartHeight - 14"
-          :class="['day-label', { 'day-label--future': day.key > todayKey }]"
-        >{{ day.label }}</text>
-      </svg>
+        <span class="chart-tooltip__series" :style="{ background: tracker.color }" />
+        <span class="chart-tooltip__name">{{ tracker.name }}</span>
+        <strong :class="['chart-tooltip__value', { 'text-disabled': legendHasNoValue(tracker, value) }]">
+          {{ tooltipValue(tracker, value) }}
+        </strong>
+      </div>
     </div>
 
-    <div v-if="!loading && !series.length" class="weekly-chart-empty py-7 text-center" role="status">
-      <v-icon icon="mdi-chart-bar-stacked" size="36" color="secondary" />
-      <p class="mt-3">No entries logged in this week.</p>
+    <div class="chart-visual">
+      <div
+        v-if="loading || series.length"
+        class="chart-plot"
+        :tabindex="loading ? -1 : 0"
+        role="img"
+        :aria-label="loading ? 'Loading tracking values for the visible week.' : tooltipAriaLabel()"
+        @focus="showTooltip"
+        @blur="hideTooltip"
+        @keydown="onKeydown"
+      >
+        <svg
+          :viewBox="`0 0 ${chartWidth} ${chartHeight}`"
+          aria-hidden="true"
+          @pointerdown="selectFromPointer"
+          @pointermove="selectFromPointer"
+          @pointerleave="clearPointerSelection"
+        >
+          <line
+            v-for="step in [0, .25, .5, .75, 1]"
+            :key="step"
+            :x1="plotLeft"
+            :x2="chartWidth - plotRight"
+            :y1="plotTop + plotHeight * step"
+            :y2="plotTop + plotHeight * step"
+            class="grid-line"
+          />
+
+          <rect
+            v-if="!loading && readoutDayIndex !== undefined"
+            :x="plotLeft + readoutDayIndex * groupWidth + 3"
+            :y="plotTop"
+            :width="groupWidth - 6"
+            :height="plotHeight"
+            rx="8"
+            class="selected-day"
+          />
+
+          <template v-if="!loading">
+            <template v-for="(item, seriesIndex) in activeBarSeries" :key="item.tracker.id">
+              <rect
+                v-for="(value, dayIndex) in item.values"
+                v-show="value !== null"
+                :key="`${item.tracker.id}-${days[dayIndex]?.key}`"
+                :x="barX(dayIndex, seriesIndex)"
+                :y="barY(value, item.max)"
+                :width="barWidth()"
+                :height="normalizedBarHeight(value, item.max)"
+                :fill="item.tracker.color"
+                rx="2"
+                class="chart-bar"
+              >
+                <title>{{ days[dayIndex]?.label }} · {{ item.tracker.name }}: {{ value === null ? 'Not logged' : formatTrackingValue(item.tracker, value) }}</title>
+              </rect>
+            </template>
+
+            <template v-for="item in activeLineSeries" :key="item.tracker.id">
+              <path
+                :d="linePath(item.values, item.lineMin, item.lineMax)"
+                :stroke="item.tracker.color"
+                class="chart-line"
+              />
+              <circle
+                v-for="(value, dayIndex) in item.values"
+                v-show="value !== null"
+                :key="`${item.tracker.id}-${days[dayIndex]?.key}`"
+                :cx="lineX(dayIndex)"
+                :cy="value === null ? plotTop + plotHeight : lineY(value, item.lineMin, item.lineMax)"
+                :fill="item.tracker.color"
+                r="3.5"
+                class="chart-line-dot"
+              >
+                <title>{{ days[dayIndex]?.label }} · {{ item.tracker.name }}: {{ value === null ? 'Not logged' : formatTrackingValue(item.tracker, value) }}</title>
+              </circle>
+            </template>
+          </template>
+
+          <text
+            v-for="(day, index) in days"
+            :key="day.key"
+            :x="plotLeft + index * groupWidth + groupWidth / 2"
+            :y="chartHeight - 14"
+            :class="['day-label', { 'day-label--future': day.key > todayKey }]"
+          >{{ day.label }}</text>
+        </svg>
+      </div>
+
+      <div v-if="!loading && !series.length" class="weekly-chart-empty py-7 text-center" role="status">
+        <v-icon icon="mdi-chart-bar-stacked" size="36" color="secondary" />
+        <p class="mt-3">No entries logged in this week.</p>
+      </div>
     </div>
 
     <div class="chart-series-select">
@@ -352,13 +414,12 @@ function onKeydown(event: KeyboardEvent) {
         hide-details="auto"
         :list-props="{ density: 'compact' }"
         :no-data-text="loading ? 'Loading chart series' : 'No chart series available'"
-        :aria-label="readoutDay ? `Chart series shown for ${format(readoutDay.date, 'EEEE, MMMM d')}` : 'Chart series shown'"
+        aria-label="Chart series shown"
       >
         <template #item="{ props: itemProps, item }">
           <v-list-item
             v-bind="itemProps"
             :title="item.raw.title"
-            :subtitle="item.raw.valueLabel || undefined"
           >
             <template #prepend>
               <span class="chart-series-identity mr-3">
@@ -400,7 +461,7 @@ function onKeydown(event: KeyboardEvent) {
               :class="['chart-series-color', { 'chart-series-color--line': item.raw.line }]"
               :style="{ background: item.raw.color }"
             />
-            <span class="text-truncate">{{ item.raw.selectionTitle }}</span>
+            <span class="text-truncate">{{ item.raw.title }}</span>
           </v-chip>
           <span v-else-if="index === 4" class="chart-series-overflow text-disabled">
             +{{ selectedTrackerIds.length - 4 }} {{ selectedTrackerIds.length === 3 ? 'other' : 'others' }}
@@ -421,8 +482,32 @@ function onKeydown(event: KeyboardEvent) {
 .chart-series-chip { max-width: 9rem; }
 .chart-series-chip :deep(.v-chip__content) { min-width: 0; gap: .375rem; }
 .chart-series-overflow { flex: 0 0 auto; color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; font-weight: 800; }
+.weekly-chart { position: relative; }
 .chart-plot { outline: none; }
 .chart-plot:focus-visible { border-radius: 1rem; outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .25rem; }
+.chart-tooltip {
+  position: absolute;
+  z-index: 2;
+  top: .25rem;
+  display: grid;
+  width: max-content;
+  max-width: 100%;
+  padding: .625rem .75rem;
+  border: .0625rem solid rgb(var(--v-theme-on-surface) / .12);
+  border-radius: .75rem;
+  background: rgb(var(--v-theme-surface));
+  box-shadow: 0 .5rem 1.25rem rgb(0 0 0 / .32);
+  gap: .25rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+.chart-tooltip--visible { opacity: 1; }
+.chart-tooltip__date { margin-bottom: .125rem; font-size: .6875rem; letter-spacing: .04em; text-transform: uppercase; }
+.chart-tooltip__row { display: grid; grid-template-columns: .5rem minmax(0, 1fr) min-content; align-items: center; gap: .375rem; }
+.chart-tooltip__series { width: .5rem; height: .5rem; border-radius: 999rem; }
+.chart-tooltip__name { overflow: hidden; font-size: .6875rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.chart-tooltip__value { font-size: .6875rem; white-space: nowrap; }
 svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
 .grid-line { stroke: rgba(var(--v-theme-on-surface), .09); stroke-width: 1; }
 .selected-day { fill: rgba(var(--v-theme-secondary), .06); }
@@ -467,7 +552,8 @@ svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
 @media (prefers-reduced-motion: reduce) {
   .chart-bar,
   .chart-line,
-  .chart-line-dot {
+  .chart-line-dot,
+  .chart-tooltip {
     animation: none;
     transition: none;
   }

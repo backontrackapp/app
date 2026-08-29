@@ -57,6 +57,7 @@ const trackingDateSwipe = {
 const trackingWeekSwipe = {
   onPrevious: () => { visibleWeekStart.value = addDays(visibleWeekStart.value, -7) },
   onNext: () => { visibleWeekStart.value = addDays(visibleWeekStart.value, 7) },
+  transitionTarget: '.chart-visual',
 }
 
 const dateKey = computed(() => format(selectedDate.value, 'yyyy-MM-dd'))
