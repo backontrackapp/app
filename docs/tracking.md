@@ -16,7 +16,7 @@ The main Tracking page lists the outcome group (**How you felt**) above the fact
 
 Archived trackers, tasks, intervals, and Review sets are excluded from the factor and outcome selectors. Their historical logs remain available elsewhere in the application.
 
-Swiping left across **Things you did**, **How you felt**, or the **Log** section advances to the next date, while swiping right returns to the previous date. All three date-dependent sections move in together from the navigation direction with a quick horizontal transition, and a centered card briefly confirms the selected date before fading away.
+Swiping left across the weekly chart advances its visible range by one week, while swiping right returns one week. Swiping left across **Things you did**, **How you felt**, or the **Log** section advances to the next date, while swiping right returns to the previous date. The three day-dependent sections move in together from the navigation direction with a quick horizontal transition, and a centered card briefly confirms the selected date before fading away.
 
 Tracker cards can be reordered within their **Things you did** or **How you felt** group by pressing and holding, then dragging. Cards animate into their prospective grid positions while dragging, with row-aware targeting for stable vertical movement across the grid. The new order is applied immediately and saved through the offline-first data layer; if persistence fails, the previous order is restored and an error is shown.
 

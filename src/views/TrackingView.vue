@@ -54,6 +54,11 @@ const trackingDateSwipe = {
   onNext: () => changeTrackingDate(1),
 }
 
+const trackingWeekSwipe = {
+  onPrevious: () => { visibleWeekStart.value = addDays(visibleWeekStart.value, -7) },
+  onNext: () => { visibleWeekStart.value = addDays(visibleWeekStart.value, 7) },
+}
+
 const dateKey = computed(() => format(selectedDate.value, 'yyyy-MM-dd'))
 const dayEntries = computed(() => store.entries
   .filter((entry) => entry.localDate === dateKey.value)
@@ -307,6 +312,7 @@ async function loadVisibleWeekEntries() {
 
     <v-sheet
       v-if="weeklyChartLoading || store.trackers.length || screenTimeEnabled"
+      v-date-swipe="trackingWeekSwipe"
       class="weekly-chart-card surface-card pa-5 mb-5"
       rounded="xl"
     >
