@@ -8,6 +8,11 @@ const props = defineProps<{
   text: string
   language?: string
   spokenWord?: FlashcardSpeechWord
+  wordsPressable?: boolean
+}>()
+
+const emit = defineEmits<{
+  pressWord: [word: string, spokenWord: FlashcardSpeechWord]
 }>()
 
 const contentElement = ref<HTMLElement>()
@@ -31,6 +36,8 @@ useFitLargestWord(
         :language="language"
         :active-start="spokenWord?.start"
         :active-end="spokenWord?.end"
+        :words-pressable="wordsPressable"
+        @press-word="(word, spokenWord) => emit('pressWord', word, spokenWord)"
       />
     </strong>
     <span

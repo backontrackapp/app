@@ -91,6 +91,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   activate: [event: Event]
   replay: []
+  speakWord: [word: string, spokenWord: FlashcardSpeechWord]
   pointerDown: [event: PointerEvent]
   pointerMove: [event: PointerEvent]
   pointerUp: [event: PointerEvent]
@@ -411,6 +412,8 @@ defineExpose({ refitContent })
                 :speech-language="buffer.speechLanguage"
                 :spoken-word="buffer.side === 'back' ? buffer.spokenWord : undefined"
                 :colorize-pinyin="bufferColorizesPinyin(buffer)"
+                :words-pressable="speechEnabled && canReplay"
+                @press-word="(word, spokenWord) => emit('speakWord', word, spokenWord)"
               />
           </div>
         </div>
@@ -538,6 +541,8 @@ defineExpose({ refitContent })
                     :speech-language="buffer.speechLanguage"
                     :spoken-word="buffer.side === 'back' ? buffer.spokenWord : undefined"
                     :colorize-pinyin="bufferColorizesPinyin(buffer)"
+                    :words-pressable="speechEnabled && canReplay"
+                    @press-word="(word, spokenWord) => emit('speakWord', word, spokenWord)"
                   />
                 </span>
               </span>
@@ -608,6 +613,8 @@ defineExpose({ refitContent })
                       :speech-language="buffer.speechLanguage"
                       :spoken-word="buffer.side === 'back' ? buffer.spokenWord : undefined"
                       :colorize-pinyin="bufferColorizesPinyin(buffer)"
+                      :words-pressable="speechEnabled && canReplay"
+                      @press-word="(word, spokenWord) => emit('speakWord', word, spokenWord)"
                     />
                     <span
                       v-if="buffer.cardSides === 'both' && !buffer.invertFaces && !buffer.card.note.trim()"
@@ -686,6 +693,7 @@ defineExpose({ refitContent })
 .review-card-window > .review-card,
 .review-card-window > .passive-card { pointer-events: auto; }
 .review-card-window :deep(.flashcard-response-text) { pointer-events: auto; }
+.review-card-window :deep(.spoken-text__part--pressable) { pointer-events: auto; }
 .review-card-window > * { width: 100%; min-height: inherit; grid-area: 1 / 1; }
 .review-card { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); padding: 2rem 2rem 5.5rem; border: .0625rem solid rgba(var(--v-theme-on-surface), .1); border-radius: 1.5rem; align-items: center; flex: 1 1 auto; flex-direction: column; gap: 1.5rem; overflow: hidden; background: rgb(var(--v-theme-surface)); color: inherit; cursor: pointer; font: inherit; text-align: center; touch-action: none; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); }
 .review-card > :not(.review-card__image-buffer), .passive-card > :not(.review-card__image-buffer) { position: relative; z-index: 1; }

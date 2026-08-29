@@ -27,3 +27,5 @@ Recent runs are grouped by day, with every group collapsed by default.
 Runs created from an interval that has since been archived remain in recent history without an archive tag.
 
 Selecting a recent run opens its action menu. **See details** reopens the saved completion summary; **Delete** asks for confirmation and removes the run from history immediately. Deleting a run also removes any Review history derived from that Interval, but does not reverse task progress already recorded by the completed session.
+
+In landscape, the completion summary keeps the interval name inline with the session result, separated by a dot. Portrait keeps the interval name as the standalone completion title.

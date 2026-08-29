@@ -16,6 +16,7 @@ const props = withDefaults(defineProps<{
   speechLanguage?: string
   spokenWord?: FlashcardSpeechWord
   colorizePinyin?: boolean
+  wordsPressable?: boolean
 }>(), {
   transliteration: '',
   note: '',
@@ -26,7 +27,12 @@ const props = withDefaults(defineProps<{
   speechLanguage: '',
   spokenWord: undefined,
   colorizePinyin: false,
+  wordsPressable: false,
 })
+
+const emit = defineEmits<{
+  pressWord: [word: string, spokenWord: FlashcardSpeechWord]
+}>()
 
 type ResponsePart = {
   kind: 'back' | 'transliteration' | 'note'
@@ -88,6 +94,20 @@ function partUsesToneColors(part: ResponsePart) {
 
 function partUsesPinyinSyllables(part: ResponsePart) {
   return props.colorizePinyin && part.kind === 'transliteration'
+}
+
+function partWordsArePressable(part: ResponsePart) {
+  return props.wordsPressable && parts.value[0]?.kind === part.kind
+}
+
+function pressPartWord(
+  part: ResponsePart,
+  word: string,
+  spokenWord: FlashcardSpeechWord,
+) {
+  emit('pressWord', word, part.kind === 'back'
+    ? spokenWord
+    : { ...spokenWord, start: -1, end: -1 })
 }
 
 function toneSource(part: ResponsePart) {
@@ -224,9 +244,11 @@ onBeforeUnmount(() => {
         :colorize-pinyin="partUsesToneColors(parts[0])"
         :tone-source="toneSource(parts[0])"
         :pinyin="partUsesPinyinSyllables(parts[0])"
+        :words-pressable="partWordsArePressable(parts[0])"
         class="flashcard-response-text__part flashcard-response-text__primary text-secondary"
         :data-response-part="parts[0].kind"
         data-response-presentation="primary"
+        @press-word="(word, spokenWord) => pressPartWord(parts[0], word, spokenWord)"
       />
       <FitResponsePart
         v-for="part in parts.slice(1)"
@@ -245,9 +267,11 @@ onBeforeUnmount(() => {
         :colorize-pinyin="partUsesToneColors(part)"
         :tone-source="toneSource(part)"
         :pinyin="partUsesPinyinSyllables(part)"
+        :words-pressable="partWordsArePressable(part)"
         class="flashcard-response-text__part flashcard-response-text__supporting"
         :data-response-part="part.kind"
         data-response-presentation="supporting"
+        @press-word="(word, spokenWord) => pressPartWord(part, word, spokenWord)"
       />
     </template>
     <template v-else>
@@ -267,9 +291,11 @@ onBeforeUnmount(() => {
         :colorize-pinyin="partUsesToneColors(parts[0])"
         :tone-source="toneSource(parts[0])"
         :pinyin="partUsesPinyinSyllables(parts[0])"
+        :words-pressable="partWordsArePressable(parts[0])"
         class="flashcard-response-text__part flashcard-response-text__primary text-secondary"
         :data-response-part="parts[0].kind"
         data-response-presentation="primary"
+        @press-word="(word, spokenWord) => pressPartWord(parts[0], word, spokenWord)"
       />
       <component
         is="span"
@@ -295,6 +321,8 @@ onBeforeUnmount(() => {
           :colorize-pinyin="partUsesToneColors(part)"
           :tone-source="toneSource(part)"
           :pinyin="partUsesPinyinSyllables(part)"
+          :words-pressable="partWordsArePressable(part)"
+          @press-word="(word, spokenWord) => pressPartWord(part, word, spokenWord)"
         />
       </component>
     </template>

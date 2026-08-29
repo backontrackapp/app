@@ -63,8 +63,13 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onPause() {
         appVisible = false;
-        TransientAudioFocus.setAppVisible(false);
         super.onPause();
+    }
+
+    @Override
+    public void onStop() {
+        TransientAudioFocus.setAppVisible(false);
+        super.onStop();
     }
 
     @Override

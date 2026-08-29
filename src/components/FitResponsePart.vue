@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import SpokenText from '@/components/SpokenText.vue'
 import { useFitLargestWord } from '@/composables/useFitLargestWord'
+import type { FlashcardSpeechWord } from '@/types/domain'
 
 const props = withDefaults(defineProps<{
   tag: 'strong' | 'span'
@@ -19,6 +20,7 @@ const props = withDefaults(defineProps<{
   colorizePinyin?: boolean
   toneSource?: string
   pinyin?: boolean
+  wordsPressable?: boolean
 }>(), {
   defaultFontSize: '3.6rem',
   maxSizeRem: 3.6,
@@ -32,7 +34,12 @@ const props = withDefaults(defineProps<{
   colorizePinyin: false,
   toneSource: '',
   pinyin: false,
+  wordsPressable: false,
 })
+
+const emit = defineEmits<{
+  pressWord: [word: string, spokenWord: FlashcardSpeechWord]
+}>()
 
 const partElement = ref<HTMLElement>()
 const measurementElement = ref<HTMLElement>()
@@ -69,6 +76,8 @@ useFitLargestWord(
       :colorize-pinyin="colorizePinyin"
       :tone-source="toneSource"
       :pinyin="pinyin"
+      :words-pressable="wordsPressable"
+      @press-word="(word, spokenWord) => emit('pressWord', word, spokenWord)"
     />
     <span
       ref="measurementElement"

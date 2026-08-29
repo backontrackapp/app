@@ -8,8 +8,8 @@ import android.media.AudioManager;
 /**
  * Holds transient audio focus after Review set playback first becomes active. Playback leases
  * identify the scopes that need focus, but pausing a scope does not restore other media while the
- * app remains visible. Activity visibility is the only lifecycle signal that abandons or reapplies
- * the focus request.
+ * app remains visible. Backgrounding abandons the focus request, and foregrounding only reapplies
+ * it when a Review set playback scope is still active.
  */
 final class TransientAudioFocus {
 
@@ -108,6 +108,7 @@ final class TransientAudioFocus {
             return;
         }
         abandonFocus();
+        if (activeLeases <= 0) focusRequest = null;
     }
 
     private synchronized void handleAudioFocusChange(int focusChange) {
@@ -126,13 +127,20 @@ final class TransientAudioFocus {
     }
 
     private synchronized void reapplyFocusIfNecessary() {
-        if (!appVisible || focusGranted || audioManager == null || focusRequest == null) return;
+        if (
+            !appVisible
+                || activeLeases <= 0
+                || focusGranted
+                || audioManager == null
+                || focusRequest == null
+        ) return;
         focusGranted = audioManager.requestAudioFocus(focusRequest)
             == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
     }
 
     private synchronized void releaseLease() {
         activeLeases = Math.max(0, activeLeases - 1);
+        if (activeLeases == 0 && !appVisible) focusRequest = null;
     }
 
     private void abandonFocus() {

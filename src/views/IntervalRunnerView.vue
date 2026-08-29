@@ -2180,8 +2180,17 @@ async function runAgain(repetitions?: number) {
           </v-img>
           <ContentIcon v-else :icon="sessionIcon" size="2.125rem" />
         </div>
-        <p class="runner-label">{{ session.status === 'completed' ? 'Session complete' : 'Session ended' }}</p>
-        <h1 class="display-title">{{ runnerIdentityTitle }}<span class="text-secondary">.</span></h1>
+        <p class="runner-label finish-status">
+          <span>{{ session.status === 'completed' ? 'Session completed' : 'Session ended' }}</span>
+          <span class="finish-status__separator">·</span>
+          <span class="finish-status__interval">{{ session.name }}</span>
+        </p>
+        <h1
+          class="display-title"
+          :class="{ 'finish-title--interval': runnerIdentityTitle === session.name }"
+        >
+          {{ runnerIdentityTitle }}<span class="text-secondary">.</span>
+        </h1>
         <p v-if="runnerIdentityTitle !== session.name" class="finish-source">{{ session.name }}</p>
         <div class="finish-stats">
           <div><span>Planned</span><strong>{{ formatIntervalDuration(session.plannedSeconds) }}</strong></div>
@@ -2891,6 +2900,8 @@ async function runAgain(repetitions?: number) {
 .finish-icon--image { overflow: hidden; }
 .finish-image { width: 100% !important; height: 100% !important; }
 .finish-image :deep(.v-img__img) { object-fit: cover; }
+.finish-status__separator,
+.finish-status__interval { display: none; }
 .finish-card h1 { margin-top: .75rem; font-size: clamp(2.8rem, 12vw, 5rem); }
 .finish-source { margin-top: .5rem; color: rgb(var(--v-theme-on-surface) / .56); font-size: .875rem; font-weight: 800; }
 .finish-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem; margin: 2rem 0; }
@@ -2916,6 +2927,21 @@ async function runAgain(repetitions?: number) {
 @media (orientation: landscape) {
   .finish-actions { grid-template-columns: 1fr; }
   .finish-actions__done { grid-column: 1; }
+  .finish-status {
+    display: flex;
+    min-width: 0;
+    align-items: baseline;
+    gap: .4rem;
+  }
+  .finish-status__separator,
+  .finish-status__interval { display: inline; }
+  .finish-status__interval {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .finish-title--interval,
+  .finish-source { display: none; }
 }
 .note-dialog-heading { display: flex; align-items: center; gap: 12px; }
 .note-dialog-icon {

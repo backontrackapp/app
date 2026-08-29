@@ -1026,6 +1026,47 @@ function replayCurrentSide() {
   return true
 }
 
+async function speakPressedWord(word: string, pressedWord: FlashcardSpeechWord) {
+  const value = session.value
+  const text = word.trim()
+  if (
+    !value
+    || !text
+    || !canReplayCurrentSide.value
+    || document.visibilityState !== 'visible'
+  ) return
+
+  const request = ++speechRequest
+  const holdPassiveDuration = value.mode === 'passive' && value.status === 'running'
+  if (holdPassiveDuration) passiveSpeechPlaying.value = true
+  spokenWord.value = pressedWord
+  speechPlaybackWarning.value = ''
+  try {
+    await speakFlashcardText(text, currentSpeechLanguage.value, '', '', value.backSpeechRate)
+    await waitForFlashcardSpeechCompletion()
+    if (request === speechRequest) speechPlaybackWarning.value = ''
+  } catch {
+    if (request === speechRequest && !speechFailureWarnedSessionIds.has(value.id)) {
+      speechFailureWarnedSessionIds.add(value.id)
+      speechFailureSnackbar.value = true
+    }
+  } finally {
+    if (request === speechRequest) {
+      spokenWord.value = undefined
+      passiveSpeechPlaying.value = false
+      lastTickAt = Date.now()
+      if (holdPassiveDuration) {
+        savePassiveState()
+        if (
+          document.visibilityState === 'visible'
+          && !visibilitySpeechHandoff.value
+          && !reconcilingBackground.value
+        ) void syncNativeBackground()
+      }
+    }
+  }
+}
+
 async function toggleSpeechOverAmplification() {
   if (speechOverAmplificationBusy.value) return
   speechOverAmplificationBusy.value = true
@@ -1373,8 +1414,9 @@ async function saveSessionSettings(target: FlashcardSettingsApplyTarget = 'sessi
 
     if (target === 'session' || target === 'both') {
       const updated = await store.updateSessionSettings(session.value.id, sessionSettingsDraft)
-      currentQueueIndex.value = 0
-      ejectedQueueIndexes.length = 0
+      currentQueueIndex.value = updated.queue.length
+        ? Math.min(currentQueueIndex.value, updated.queue.length - 1)
+        : 0
       localElapsedMs.value = updated.elapsedSeconds * 1000
       lastTickAt = Date.now()
       lastSpokenKey = ''
@@ -1712,6 +1754,7 @@ async function leaveRunner() {
           @lost-pointer-capture="cancelReviewCardSwipe"
           @activate="handleReviewCardTap"
           @replay="replayCurrentSide"
+          @speak-word="speakPressedWord"
           @after-enter="finishReviewCardTransition"
           @toggle-tag="toggleCurrentCardTag({ name: $event })"
           @eject="ejectCurrentCard"

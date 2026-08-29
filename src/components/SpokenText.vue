@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { flashcardSpeechTextParts, pinyinTextParts, pinyinTone } from '@/services/spokenText'
+import type { FlashcardSpeechWord } from '@/types/domain'
 
 const props = withDefaults(defineProps<{
   text: string
@@ -12,6 +13,7 @@ const props = withDefaults(defineProps<{
   colorizePinyin?: boolean
   toneSource?: string
   pinyin?: boolean
+  wordsPressable?: boolean
 }>(), {
   language: '',
   activeStart: -1,
@@ -21,7 +23,12 @@ const props = withDefaults(defineProps<{
   colorizePinyin: false,
   toneSource: '',
   pinyin: false,
+  wordsPressable: false,
 })
+
+const emit = defineEmits<{
+  pressWord: [word: string, spokenWord: FlashcardSpeechWord]
+}>()
 
 const parts = computed(() => props.pinyin
   ? pinyinTextParts(props.text)
@@ -65,6 +72,17 @@ function partIsActive(part: (typeof parts.value)[number]) {
     && part.wordIndex >= props.activeWordStart
     && part.wordIndex < props.activeWordEnd
 }
+
+function pressWord(event: MouseEvent, part: (typeof parts.value)[number]) {
+  if (!props.wordsPressable || part.wordIndex === undefined) return
+  event.stopPropagation()
+  emit('pressWord', part.value, {
+    start: part.start,
+    end: part.end,
+    wordStart: part.wordIndex,
+    wordEnd: part.wordIndex + 1,
+  })
+}
 </script>
 
 <template>
@@ -81,12 +99,14 @@ function partIsActive(part: (typeof parts.value)[number]) {
           'spoken-text__part',
           {
             'spoken-text__part--word': part.wordIndex !== undefined,
+            'spoken-text__part--pressable': wordsPressable && part.wordIndex !== undefined,
             'spoken-text__part--punctuation': partIsPunctuation(part),
             'spoken-text__part--active': partIsActive(part),
             [`spoken-text__part--tone-${partTone(part)}`]: partTone(part) !== undefined,
           },
         ]"
         aria-hidden="true"
+        @click="pressWord($event, part)"
       >{{ part.value }}</span>
     </span>
   </span>
@@ -107,6 +127,11 @@ function partIsActive(part: (typeof parts.value)[number]) {
   transform: scale(1);
   transform-origin: center;
   transition: transform 160ms cubic-bezier(.22, 1, .36, 1), color 160ms ease;
+}
+
+.spoken-text__part--pressable {
+  cursor: pointer;
+  pointer-events: auto;
 }
 
 .spoken-text__part--active {
