@@ -30,11 +30,16 @@ import {
   INTERVAL_TYPE_PRESENTATION,
   normalizeIntervalTypeSounds,
 } from '@/services/intervalTypes'
+import {
+  DEFAULT_EXERCISE_WEIGHT_UNIT,
+  normalizeExerciseWeightUnit,
+} from '@/services/exerciseSettings'
 import type {
   IntervalCueSound,
   IntervalStepKind,
   StepSource,
 } from '@/types/domain'
+import type { WeightUnit } from '@/types/exercise'
 
 const stepSource = ref<StepSource>(DEFAULT_STEP_SOURCE)
 const menuItems = ref<MainNavItem[]>(orderedMainNavItems(
@@ -44,11 +49,13 @@ const hiddenMenuItems = ref<MainNavItemId[]>(normalizeHiddenMainMenuItems(
   readStoredHiddenMainMenuItems() ?? api.authStore.record?.settings?.mainMenuHidden,
 ))
 const intervalTypeSounds = ref(defaultIntervalTypeSounds())
+const exerciseWeightUnit = ref<WeightUnit>(DEFAULT_EXERCISE_WEIGHT_UNIT)
 const loading = ref(true)
 const connecting = ref(false)
 const screenTimeConnecting = ref(false)
 const menuSaving = ref(false)
 const intervalSoundSaving = ref(false)
+const exerciseWeightUnitSaving = ref(false)
 const previewingIntervalType = ref<IntervalStepKind>()
 const error = ref('')
 const notice = ref(false)
@@ -61,6 +68,10 @@ const screenTimeAuthorized = ref(false)
 const isAndroidApp = isNativeHealthConnectSupported()
 const stepSources = [
   { title: 'Health Connect', value: 'health_connect' },
+]
+const exerciseWeightUnits = [
+  { title: 'Kilograms (kg)', value: 'kg' },
+  { title: 'Pounds (lb)', value: 'lb' },
 ]
 const healthConnected = computed(() => (
   healthStatus.value.availability === 'available' && healthStatus.value.authorized
@@ -105,6 +116,7 @@ onMounted(async () => {
     )
     intervalTypeSounds.value = normalizeIntervalTypeSounds(settings.intervalTypeSounds)
     stepSource.value = normalizeStepSource(settings.stepSource)
+    exerciseWeightUnit.value = normalizeExerciseWeightUnit(settings.exerciseWeightUnit)
     if (settings.stepSource !== stepSource.value) {
       await api.updateUserSettings({ stepSource: stepSource.value })
     }
@@ -248,6 +260,25 @@ async function setIntervalTypeSound(kind: IntervalStepKind, sound: IntervalCueSo
   }
 }
 
+async function setExerciseWeightUnit(value: WeightUnit) {
+  if (exerciseWeightUnitSaving.value || value === exerciseWeightUnit.value) return
+  const previous = exerciseWeightUnit.value
+  exerciseWeightUnit.value = value
+  exerciseWeightUnitSaving.value = true
+  error.value = ''
+  try {
+    const settings = await api.updateUserSettings({ exerciseWeightUnit: value })
+    exerciseWeightUnit.value = normalizeExerciseWeightUnit(settings.exerciseWeightUnit)
+    noticeMessage.value = 'Exercise weight unit saved.'
+    notice.value = true
+  } catch (cause) {
+    exerciseWeightUnit.value = previous
+    error.value = cause instanceof Error ? cause.message : 'The exercise weight unit could not be saved.'
+  } finally {
+    exerciseWeightUnitSaving.value = false
+  }
+}
+
 async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalCueSound) {
   if (sound === 'none' || previewingIntervalType.value) return
   previewingIntervalType.value = kind
@@ -327,6 +358,34 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
             </div>
         </div>
       </v-expand-transition>
+    </v-card>
+
+    <v-card class="surface-card pa-5 pa-sm-6">
+      <div class="settings-section-heading">
+        <div>
+          <h2>Exercise</h2>
+          <p>Choose the default weight unit for workout sets.</p>
+        </div>
+        <v-progress-circular
+          v-if="exerciseWeightUnitSaving"
+          color="secondary"
+          indeterminate
+          size="22"
+          width="2"
+        />
+        <v-icon v-else icon="mdi-dumbbell" />
+      </div>
+
+      <v-select
+        v-if="!loading"
+        :model-value="exerciseWeightUnit"
+        class="mt-5"
+        label="Default weight unit"
+        :items="exerciseWeightUnits"
+        :disabled="exerciseWeightUnitSaving"
+        @update:model-value="setExerciseWeightUnit"
+      />
+      <v-progress-linear v-else color="secondary" indeterminate rounded class="mt-5" />
     </v-card>
 
     <v-card class="surface-card pa-5 pa-sm-6">

@@ -187,9 +187,19 @@ const currentSourceCards = computed(() => {
 const currentSourceCard = computed(() => currentSourceCards.value.find(card => card.id === currentCard.value?.id))
 const displayedCard = computed(() => {
   const queuedCard = currentCard.value
-  const sourceTransliteration = currentSourceCard.value?.transliteration
-  if (!queuedCard || queuedCard.transliteration || !sourceTransliteration) return queuedCard
-  return { ...queuedCard, transliteration: sourceTransliteration }
+  const sourceCard = currentSourceCard.value
+  if (!queuedCard || !sourceCard) return queuedCard
+  if (
+    queuedCard.transliteration
+    && queuedCard.ttsFront !== undefined
+    && queuedCard.ttsBack !== undefined
+  ) return queuedCard
+  return {
+    ...queuedCard,
+    transliteration: queuedCard.transliteration || sourceCard.transliteration || '',
+    ttsFront: (queuedCard.ttsFront ?? sourceCard.ttsFront) || '',
+    ttsBack: (queuedCard.ttsBack ?? sourceCard.ttsBack) || '',
+  }
 })
 const canManageCurrentCard = computed(() => !currentReviewSet.value
   || currentReviewSet.value.accessRole !== 'readonly')
@@ -303,7 +313,9 @@ const passiveProgress = computed(() => {
   return Math.max(0, Math.min(100, (1 - remainingMs / durationMs) * 100))
 })
 const accuracy = computed(() => session.value ? sessionAccuracy(session.value) : undefined)
-const exitDestination = computed(() => route.query.from === 'tasks' ? '/tasks' : '/flashcards')
+const exitDestination = computed(() => typeof route.query.returnTo === 'string'
+  ? route.query.returnTo
+  : route.query.from === 'tasks' ? '/tasks' : '/flashcards')
 const startTaskName = computed(() => {
   const taskId = session.value?.task
   return taskId ? taskStore.tasks.find(task => task.id === taskId)?.name : undefined
@@ -832,6 +844,7 @@ async function startPreviewReview(replaceActive = false) {
         params: { sessionId: started.id },
         query: {
           ...(route.query.from ? { from: route.query.from } : {}),
+          ...(typeof route.query.returnTo === 'string' ? { returnTo: route.query.returnTo } : {}),
         },
       })
     } finally {
@@ -995,7 +1008,9 @@ async function speakCurrentSide(allowPaused = false) {
   const holdPassiveDuration = value.mode === 'passive' && value.status === 'running'
   if (holdPassiveDuration) passiveSpeechPlaying.value = true
   try {
-    const text = side === 'front' ? card.front : card.back
+    const text = side === 'front'
+      ? card.ttsFront?.trim() || card.front
+      : card.ttsBack?.trim() || card.back
     const language = side === 'front' ? value.frontLanguage : value.backLanguage
     const audio = (side === 'front' ? card.frontAudio : card.backAudio) || ''
     prepareFlashcardSpeechWordTracking(word => {
@@ -1515,6 +1530,8 @@ function handleCardSaved(card: Flashcard) {
     id: card.id,
     front: card.front,
     back: card.back,
+    ttsFront: card.ttsFront || '',
+    ttsBack: card.ttsBack || '',
     transliteration: card.transliteration || '',
     note: card.note,
     frontAudio: card.frontAudio,

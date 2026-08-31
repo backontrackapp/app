@@ -208,6 +208,15 @@ export function flashcardEjectReachesExclusionThreshold(
   return ejectCount >= normalizeFlashcardEjectExcludeAfter(ejectExcludeAfter)
 }
 
+export function flashcardWasEjectedToday(card: Pick<Flashcard, 'lastEjectedAt'>, now = new Date()) {
+  if (!card.lastEjectedAt) return false
+  const ejectedAt = new Date(card.lastEjectedAt)
+  if (Number.isNaN(ejectedAt.getTime())) return false
+  return ejectedAt.getFullYear() === now.getFullYear()
+    && ejectedAt.getMonth() === now.getMonth()
+    && ejectedAt.getDate() === now.getDate()
+}
+
 export function updateFlashcardReviewExclusions(
   excludedCards: readonly string[],
   action: FlashcardSelectionAction,
@@ -270,7 +279,7 @@ export function flashcardReviewSettingsAreValid(
 export const FLASHCARD_BULK_MENU_ITEMS = [
   {
     action: 'inject_into_review_set',
-    title: 'Inject into Review set',
+    title: 'Assign to Review set',
     icon: 'mdi-playlist-plus',
   },
   { action: 'swap_columns', title: 'Swap column content', icon: 'mdi-swap-horizontal' },
@@ -465,12 +474,10 @@ export function cardMatchesTags(card: Pick<Flashcard, 'tags' | 'archived'>, sele
 }
 
 export function cardMatchesReviewSet(
-  card: Pick<Flashcard, 'id' | 'tags' | 'archived'>,
-  reviewSet: Pick<FlashcardReviewSet, 'selectionMode' | 'includedCards' | 'tags'>,
+  card: Pick<Flashcard, 'id' | 'archived'>,
+  reviewSet: Pick<FlashcardReviewSet, 'assignedCards'>,
 ) {
-  return card.archived !== true && (reviewSet.selectionMode === 'cards'
-    ? (reviewSet.includedCards || []).includes(card.id)
-    : cardMatchesTags(card, reviewSet.tags))
+  return card.archived !== true && (reviewSet.assignedCards || []).includes(card.id)
 }
 
 export function cardMatchesSearch(
@@ -596,6 +603,7 @@ export function flashcardReviewQueueState(
     cards.filter(card => (
       cardMatchesReviewSet(card, reviewSet)
       && !(reviewSet.excludedCards || []).includes(card.id)
+      && !flashcardWasEjectedToday(card)
     )),
     reviewSet.sortMode,
     reviewSet.sortDirection,
@@ -605,6 +613,8 @@ export function flashcardReviewQueueState(
       id: card.id,
       front: card.front,
       back: card.back,
+      ttsFront: card.ttsFront || '',
+      ttsBack: card.ttsBack || '',
       transliteration: card.transliteration || '',
       note: card.note,
       frontAudio: card.frontAudio,

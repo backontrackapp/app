@@ -40,6 +40,8 @@ final class Schema
                 'fields' => [
                     'front' => self::text(5000, true),
                     'back' => self::text(5000, true),
+                    'tts_front' => self::text(5000),
+                    'tts_back' => self::text(5000),
                     'transliteration' => self::text(5000),
                     'note' => self::text(2000),
                     'image_url' => self::text(2048),
@@ -53,6 +55,7 @@ final class Schema
                     'created_at' => self::timestamp(false, true),
                     'updated_at' => self::timestamp(false, true),
                     'last_reviewed_at' => self::timestamp(false, true),
+                    'last_ejected_at' => self::timestamp(false, true),
                     'passive_views' => self::integer(0),
                     'success_count' => self::integer(0),
                     'error_count' => self::integer(0),
@@ -60,10 +63,10 @@ final class Schema
                 ],
                 'required' => ['front', 'back'],
                 'sort' => [
-                    'front', 'created_at', 'updated_at', 'last_reviewed_at',
+                    'front', 'created_at', 'updated_at', 'last_reviewed_at', 'last_ejected_at',
                     'passive_views', 'success_count', 'error_count', 'eject_count',
                 ],
-                'filter' => ['archived', 'created_at', 'last_reviewed_at'],
+                'filter' => ['archived', 'created_at', 'last_reviewed_at', 'last_ejected_at'],
             ],
             'flashcard_review_sets' => [
                 'fields' => [
@@ -71,8 +74,7 @@ final class Schema
                     'icon' => self::text(64),
                     'color' => self::text(20),
                     'tags' => self::jsonArray(5000),
-                    'selection_mode' => self::choice(['tags', 'cards'], true),
-                    'included_cards' => self::jsonArray(200000),
+                    'assigned_cards' => self::jsonArray(200000),
                     'excluded_cards' => self::jsonArray(200000),
                     'mode' => self::choice(['manual', 'passive'], true),
                     'card_sides' => self::choice(['both', 'front', 'back'], true),

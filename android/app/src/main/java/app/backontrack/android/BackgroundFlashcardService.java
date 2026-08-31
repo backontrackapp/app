@@ -115,12 +115,16 @@ public class BackgroundFlashcardService extends Service {
     private static final class Card {
         final String front;
         final String back;
+        final String ttsFront;
+        final String ttsBack;
         final String frontAudio;
         final String backAudio;
 
-        Card(String front, String back, String frontAudio, String backAudio) {
+        Card(String front, String back, String ttsFront, String ttsBack, String frontAudio, String backAudio) {
             this.front = front;
             this.back = back;
+            this.ttsFront = ttsFront;
+            this.ttsBack = ttsBack;
             this.frontAudio = frontAudio;
             this.backAudio = backAudio;
         }
@@ -189,6 +193,8 @@ public class BackgroundFlashcardService extends Service {
             cards.add(new Card(
                 encoded.optString("front", ""),
                 encoded.optString("back", ""),
+                encoded.optString("ttsFront", ""),
+                encoded.optString("ttsBack", ""),
                 encoded.optString("frontAudio", ""),
                 encoded.optString("backAudio", "")
             ));
@@ -296,7 +302,9 @@ public class BackgroundFlashcardService extends Service {
         if (MainActivity.isAppVisible() || cardIndex >= cards.size()) return;
         stopSpeechPlayback();
         Card card = cards.get(cardIndex);
-        pendingSpeechText = "front".equals(side) ? card.front : card.back;
+        pendingSpeechText = "front".equals(side)
+            ? (card.ttsFront.isEmpty() ? card.front : card.ttsFront)
+            : (card.ttsBack.isEmpty() ? card.back : card.ttsBack);
         pendingSpeechLanguage = "front".equals(side) ? frontLanguage : backLanguage;
         pendingRecordingUrl = "front".equals(side) ? card.frontAudio : card.backAudio;
         speakPendingSide();

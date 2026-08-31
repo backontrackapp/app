@@ -8,6 +8,7 @@ description: Preserve and extend the BackOnTrack application's established UI di
 ## Data updates
 
 - Always update immediately through optimistic local state, including when no occurrence exists yet. App is offline-first, always.
+- Always update EXPECTED_SCHEMA_VERSION when creating a migration
 
 ## Tests
 

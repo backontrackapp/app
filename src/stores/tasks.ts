@@ -1053,7 +1053,17 @@ export const useTaskStore = defineStore('tasks', () => {
   }, syncReminders = true, preserveRecordedProgramCompletion = false) {
     if (!tasks.value.length) await load()
     const taskDate = input.taskDate || toDateKey(new Date(input.startedAt))
-    if (input.programStepId && input.taskId && input.status === 'completed') {
+    const workoutIntervalNeedsConfirmation = !input.programStepCompletionId
+      && input.programStepId
+      && steps.value.find(step => step.id === input.programStepId)?.completions?.some(completion => (
+        completion.type === 'workout' && completion.intervalTemplate === input.sourceId
+      ))
+    if (
+      input.programStepId
+      && input.taskId
+      && input.status === 'completed'
+      && !workoutIntervalNeedsConfirmation
+    ) {
       await completeAttributedTask(
         input.taskId,
         taskDate,

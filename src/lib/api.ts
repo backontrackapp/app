@@ -180,7 +180,7 @@ function localCreateDefaults(resource: string, body: Record<string, unknown>) {
   const now = new Date().toISOString()
   if (resource === 'flashcards') {
     return {
-      transliteration: '', note: '', image_url: '', image_file: '',
+      tts_front: '', tts_back: '', transliteration: '', note: '', image_url: '', image_file: '',
       front_audio_url: '', front_audio_file: '', back_audio_url: '', back_audio_file: '',
       tags: [], archived: false, created_at: now, updated_at: now, last_reviewed_at: '',
       passive_views: 0, success_count: 0, error_count: 0, eject_count: 0,
@@ -217,7 +217,9 @@ async function mirrorOwnedReviewSetProjection(
   authRecord: AuthRecord | null,
 ) {
   const tagIds = Array.isArray(record.tags) ? record.tags : []
-  const includedCardIds = Array.isArray(record.included_cards) ? record.included_cards : []
+  const assignedCardIds = Array.isArray(record.assigned_cards)
+    ? record.assigned_cards
+    : Array.isArray(record.included_cards) ? record.included_cards : []
   const [tags, cards] = await Promise.all([
     listLocalRecords(accountId, 'flashcard_tags'),
     listLocalRecords(accountId, 'flashcards'),
@@ -230,10 +232,9 @@ async function mirrorOwnedReviewSetProjection(
     owner_name: authRecord?.name || '',
     owner_avatar: authRecord?.avatar || '',
     tag_details: tags.filter(tag => tagSet.has(tag.id)).map(tag => ({ id: tag.id, name: tag.name })),
-    matching_card_count: cards.filter(card => card.archived !== true && (record.selection_mode === 'cards'
-      ? includedCardIds.includes(card.id)
-      : !tagIds.length
-        || (Array.isArray(card.tags) && card.tags.some((tag: string) => tagSet.has(tag))))).length,
+    matching_card_count: cards.filter(card => (
+      card.archived !== true && assignedCardIds.includes(card.id)
+    )).length,
   }
   const existing = await getLocalRecord(accountId, 'accessible_flashcard_review_sets', record.id)
   return existing
@@ -272,6 +273,8 @@ function localFlashcardSwapPatch(
     ...record,
     front: String(record.front || ''),
     back: String(record.back || ''),
+    ttsFront: String(record.tts_front || ''),
+    ttsBack: String(record.tts_back || ''),
     transliteration: String(record.transliteration || ''),
     note: String(record.note || ''),
   } as Flashcard
@@ -279,7 +282,12 @@ function localFlashcardSwapPatch(
   if (error) throw new ApiError(422, error)
   const pair = columns as [FlashcardBulkSwapColumn, FlashcardBulkSwapColumn]
   swapFlashcardColumns(card, pair)
-  return { [pair[0]]: card[pair[0]] || '', [pair[1]]: card[pair[1]] || '' }
+  const patch: Record<string, string> = { [pair[0]]: card[pair[0]] || '', [pair[1]]: card[pair[1]] || '' }
+  if (pair.includes('front') && pair.includes('back')) {
+    patch.tts_front = card.ttsBack || ''
+    patch.tts_back = card.ttsFront || ''
+  }
+  return patch
 }
 
 class AuthStore {
@@ -478,10 +486,12 @@ class CollectionClient<T extends RecordModel = RecordModel> {
       if (this.name === 'flashcards') {
         const reviewSets = await listLocalRecords(accountId, 'flashcard_review_sets')
         for (const reviewSet of reviewSets) {
-          if (reviewSet.selection_mode !== 'cards' || !Array.isArray(reviewSet.included_cards)) continue
-          if (!reviewSet.included_cards.includes(id)) continue
+          const assignedCards = Array.isArray(reviewSet.assigned_cards)
+            ? reviewSet.assigned_cards
+            : Array.isArray(reviewSet.included_cards) ? reviewSet.included_cards : []
+          if (!assignedCards.includes(id)) continue
           const updated = await putLocalPatch(accountId, 'flashcard_review_sets', reviewSet.id, {
-            included_cards: reviewSet.included_cards.filter((cardId: string) => cardId !== id),
+            assigned_cards: assignedCards.filter((cardId: string) => cardId !== id),
             updated_at: new Date().toISOString(),
           })
           await mirrorOwnedReviewSetProjection(accountId, updated, this.authStore.record)
@@ -592,8 +602,7 @@ class ApiClient {
         owner: accountId,
         name,
         tags: [],
-        selection_mode: 'cards',
-        included_cards: [...new Set([...body.existing_card_ids, ...cards.map(card => card.id)])],
+        assigned_cards: [...new Set([...body.existing_card_ids, ...cards.map(card => card.id)])],
         excluded_cards: [],
         ...flashcardReviewSettingsBody(input.settings || {
           mode: 'manual', cardSides: 'both', indefinite: false, timeLimitSeconds: 0,
@@ -610,17 +619,12 @@ class ApiClient {
     } else {
       const current = localSets.find(set => set.id === input.reviewSetId)
       if (!current) throw new ApiError(404, 'Review set not found.')
-      const currentIds = current.selection_mode === 'cards'
-        ? Array.isArray(current.included_cards) ? current.included_cards : []
-        : localCards.filter((card) => {
-          const tagIds = Array.isArray(current.tags) ? current.tags : []
-          return !tagIds.length || (Array.isArray(card.tags) && card.tags.some((tag: string) => tagIds.includes(tag)))
-        }).map(card => card.id)
+      const currentIds = Array.isArray(current.assigned_cards)
+        ? current.assigned_cards
+        : Array.isArray(current.included_cards) ? current.included_cards : []
       reviewSet = {
         ...current,
-        selection_mode: 'cards',
-        tags: [],
-        included_cards: [...new Set([
+        assigned_cards: [...new Set([
           ...currentIds,
           ...body.existing_card_ids,
           ...cards.map(card => card.id),
@@ -636,7 +640,7 @@ class ApiClient {
       owner_name: this.authStore.record?.name || '',
       owner_avatar: this.authStore.record?.avatar || '',
       tag_details: [],
-      matching_card_count: reviewSet.included_cards.length,
+      matching_card_count: reviewSet.assigned_cards.length,
     }
     await putLocalCommandWithResourceChanges(
       accountId,
@@ -1060,6 +1064,7 @@ class ApiClient {
             patch: {
               eject_count: nextCount,
               last_reviewed_at: reviewedAt,
+              last_ejected_at: reviewedAt,
               updated_at: reviewedAt,
             },
           }],
@@ -1069,7 +1074,11 @@ class ApiClient {
           accountId,
           'review_set_cards',
           `${reviewSetId}:${cardId}`,
-          { eject_count: nextCount, last_reviewed_at: reviewedAt },
+          {
+            eject_count: nextCount,
+            last_reviewed_at: reviewedAt,
+            last_ejected_at: reviewedAt,
+          },
         )
         await putLocalCommand(accountId, 'flashcard_eject.increment', payload)
       }
@@ -1240,15 +1249,13 @@ class ApiClient {
       }
 
       const localCards = await listLocalRecords(accountId, 'flashcards')
-      const selectedTags = Array.isArray(reviewSet.tags) ? reviewSet.tags : []
-      const includedCards = Array.isArray(reviewSet.included_cards) ? reviewSet.included_cards : []
+      const assignedCards = Array.isArray(reviewSet.assigned_cards)
+        ? reviewSet.assigned_cards
+        : Array.isArray(reviewSet.included_cards) ? reviewSet.included_cards : []
       const deletedCardIds = deleteCards
         ? localCards.filter(card => (
             card.archived !== true
-            && (reviewSet.selection_mode === 'cards'
-              ? includedCards.includes(card.id)
-              : !selectedTags.length
-                || (Array.isArray(card.tags) && card.tags.some((tag: string) => selectedTags.includes(tag))))
+            && assignedCards.includes(card.id)
           )).map(card => card.id)
         : []
       const deletedIds = new Set(deletedCardIds)
@@ -1264,11 +1271,13 @@ class ApiClient {
       }))
 
       for (const set of reviewSets) {
-        if (set.id === reviewSetId || set.selection_mode !== 'cards') continue
-        const currentIds = Array.isArray(set.included_cards) ? set.included_cards : []
+        if (set.id === reviewSetId) continue
+        const currentIds = Array.isArray(set.assigned_cards)
+          ? set.assigned_cards
+          : Array.isArray(set.included_cards) ? set.included_cards : []
         const nextIds = currentIds.filter((id: string) => !deletedIds.has(id))
         if (nextIds.length === currentIds.length) continue
-        const patch = { included_cards: nextIds, updated_at: now }
+        const patch = { assigned_cards: nextIds, updated_at: now }
         changes.push({ resource: 'flashcard_review_sets', id: set.id, patch })
         if (await getLocalRecord(accountId, 'accessible_flashcard_review_sets', set.id)) {
           changes.push({
@@ -1460,8 +1469,9 @@ class ApiClient {
         owner_avatar: this.authStore.record?.avatar || '',
         share_id: '',
         tag_details: [{ id: scopeTag.id, name: scopeName }],
-        matching_card_count: sourceCards.length,
+        matching_card_count: 0,
       })
+      const copiedCardIds: string[] = []
       for (const sourceCard of sourceCards) {
         const card = await putLocalCreate(accountId, 'flashcards', localCreateDefaults('flashcards', {
           front: sourceCard.front,
@@ -1472,12 +1482,21 @@ class ApiClient {
           image_file: sourceCard.image_file || '',
           tags: [scopeTag.id],
         }))
+        copiedCardIds.push(card.id)
         await putLocalProjectionCreate(accountId, 'review_set_cards', {
           ...card,
           review_set_id: reviewSet.id,
         }, `${reviewSet.id}:${card.id}`)
       }
-      return projection
+      const assignedCards = [...new Set(copiedCardIds)]
+      await putLocalPatch(accountId, 'flashcard_review_sets', reviewSet.id, {
+        assigned_cards: assignedCards,
+        updated_at: new Date().toISOString(),
+      })
+      return putLocalProjectionPatch(accountId, 'accessible_flashcard_review_sets', projection.id, {
+        assigned_cards: assignedCards,
+        matching_card_count: assignedCards.length,
+      })
     }
     return request<RecordModel>(
       `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/copies`,
@@ -1491,15 +1510,13 @@ class ApiClient {
     if (accountId && await hasLocalBootstrap(accountId)) {
       const reviewSet = await getLocalRecord(accountId, 'accessible_flashcard_review_sets', reviewSetId)
       if (reviewSet?.owner === accountId) {
-        const tagIds = Array.isArray(reviewSet.tags) ? reviewSet.tags : []
-        const includedCardIds = Array.isArray(reviewSet.included_cards)
-          ? reviewSet.included_cards
+        const assignedCardIds = Array.isArray(reviewSet.assigned_cards)
+          ? reviewSet.assigned_cards
+          : Array.isArray(reviewSet.included_cards)
+            ? reviewSet.included_cards
           : []
         return (await listLocalRecords(accountId, 'flashcards', { sort: '-created_at' }))
-          .filter(card => reviewSet.selection_mode === 'cards'
-            ? includedCardIds.includes(card.id)
-            : !tagIds.length || (Array.isArray(card.tags)
-              && card.tags.some((tag: string) => tagIds.includes(tag))))
+          .filter(card => assignedCardIds.includes(card.id))
       }
       return listLocalRecords(accountId, 'review_set_cards', {
         filter: `review_set_id = "${reviewSetId}"`,
@@ -1521,21 +1538,21 @@ class ApiClient {
       if (reviewSet?.owner === accountId) {
         const card = await this.collection('flashcards').create({
           ...body,
-          tags: Array.isArray(reviewSet.tags) ? reviewSet.tags : [],
+          tags: Array.isArray(body.tags) ? body.tags : [],
         })
-        if (reviewSet.selection_mode === 'cards') {
-          await this.collection('flashcard_review_sets').update(reviewSetId, {
-            included_cards: [...new Set([
-              ...(Array.isArray(reviewSet.included_cards) ? reviewSet.included_cards : []),
-              card.id,
-            ])],
-          })
-        }
+        await this.collection('flashcard_review_sets').update(reviewSetId, {
+          assigned_cards: [...new Set([
+            ...(Array.isArray(reviewSet.assigned_cards)
+              ? reviewSet.assigned_cards
+              : Array.isArray(reviewSet.included_cards) ? reviewSet.included_cards : []),
+            card.id,
+          ])],
+        })
         return card
       }
       return putLocalSharedCardCreate(accountId, reviewSetId, {
         ...body,
-        tags: Array.isArray(reviewSet?.tags) ? reviewSet.tags : [],
+        tags: Array.isArray(body.tags) ? body.tags : [],
         transliteration: typeof body.transliteration === 'string' ? body.transliteration : '',
         note: typeof body.note === 'string' ? body.note : '',
         image_url: typeof body.image_url === 'string' ? body.image_url : '',

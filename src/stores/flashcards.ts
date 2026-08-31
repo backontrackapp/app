@@ -69,6 +69,8 @@ function mapCard(record: Record<string, any>): Flashcard {
     id: record.id,
     front: record.front,
     back: record.back,
+    ttsFront: record.tts_front || '',
+    ttsBack: record.tts_back || '',
     transliteration: record.transliteration || '',
     note: record.note || '',
     frontAudio: frontAudioFile
@@ -85,6 +87,7 @@ function mapCard(record: Record<string, any>): Flashcard {
     createdAt: record.created_at,
     updatedAt: record.updated_at,
     lastReviewedAt: record.last_reviewed_at || undefined,
+    lastEjectedAt: record.last_ejected_at || undefined,
     passiveViews: Number(record.passive_views || 0),
     successCount: Number(record.success_count || 0),
     errorCount: Number(record.error_count || 0),
@@ -99,8 +102,9 @@ function mapReviewSet(record: Record<string, any>): FlashcardReviewSet {
     icon: record.icon || '',
     color: record.color || '#C7F464',
     tags: Array.isArray(record.tags) ? record.tags : [],
-    selectionMode: record.selection_mode === 'cards' ? 'cards' : 'tags',
-    includedCards: Array.isArray(record.included_cards) ? record.included_cards : [],
+    assignedCards: Array.isArray(record.assigned_cards)
+      ? record.assigned_cards
+      : Array.isArray(record.included_cards) ? record.included_cards : [],
     tagDetails: Array.isArray(record.tag_details) ? record.tag_details.map(mapTag) : [],
     owner: record.owner || api.authStore.record?.id || '',
     ownerName: record.owner_name || api.authStore.record?.name || '',
@@ -244,6 +248,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
   const loaded = ref(false)
   const error = ref('')
   const ejectedEventCounts = ref<Record<string, number>>({})
+  const ejectedEventTimes = ref<Record<string, string>>({})
 
   const activeSession = computed(() =>
     sessions.value.find(session => session.status === 'running' || session.status === 'paused'),
@@ -263,12 +268,21 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       if (card.transliteration === undefined) {
         card.transliteration = sourceCard.transliteration || ''
       }
+      if (card.ttsFront === undefined) card.ttsFront = sourceCard.ttsFront || ''
+      if (card.ttsBack === undefined) card.ttsBack = sourceCard.ttsBack || ''
       card.ejectCount = Math.max(card.ejectCount, sourceCard.ejectCount)
+      if (!card.lastEjectedAt || String(sourceCard.lastEjectedAt || '') > card.lastEjectedAt) {
+        card.lastEjectedAt = sourceCard.lastEjectedAt
+      }
     })
   }
 
   function reconcileCardEjectCount(card: Flashcard) {
     card.ejectCount = Math.max(card.ejectCount, ejectedEventCounts.value[card.id] || 0)
+    const eventTime = ejectedEventTimes.value[card.id]
+    if (eventTime && (!card.lastEjectedAt || eventTime > card.lastEjectedAt)) {
+      card.lastEjectedAt = eventTime
+    }
     return card
   }
 
@@ -277,14 +291,19 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     card: Flashcard,
     ejectCount: number,
     reviewedAt?: string,
+    lastEjectedAt = reviewedAt,
   ) {
     const accountId = api.authStore.record?.id || ''
     if (!accountId) return
     const patch = {
       eject_count: Math.max(0, ejectCount),
       ...(reviewedAt !== undefined
-        ? { last_reviewed_at: reviewedAt, updated_at: new Date().toISOString() }
+        ? {
+            last_reviewed_at: reviewedAt,
+            updated_at: new Date().toISOString(),
+          }
         : {}),
+      ...(lastEjectedAt !== undefined ? { last_ejected_at: lastEjectedAt } : {}),
     }
     if (reviewSet.owner === accountId) {
       await putLocalProjectionPatch(accountId, 'flashcards', card.id, patch)
@@ -390,9 +409,24 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         },
         {},
       )
+      ejectedEventTimes.value = ejectEventRecords.reduce<Record<string, string>>(
+        (times, record) => {
+          const cardId = typeof record.card === 'string' ? record.card : ''
+          const reviewedAt = typeof record.reviewed_at === 'string' ? record.reviewed_at : ''
+          if (cardId && reviewedAt > (times[cardId] || '')) times[cardId] = reviewedAt
+          return times
+        },
+        {},
+      )
       tags.value = tagRecords.map(mapTag)
       cards.value = cardRecords.map(mapCard).map(reconcileCardEjectCount)
       reviewSets.value = setRecords.map(mapReviewSet)
+      reviewSets.value.forEach((reviewSet) => {
+        if (reviewSet.owner !== accountId) return
+        reviewSet.matchingCardCount = cards.value.filter(card => (
+          card.archived !== true && (reviewSet.assignedCards || []).includes(card.id)
+        )).length
+      })
       sessions.value = sessionRecords.items.map(mapSession)
       sessions.value.forEach(session => hydrateSessionTransliterations(session, cards.value))
       if (usingLocalDatabase) {
@@ -519,6 +553,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           id: card.id,
           front: card.front,
           back: card.back,
+          ttsFront: card.ttsFront || '',
+          ttsBack: card.ttsBack || '',
           transliteration: card.transliteration || '',
           note: card.note,
           frontAudio: card.frontAudio,
@@ -561,6 +597,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       owner: api.authStore.record!.id,
       front: draft.front,
       back: draft.back,
+      tts_front: draft.ttsFront || '',
+      tts_back: draft.ttsBack || '',
       transliteration: draft.transliteration || '',
       note: draft.note,
       tags: draft.tags,
@@ -577,6 +615,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       id: draft.id || createLocalRecordId(),
       front: draft.front,
       back: draft.back,
+      ttsFront: draft.ttsFront || '',
+      ttsBack: draft.ttsBack || '',
       transliteration: draft.transliteration || '',
       note: draft.note,
       frontAudio: audio?.front.recording
@@ -594,6 +634,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       createdAt: existing?.createdAt || now,
       updatedAt: now,
       lastReviewedAt: existing?.lastReviewedAt,
+      lastEjectedAt: existing?.lastEjectedAt,
       passiveViews: existing?.passiveViews || 0,
       successCount: existing?.successCount || 0,
       errorCount: existing?.errorCount || 0,
@@ -683,6 +724,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
             id: currentCard.id,
             front: currentCard.front,
             back: currentCard.back,
+            ttsFront: currentCard.ttsFront || '',
+            ttsBack: currentCard.ttsBack || '',
             transliteration: currentCard.transliteration || '',
             note: currentCard.note,
             frontAudio: currentCard.frontAudio,
@@ -811,6 +854,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           id: existing.id,
           front: replace ? incoming.front : existing.front,
           back: replace || resolution.columns.includes('back') ? incoming.back : existing.back,
+          ttsFront: existing.ttsFront || '',
+          ttsBack: existing.ttsBack || '',
           transliteration: replace || resolution.columns.includes('transliteration')
             ? incoming.transliteration || ''
             : existing.transliteration || '',
@@ -872,7 +917,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     const previousCards = cards.value.map(card => ({ ...card, tags: [...card.tags] }))
     const reviewSetSnapshots = reviewSets.value.map(reviewSet => ({
       reviewSet,
-      includedCards: [...(reviewSet.includedCards || [])],
+      includedCards: [...(reviewSet.assignedCards || [])],
       matchingCardCount: reviewSet.matchingCardCount,
     }))
     const sessionSnapshots = sessions.value.map(session => ({
@@ -889,9 +934,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     }
     if (action === 'delete') {
       cards.value = cards.value.filter(card => !selectedIds.has(card.id))
-      reviewSets.value.filter(set => set.selectionMode === 'cards').forEach((reviewSet) => {
-        reviewSet.includedCards = (reviewSet.includedCards || []).filter(id => !selectedIds.has(id))
-        reviewSet.matchingCardCount = reviewSet.includedCards.length
+      reviewSets.value.forEach((reviewSet) => {
+        reviewSet.assignedCards = (reviewSet.assignedCards || []).filter(id => !selectedIds.has(id))
+        reviewSet.matchingCardCount = reviewSet.assignedCards.length
       })
     } else {
       cards.value.filter(card => selectedIds.has(card.id)).forEach((card) => {
@@ -914,9 +959,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         const deleted = new Set(response.deleted_ids)
         cards.value = previousCards.filter(card => !deleted.has(card.id))
         reviewSetSnapshots.forEach(({ reviewSet, includedCards }) => {
-          if (reviewSet.selectionMode !== 'cards') return
-          reviewSet.includedCards = includedCards.filter(id => !deleted.has(id))
-          reviewSet.matchingCardCount = reviewSet.includedCards.length
+          reviewSet.assignedCards = includedCards.filter(id => !deleted.has(id))
+          reviewSet.matchingCardCount = reviewSet.assignedCards.length
         })
         useSnackbarStore().showDeletion(deleted.size === 1 ? 'Card' : `${deleted.size} cards`)
         return []
@@ -928,7 +972,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     } catch (cause) {
       cards.value = previousCards
       reviewSetSnapshots.forEach(({ reviewSet, includedCards, matchingCardCount }) => {
-        reviewSet.includedCards = includedCards
+        reviewSet.assignedCards = includedCards
         reviewSet.matchingCardCount = matchingCardCount
       })
       sessionSnapshots.forEach(({ session, queue, totalCards }) => {
@@ -946,8 +990,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       icon: draft.icon || '',
       color: draft.color,
       tags: draft.tags,
-      selection_mode: draft.selectionMode || 'tags',
-      included_cards: draft.includedCards || [],
+      assigned_cards: draft.assignedCards || [],
       mode: draft.mode,
       card_sides: draft.cardSides,
       invert_faces: draft.cardSides === 'both' && draft.invertFaces === true,
@@ -1021,8 +1064,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         icon: '',
         color: '#C7F464',
         tags: [],
-        selectionMode: 'cards',
-        includedCards: selected,
+        assignedCards: selected,
         excludedCards: [],
         mode: 'manual',
         cardSides: DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
@@ -1055,21 +1097,13 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     const previous = {
       ...reviewSet,
       tags: [...reviewSet.tags],
-      includedCards: [...(reviewSet.includedCards || [])],
+      assignedCards: [...(reviewSet.assignedCards || [])],
     }
-    const currentCards = reviewSet.selectionMode === 'cards'
-      ? reviewSet.includedCards || []
-      : cards.value.filter(card => cardMatchesReviewSet(card, reviewSet)).map(card => card.id)
-    reviewSet.selectionMode = 'cards'
-    reviewSet.includedCards = [...new Set([...currentCards, ...selected])]
-    reviewSet.tags = []
-    reviewSet.tagDetails = []
-    reviewSet.matchingCardCount = reviewSet.includedCards.length
+    reviewSet.assignedCards = [...new Set([...(reviewSet.assignedCards || []), ...selected])]
+    reviewSet.matchingCardCount = reviewSet.assignedCards.length
     try {
       await api.collection('flashcard_review_sets').update(reviewSet.id, {
-        selection_mode: 'cards',
-        included_cards: reviewSet.includedCards,
-        tags: [],
+        assigned_cards: reviewSet.assignedCards,
       })
       const accessibleRecords = await api.getAccessibleFlashcardReviewSets()
       reviewSets.value = accessibleRecords.map(mapReviewSet)
@@ -1148,6 +1182,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         id: existing.id,
         front: replace ? incoming.front : existing.front,
         back: replace || resolution.columns.includes('back') ? incoming.back : existing.back,
+        ttsFront: existing.ttsFront || '',
+        ttsBack: existing.ttsBack || '',
         transliteration: replace || resolution.columns.includes('transliteration')
           ? incoming.transliteration || ''
           : existing.transliteration || '',
@@ -1296,6 +1332,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           id: existing.id,
           front: replace ? incoming.front : existing.front,
           back: replace || resolution.columns.includes('back') ? incoming.back : existing.back,
+          ttsFront: existing.ttsFront || '',
+          ttsBack: existing.ttsBack || '',
           transliteration: replace || resolution.columns.includes('transliteration')
             ? incoming.transliteration || ''
             : existing.transliteration || '',
@@ -1321,15 +1359,13 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       [reviewSetId]: [...importedCards, ...current],
     }
     const reviewSet = reviewSets.value.find(item => item.id === reviewSetId)
-    if (reviewSet?.selectionMode === 'cards') {
-      reviewSet.includedCards = [...new Set([
-        ...(reviewSet.includedCards || []),
+    if (reviewSet) {
+      reviewSet.assignedCards = [...new Set([
+        ...(reviewSet.assignedCards || []),
         ...importedCards.map(card => card.id),
       ])]
+      reviewSet.matchingCardCount = reviewSet.assignedCards.length
     }
-    if (reviewSet) reviewSet.matchingCardCount = reviewSet.selectionMode === 'cards'
-      ? (reviewSet.includedCards || []).length
-      : current.length + importedCards.length
     if (reviewSet?.owner === api.authStore.record?.id) cards.value.unshift(...importedCards)
     return importedCards
   }
@@ -1347,28 +1383,24 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     const previousCards = cards.value
     const reviewSet = reviewSets.value.find(item => item.id === reviewSetId)
     const previousCount = reviewSet?.matchingCardCount
-    const previousIncludedCards = [...(reviewSet?.includedCards || [])]
+    const previousIncludedCards = [...(reviewSet?.assignedCards || [])]
     const next = previousReviewSetCards.filter(card => !deleted.has(card.id))
     reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: next }
     cards.value = cards.value.filter(card => !deleted.has(card.id))
-    if (reviewSet?.selectionMode === 'cards') {
-      reviewSet.includedCards = previousIncludedCards.filter(id => !deleted.has(id))
+    if (reviewSet) {
+      reviewSet.assignedCards = previousIncludedCards.filter(id => !deleted.has(id))
+      reviewSet.matchingCardCount = reviewSet.assignedCards.length
     }
-    if (reviewSet) reviewSet.matchingCardCount = reviewSet.selectionMode === 'cards'
-      ? (reviewSet.includedCards || []).length
-      : next.length
     try {
       const response = await api.bulkUpdateFlashcardReviewSetCards(reviewSetId, uniqueCardIds)
       const persistedDeleted = new Set(response.deleted_ids)
       const persistedNext = previousReviewSetCards.filter(card => !persistedDeleted.has(card.id))
       reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: persistedNext }
       cards.value = previousCards.filter(card => !persistedDeleted.has(card.id))
-      if (reviewSet?.selectionMode === 'cards') {
-        reviewSet.includedCards = previousIncludedCards.filter(id => !persistedDeleted.has(id))
+      if (reviewSet) {
+        reviewSet.assignedCards = previousIncludedCards.filter(id => !persistedDeleted.has(id))
+        reviewSet.matchingCardCount = reviewSet.assignedCards.length
       }
-      if (reviewSet) reviewSet.matchingCardCount = reviewSet.selectionMode === 'cards'
-        ? (reviewSet.includedCards || []).length
-        : persistedNext.length
       useSnackbarStore().showDeletion(
         persistedDeleted.size === 1 ? 'Card' : `${persistedDeleted.size} cards`,
       )
@@ -1376,7 +1408,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     } catch (cause) {
       reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: previousReviewSetCards }
       cards.value = previousCards
-      if (reviewSet) reviewSet.includedCards = previousIncludedCards
+      if (reviewSet) reviewSet.assignedCards = previousIncludedCards
       if (reviewSet && previousCount !== undefined) reviewSet.matchingCardCount = previousCount
       throw cause
     }
@@ -1395,6 +1427,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     const payload: Record<string, unknown> = {
       front: draft.front,
       back: draft.back,
+      tts_front: draft.ttsFront || '',
+      tts_back: draft.ttsBack || '',
       transliteration: draft.transliteration || '',
       note: draft.note,
     }
@@ -1415,6 +1449,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         ...existing,
         front: draft.front,
         back: draft.back,
+        ttsFront: draft.ttsFront || '',
+        ttsBack: draft.ttsBack || '',
         transliteration: draft.transliteration || '',
         note: draft.note,
         frontAudio: audio?.front.recording
@@ -1444,6 +1480,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
             id: optimisticCard.id,
             front: optimisticCard.front,
             back: optimisticCard.back,
+            ttsFront: optimisticCard.ttsFront || '',
+            ttsBack: optimisticCard.ttsBack || '',
             transliteration: optimisticCard.transliteration || '',
             note: optimisticCard.note,
             frontAudio: optimisticCard.frontAudio,
@@ -1485,12 +1523,10 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       else next.unshift(card)
       reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: next }
       const reviewSet = reviewSets.value.find(item => item.id === reviewSetId)
-      if (reviewSet?.selectionMode === 'cards' && !reviewSet.includedCards?.includes(card.id)) {
-        reviewSet.includedCards = [...(reviewSet.includedCards || []), card.id]
+      if (reviewSet && !(reviewSet.assignedCards || []).includes(card.id)) {
+        reviewSet.assignedCards = [...(reviewSet.assignedCards || []), card.id]
       }
-      if (reviewSet) reviewSet.matchingCardCount = reviewSet.selectionMode === 'cards'
-        ? (reviewSet.includedCards || []).length
-        : next.length
+      if (reviewSet) reviewSet.matchingCardCount = reviewSet.assignedCards.length
       if (reviewSet?.owner === api.authStore.record?.id) {
         const cardIndex = cards.value.findIndex(item => item.id === card.id)
         if (cardIndex >= 0) cards.value.splice(cardIndex, 1, card)
@@ -1514,22 +1550,20 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     const previousCards = cards.value
     const reviewSet = reviewSets.value.find(item => item.id === reviewSetId)
     const previousCount = reviewSet?.matchingCardCount
-    const previousIncludedCards = [...(reviewSet?.includedCards || [])]
+    const previousIncludedCards = [...(reviewSet?.assignedCards || [])]
     const next = (reviewSetCards.value[reviewSetId] || []).filter(card => card.id !== cardId)
     reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: next }
     cards.value = cards.value.filter(card => card.id !== cardId)
-    if (reviewSet?.selectionMode === 'cards') {
-      reviewSet.includedCards = (reviewSet.includedCards || []).filter(id => id !== cardId)
+    if (reviewSet) {
+      reviewSet.assignedCards = (reviewSet.assignedCards || []).filter(id => id !== cardId)
+      reviewSet.matchingCardCount = reviewSet.assignedCards.length
     }
-    if (reviewSet) reviewSet.matchingCardCount = reviewSet.selectionMode === 'cards'
-      ? (reviewSet.includedCards || []).length
-      : next.length
     try {
       await api.deleteFlashcardReviewSetCard(reviewSetId, cardId)
     } catch (cause) {
       reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: previousReviewSetCards }
       cards.value = previousCards
-      if (reviewSet) reviewSet.includedCards = previousIncludedCards
+      if (reviewSet) reviewSet.assignedCards = previousIncludedCards
       if (reviewSet && previousCount !== undefined) reviewSet.matchingCardCount = previousCount
       throw cause
     }
@@ -1602,7 +1636,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     const previousCards = cards.value
     const reviewSetSnapshots = reviewSets.value.map(reviewSet => ({
       reviewSet,
-      includedCards: [...(reviewSet.includedCards || [])],
+      includedCards: [...(reviewSet.assignedCards || [])],
       matchingCardCount: reviewSet.matchingCardCount,
     }))
     const previousSessionSets = new Map(sessions.value.map(session => [session.id, session.reviewSet]))
@@ -1617,13 +1651,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       if (!deletedIds.size) return
       cards.value = cards.value.filter(card => !deletedIds.has(card.id))
       reviewSets.value.forEach((reviewSet) => {
-        if (reviewSet.selectionMode === 'cards') {
-          reviewSet.includedCards = (reviewSet.includedCards || [])
-            .filter(cardId => !deletedIds.has(cardId))
-        }
+        reviewSet.assignedCards = (reviewSet.assignedCards || []).filter(cardId => !deletedIds.has(cardId))
         if (reviewSet.owner === api.authStore.record?.id) {
-          reviewSet.matchingCardCount = cards.value
-            .filter(card => cardMatchesReviewSet(card, reviewSet)).length
+          reviewSet.matchingCardCount = reviewSet.assignedCards.length
         }
       })
       sessions.value.forEach((session) => {
@@ -1648,7 +1678,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       reviewSets.value = previousReviewSets
       cards.value = previousCards
       reviewSetSnapshots.forEach(({ reviewSet, includedCards, matchingCardCount }) => {
-        reviewSet.includedCards = includedCards
+        reviewSet.assignedCards = includedCards
         reviewSet.matchingCardCount = matchingCardCount
       })
       sessions.value.forEach((session) => {
@@ -1854,7 +1884,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         const card = cards.value.find(item => item.id === reviewedCard.id)
           || Object.values(reviewSetCards.value).flat().find(item => item.id === reviewedCard.id)
         if (!card) return
-        card.lastReviewedAt = new Date().toISOString()
+        const ejectedAt = new Date().toISOString()
+        card.lastReviewedAt = ejectedAt
+        card.lastEjectedAt = ejectedAt
         card.ejectCount += 1
       })
     } else if (!usingLocalDatabase && action === 'undo_eject') {
@@ -1863,7 +1895,10 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         ? cards.value.find(item => item.id === restoredCard.id)
           || Object.values(reviewSetCards.value).flat().find(item => item.id === restoredCard.id)
         : undefined
-      if (card) card.ejectCount = Math.max(0, card.ejectCount - 1)
+      if (card) {
+        card.ejectCount = Math.max(0, card.ejectCount - 1)
+        card.lastEjectedAt = undefined
+      }
     }
     const taskStore = useTaskStore()
     const progressOccurrences = response.occurrences || []
@@ -1897,8 +1932,11 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     if (!card) throw new Error('The ejected flashcard is no longer available.')
     const previousCount = card.ejectCount
     const previousLastReviewedAt = card.lastReviewedAt
+    const previousLastEjectedAt = card.lastEjectedAt
     card.ejectCount = previousCount + 1
-    card.lastReviewedAt = new Date().toISOString()
+    const ejectedAt = new Date().toISOString()
+    card.lastReviewedAt = ejectedAt
+    card.lastEjectedAt = ejectedAt
     try {
       card.ejectCount = await api.incrementFlashcardEjectCount(
         reviewSetId,
@@ -1909,6 +1947,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     } catch (cause) {
       card.ejectCount = previousCount
       card.lastReviewedAt = previousLastReviewedAt
+      card.lastEjectedAt = previousLastEjectedAt
       throw cause
     }
   }
@@ -1963,6 +2002,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
             id: card.id,
             front: card.front,
             back: card.back,
+            ttsFront: card.ttsFront || '',
+            ttsBack: card.ttsBack || '',
             transliteration: card.transliteration || '',
             note: card.note,
             frontAudio: card.frontAudio,
@@ -2084,7 +2125,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       previousCount: number
       nextCount: number
       previousLastReviewedAt?: string
+      previousLastEjectedAt?: string
       reviewedAt?: string
+      lastEjectedAt?: string
     } | undefined
 
     if (action === 'restart') {
@@ -2151,11 +2194,15 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         if (!card) throw new Error('The last ejected flashcard is no longer available.')
         const previousCount = card.ejectCount
         const nextCount = Math.max(0, previousCount - 1)
+        const previousLastEjectedAt = card.lastEjectedAt
         card.ejectCount = nextCount
+        card.lastEjectedAt = undefined
         queue.unshift({
           id: card.id,
           front: card.front,
           back: card.back,
+          ttsFront: card.ttsFront || '',
+          ttsBack: card.ttsBack || '',
           transliteration: card.transliteration || '',
           note: card.note,
           frontAudio: card.frontAudio,
@@ -2171,6 +2218,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           previousCount,
           nextCount,
           previousLastReviewedAt: card.lastReviewedAt,
+          previousLastEjectedAt,
+          lastEjectedAt: '',
         }
         if (
           flashcardEjectExcludes(current.ejectBehavior)
@@ -2207,17 +2256,21 @@ export const useFlashcardStore = defineStore('flashcards', () => {
             if (!availableCard) throw new Error('The ejected flashcard is no longer available.')
             const previousCount = availableCard.ejectCount
             const previousLastReviewedAt = availableCard.lastReviewedAt
+            const previousLastEjectedAt = availableCard.lastEjectedAt
             const ejectCount = previousCount + 1
             card.ejectCount = ejectCount
             availableCard.ejectCount = ejectCount
             availableCard.lastReviewedAt = now
+            availableCard.lastEjectedAt = now
             ejectCountChange = {
               reviewSet,
               card: availableCard,
               previousCount,
               nextCount: ejectCount,
               previousLastReviewedAt,
+              previousLastEjectedAt,
               reviewedAt: now,
+              lastEjectedAt: now,
             }
             if (
               flashcardEjectExcludes(current.ejectBehavior)
@@ -2245,6 +2298,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
                   id: replacement.id,
                   front: replacement.front,
                   back: replacement.back,
+                  ttsFront: replacement.ttsFront || '',
+                  ttsBack: replacement.ttsBack || '',
                   transliteration: replacement.transliteration || '',
                   note: replacement.note,
                   frontAudio: replacement.frontAudio,
@@ -2337,6 +2392,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           ejectCountChange.card,
           ejectCountChange.nextCount,
           ejectCountChange.reviewedAt,
+          ejectCountChange.lastEjectedAt,
         )
       }
       const session = await api.collection('flashcard_review_sessions').update(sessionId, {
@@ -2359,6 +2415,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       if (ejectCountChange) {
         ejectCountChange.card.ejectCount = ejectCountChange.previousCount
         ejectCountChange.card.lastReviewedAt = ejectCountChange.previousLastReviewedAt
+        ejectCountChange.card.lastEjectedAt = ejectCountChange.previousLastEjectedAt
         try {
           await persistLocalCardEjectCount(
             ejectCountChange.reviewSet,
@@ -2367,6 +2424,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
             ejectCountChange.reviewedAt !== undefined
               ? ejectCountChange.previousLastReviewedAt || ''
               : undefined,
+            ejectCountChange.previousLastEjectedAt || '',
           )
         } catch {
           // Preserve the original review failure; local history reconciliation repairs the counter.

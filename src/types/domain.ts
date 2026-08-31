@@ -8,7 +8,7 @@ export type TargetOperator = 'gte' | 'lte' | 'eq'
 export type OccurrenceStatus = 'pending' | 'completed' | 'missed' | 'carried' | 'rescheduled' | 'skipped'
 export type SessionCountMode = 'task' | 'linked'
 export type SessionGoalType = 'complete' | 'duration'
-export type ProgramStepCompletionType = 'check' | 'quantity' | 'interval' | 'flashcards'
+export type ProgramStepCompletionType = 'workout' | 'check' | 'quantity' | 'interval' | 'flashcards'
 
 export interface WeekDateMarker {
   date: string
@@ -68,7 +68,7 @@ export interface ProgramStep {
   description: string
   sortOrder: number
   cycleDays: number[]
-  completionType: 'check' | 'quantity' | 'interval' | 'flashcards' | 'day_off'
+  completionType: 'workout' | 'check' | 'quantity' | 'interval' | 'flashcards' | 'day_off'
   targetValue?: number
   targetOperator?: TargetOperator
   unit?: string
@@ -411,7 +411,6 @@ export interface FlashcardSelectionActionItem {
   color?: string
 }
 export type FlashcardReviewSetAccessRole = 'owner' | 'readonly' | 'editor'
-export type FlashcardReviewSetSelectionMode = 'tags' | 'cards'
 export type SquareImageSource = 'none' | 'url' | 'upload'
 
 export interface SquareImageSourceValue {
@@ -437,6 +436,8 @@ export interface Flashcard {
   id: string
   front: string
   back: string
+  ttsFront?: string
+  ttsBack?: string
   transliteration?: string
   note: string
   frontAudio?: string
@@ -449,6 +450,7 @@ export interface Flashcard {
   createdAt: string
   updatedAt: string
   lastReviewedAt?: string
+  lastEjectedAt?: string
   passiveViews: number
   successCount: number
   errorCount: number
@@ -459,6 +461,8 @@ export interface FlashcardDraft {
   id?: string
   front: string
   back: string
+  ttsFront?: string
+  ttsBack?: string
   transliteration?: string
   note: string
   tags: string[]
@@ -550,8 +554,8 @@ export interface FlashcardReviewSet extends FlashcardReviewSettings {
   icon?: string
   color: string
   tags: string[]
-  selectionMode?: FlashcardReviewSetSelectionMode
-  includedCards?: string[]
+  /** Cards explicitly assigned to this Review set. */
+  assignedCards?: string[]
   tagDetails: FlashcardTag[]
   owner: string
   ownerName: string
@@ -612,6 +616,8 @@ export interface FlashcardReviewQueueCard {
   id: string
   front: string
   back: string
+  ttsFront?: string
+  ttsBack?: string
   transliteration?: string
   note: string
   frontAudio?: string

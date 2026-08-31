@@ -36,7 +36,9 @@ const error = ref('')
 const duplicateDialog = ref(false)
 const duplicateCard = ref<Flashcard>()
 const original = ref('')
-const draft = reactive<FlashcardDraft>({ front: '', back: '', transliteration: '', note: '', tags: [] })
+const draft = reactive<FlashcardDraft>({
+  front: '', back: '', ttsFront: '', ttsBack: '', transliteration: '', note: '', tags: [],
+})
 const frontAudio = ref<FlashcardAudioValue>(emptyAudio())
 const backAudio = ref<FlashcardAudioValue>(emptyAudio())
 const image = ref<SquareImageSourceValue>(emptyImage())
@@ -47,6 +49,8 @@ const isReviewSetCard = computed(() => Boolean(props.reviewSetId))
 const signature = computed(() => JSON.stringify({
   front: draft.front,
   back: draft.back,
+  ttsFront: draft.ttsFront,
+  ttsBack: draft.ttsBack,
   transliteration: draft.transliteration,
   note: draft.note,
   tags: draft.tags,
@@ -78,6 +82,8 @@ watch(() => props.modelValue, async (open) => {
         id: card.id,
         front: card.front,
         back: card.back,
+        ttsFront: card.ttsFront || '',
+        ttsBack: card.ttsBack || '',
         transliteration: card.transliteration || '',
         note: card.note,
         tags: [...card.tags],
@@ -86,6 +92,8 @@ watch(() => props.modelValue, async (open) => {
         id: undefined,
         front: '',
         back: '',
+        ttsFront: '',
+        ttsBack: '',
         transliteration: '',
         note: '',
         tags: [...(props.initialTags || [])],
@@ -153,6 +161,8 @@ async function persistCard(resolution: FlashcardDuplicateResolution) {
       id: existing?.id || draft.id,
       front: existing && update ? existing.front : draft.front,
       back: existing && update && !resolution.columns.includes('back') ? existing.back : draft.back,
+      ttsFront: existing && update ? existing.ttsFront || '' : draft.ttsFront || '',
+      ttsBack: existing && update ? existing.ttsBack || '' : draft.ttsBack || '',
       transliteration: existing && update && !resolution.columns.includes('transliteration')
         ? existing.transliteration || ''
         : draft.transliteration || '',
@@ -268,6 +278,32 @@ async function persistCard(resolution: FlashcardDuplicateResolution) {
               @recording-change="setAudioRecording"
               @error="error = $event"
             />
+            <section class="flashcard-card-dialog__tts" aria-labelledby="flashcard-tts-heading">
+              <div>
+                <div id="flashcard-tts-heading" class="text-overline font-weight-bold">Speech overrides</div>
+                <p class="text-body-2 text-medium-emphasis mb-0">
+                  Optional text spoken instead of the visible card face.
+                </p>
+              </div>
+              <v-textarea
+                v-model="draft.ttsFront"
+                label="Front speech override"
+                rows="2"
+                auto-grow
+                maxlength="5000"
+                counter
+                autocomplete="off"
+              />
+              <v-textarea
+                v-model="draft.ttsBack"
+                label="Back speech override"
+                rows="2"
+                auto-grow
+                maxlength="5000"
+                counter
+                autocomplete="off"
+              />
+            </section>
           </div>
         </AppForm>
       </v-card-text>
@@ -301,6 +337,12 @@ async function persistCard(resolution: FlashcardDuplicateResolution) {
     calc(1.25rem + env(safe-area-inset-left, 0rem)) !important;
 }
 .flashcard-card-dialog__fields { display: grid; gap: 1rem; }
+.flashcard-card-dialog__tts {
+  display: grid;
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgb(var(--v-theme-on-surface) / .08);
+}
 .flashcard-card-dialog__actions {
   padding:
     1rem

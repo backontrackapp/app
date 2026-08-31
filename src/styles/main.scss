@@ -203,6 +203,26 @@ html.platform-android .app-page {
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2) !important;
 }
 
+.v-menu > .v-overlay__content {
+  max-width: min(26.875rem, calc(100vw - 2rem)) !important;
+}
+
+.v-menu .v-list-item {
+  max-width: 100%;
+}
+
+.v-menu .v-list-item__content {
+  min-width: 0;
+}
+
+.v-menu .v-list-item-title,
+.v-menu .v-list-item-subtitle {
+  display: block !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
 .expand-transition-enter-active,
 .expand-transition-leave-active {
   transition-duration: 200ms !important;

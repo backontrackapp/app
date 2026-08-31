@@ -37,6 +37,8 @@ interface BackgroundIntervalPlugin {
       cards: Array<{
         front: string
         back: string
+        ttsFront: string
+        ttsBack: string
         frontAudio: string
         backAudio: string
       }>
@@ -114,6 +116,8 @@ export async function syncBackgroundInterval(session: IntervalSession) {
               cards: session.flashcardReview.cards.map(card => ({
                 front: card.front,
                 back: card.back,
+                ttsFront: card.ttsFront || '',
+                ttsBack: card.ttsBack || '',
                 frontAudio: resolveFlashcardAudioPlaybackUrl(card.frontAudio || ''),
                 backAudio: resolveFlashcardAudioPlaybackUrl(card.backAudio || ''),
               })),

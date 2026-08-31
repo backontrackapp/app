@@ -48,6 +48,7 @@ const archiveActions = ref(false)
 const deleteDialog = ref(false)
 const deleting = ref(false)
 const openStep = ref<number>()
+let stepReferenceCheckTimer: number | undefined
 const referencedStepIds = ref(new Set<string>())
 const checkedStepReferenceIds = ref(new Set<string>())
 const failedStepReferenceIds = ref(new Set<string>())
@@ -78,8 +79,26 @@ const completionStyleReviewSets = computed(() => flashcardStore.reviewSets.filte
     || step.completions?.some(item => item.flashcardReviewSet === reviewSet.id)
   ))
 )))
+const workoutIntervalItems = computed(() => completionStyleIntervals.value.map(interval => ({
+  title: interval.name,
+  value: interval.id,
+  icon: interval.icon || 'mdi-timer-play-outline',
+  color: interval.color,
+  props: {
+    subtitle: `${formatIntervalDuration(intervalDuration(interval.definition))} · ${intervalStepCount(interval.definition)} intervals`,
+  },
+})))
 const completionStyleItems = computed<ProgramStepCompletionStyleItem[]>(() => [
   { type: 'subheader', title: 'Basic' },
+  {
+    type: 'item',
+    title: 'Workout',
+    value: 'workout',
+    completionType: 'workout',
+    icon: 'mdi-dumbbell',
+    color: '#C7F464',
+    props: { subtitle: 'Exercise sets, with an optional interval' },
+  },
   {
     type: 'item',
     title: 'Check-off',
@@ -322,6 +341,7 @@ function setCompletionStyle(
   completion.customUnit = type === 'quantity' ? completion.customUnit : undefined
   completion.intervalTemplate = type === 'interval' ? item.sourceId : undefined
   completion.flashcardReviewSet = type === 'flashcards' ? item.sourceId : undefined
+  completion.exercise = type === 'workout' ? completion.exercise : undefined
   completion.label = type === 'quantity' ? undefined : completion.label
   syncStepCompletionProjection(step)
 }
@@ -333,7 +353,7 @@ function setCompletionExercise(completion: ProgramStepCompletion, value: string)
 
 async function addCompletion(step: ProgramStepDraft) {
   step.completions ||= []
-  const completion = createProgramStepCompletion('check')
+  const completion = createProgramStepCompletion('workout')
   step.completions.push(completion)
   syncStepCompletionProjection(step)
   await nextTick()
@@ -498,7 +518,7 @@ async function addStep(focusName = true) {
     description: '',
     sortOrder: draft.steps.length,
     cycleDays: [draft.steps.length + 1],
-    completionType: 'check',
+    completionType: 'workout',
     targetValue: 1,
     targetOperator: 'gte',
     unit: 'count',
@@ -506,7 +526,7 @@ async function addStep(focusName = true) {
     active: true,
     intervalTemplate: undefined,
     flashcardReviewSet: undefined,
-    completions: [createProgramStepCompletion()],
+    completions: [createProgramStepCompletion('workout')],
   })
   syncProgramSequence()
   openStep.value = draft.steps.length - 1
@@ -574,7 +594,15 @@ async function loadStepReferences(step: ProgramStepDraft) {
 watch(openStep, (index) => {
   if (index === undefined) return
   const step = draft.steps[index]
-  if (step) void loadStepReferences(step)
+  if (!step) return
+
+  // The history check can update the action at the bottom of the panel. Run it
+  // after the expand animation so it cannot alter the measured panel height.
+  if (stepReferenceCheckTimer !== undefined) window.clearTimeout(stepReferenceCheckTimer)
+  stepReferenceCheckTimer = window.setTimeout(() => {
+    stepReferenceCheckTimer = undefined
+    void loadStepReferences(step)
+  }, 240)
 })
 
 function moveStep(index: number, direction: -1 | 1) {
@@ -1217,13 +1245,6 @@ async function deleteTaskPermanently() {
                         @click.stop="removeCompletion(step, completion.id)"
                       />
                     </div>
-                    <ExerciseSelector
-                      :model-value="completion.exercise"
-                      label="Exercise (optional)"
-                      dialog-title="Choose an exercise"
-                      class="mb-4"
-                      @update:model-value="setCompletionExercise(completion, $event)"
-                    />
                     <v-select
                       :model-value="completionStyleValue(completion)"
                       label="Completion style"
@@ -1256,7 +1277,50 @@ async function deleteTaskPermanently() {
                         </span>
                       </template>
                     </v-select>
-                    <v-row v-if="completion.type !== 'quantity' && !completion.exercise" no-gutters class="mt-4">
+                    <ExerciseSelector
+                      v-if="completion.type === 'workout'"
+                      :model-value="completion.exercise"
+                      label="Exercise (optional)"
+                      dialog-title="Choose an exercise"
+                      class="mt-4"
+                      @update:model-value="setCompletionExercise(completion, $event)"
+                    />
+                    <v-select
+                      v-if="completion.type === 'workout'"
+                      v-model="completion.intervalTemplate"
+                      class="mt-4"
+                      label="Attached interval (optional)"
+                      :items="workoutIntervalItems"
+                      autocomplete="off"
+                      clearable
+                      hint="Run it before confirming your reps and weight."
+                      persistent-hint
+                    >
+                      <template #item="{ props: itemProps, item }">
+                        <v-list-item v-bind="itemProps">
+                          <template #prepend>
+                            <span
+                              class="completion-style-icon mr-3"
+                              :style="{ background: item.raw.color }"
+                            >
+                              <ContentIcon :icon="item.raw.icon" size="1.125rem" />
+                            </span>
+                          </template>
+                        </v-list-item>
+                      </template>
+                      <template #selection="{ item }">
+                        <span class="completion-style-selection">
+                          <span
+                            class="completion-style-selection__icon"
+                            :style="{ background: item.raw.color }"
+                          >
+                            <ContentIcon :icon="item.raw.icon" size=".875rem" />
+                          </span>
+                          <span class="text-truncate">{{ item.title }}</span>
+                        </span>
+                      </template>
+                    </v-select>
+                    <v-row v-if="completion.type !== 'quantity' && completion.type !== 'workout'" no-gutters class="mt-4">
                       <v-col cols="12">
                         <v-text-field
                           v-model="completion.label"
@@ -1312,6 +1376,7 @@ async function deleteTaskPermanently() {
           </v-expansion-panel>
         </v-expansion-panels>
       </template>
+
     </AppForm>
 
     <FormActionBar

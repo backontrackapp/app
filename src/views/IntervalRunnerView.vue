@@ -389,9 +389,19 @@ const currentFlashcardRecord = computed(() => intervalFlashcardSource.value
   .find(card => card.id === flashcardPhase.value?.card.id))
 const displayedIntervalFlashcard = computed(() => {
   const queuedCard = flashcardPhase.value?.card
-  const sourceTransliteration = currentFlashcardRecord.value?.transliteration
-  if (!queuedCard || queuedCard.transliteration || !sourceTransliteration) return queuedCard
-  return { ...queuedCard, transliteration: sourceTransliteration }
+  const sourceCard = currentFlashcardRecord.value
+  if (!queuedCard || !sourceCard) return queuedCard
+  if (
+    queuedCard.transliteration
+    && queuedCard.ttsFront !== undefined
+    && queuedCard.ttsBack !== undefined
+  ) return queuedCard
+  return {
+    ...queuedCard,
+    transliteration: queuedCard.transliteration || sourceCard.transliteration || '',
+    ttsFront: (queuedCard.ttsFront ?? sourceCard.ttsFront) || '',
+    ttsBack: (queuedCard.ttsBack ?? sourceCard.ttsBack) || '',
+  }
 })
 const canTagCurrentFlashcard = computed(() => Boolean(
   !isTemplatePreview.value
@@ -446,7 +456,13 @@ const hasStarted = computed(() => {
     || item.runtime.remainingMs < initialDurationMs
 })
 const playActionLabel = computed(() => hasStarted.value ? 'Resume' : 'Start')
-const returnTo = computed(() => route.query.from === 'tasks' ? '/tasks' : '/intervals')
+const returnTo = computed(() => typeof route.query.returnTo === 'string'
+  ? route.query.returnTo
+  : route.query.from === 'tasks' ? '/tasks' : '/intervals')
+const runnerRouteQuery = computed(() => ({
+  ...(route.query.from ? { from: route.query.from } : {}),
+  ...(typeof route.query.returnTo === 'string' ? { returnTo: route.query.returnTo } : {}),
+}))
 const originTaskId = computed(() => typeof route.query.task === 'string' ? route.query.task : '')
 const startTaskName = computed(() => {
   const taskId = originTaskId.value || session.value?.task
@@ -806,7 +822,9 @@ async function speakCurrentFlashcardSide(allowPaused = false) {
 
   lastSpokenFlashcardKey = key
   try {
-    const text = phase.side === 'front' ? phase.card.front : phase.card.back
+    const text = phase.side === 'front'
+      ? phase.card.ttsFront?.trim() || phase.card.front
+      : phase.card.ttsBack?.trim() || phase.card.back
     const language = phase.side === 'front' ? review.frontLanguage : review.backLanguage
     const audio = (phase.side === 'front' ? phase.card.frontAudio : phase.card.backAudio) || ''
     prepareFlashcardSpeechWordTracking(word => {
@@ -1343,7 +1361,7 @@ async function startTemplate(
     await router.replace({
       name: 'interval-runner',
       params: { sessionId: started.id },
-      query: route.query.from === 'tasks' ? { from: 'tasks' } : {},
+      query: runnerRouteQuery.value,
     })
 
     // A normal route handoff mounts the running session separately. Keep this
@@ -2007,6 +2025,8 @@ function snapshotCard(card: Flashcard) {
     id: card.id,
     front: card.front,
     back: card.back,
+    ttsFront: card.ttsFront || '',
+    ttsBack: card.ttsBack || '',
     transliteration: card.transliteration || '',
     note: card.note,
     frontAudio: card.frontAudio,
@@ -2114,6 +2134,8 @@ async function ejectIntervalFlashcard() {
           id: replacement.id,
           front: replacement.front,
           back: replacement.back,
+          ttsFront: replacement.ttsFront || '',
+          ttsBack: replacement.ttsBack || '',
           transliteration: replacement.transliteration || '',
           note: replacement.note,
           frontAudio: replacement.frontAudio,
@@ -2380,7 +2402,7 @@ async function runAgain(repetitions?: number) {
     await router.replace({
       name: 'interval-runner',
       params: { sessionId: nextSession.id },
-      query: route.query.from === 'tasks' ? { from: 'tasks' } : {},
+      query: runnerRouteQuery.value,
     })
     displayRemainingMs.value = nextSession.runtime.remainingMs
     await syncNativeTimer(nextSession)

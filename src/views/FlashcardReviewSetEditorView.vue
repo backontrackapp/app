@@ -17,8 +17,6 @@ import {
   DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
   DEFAULT_FLASHCARD_BACK_SPEECH_RATE,
   DEFAULT_FLASHCARD_SESSION_CARDS,
-  cardMatchesReviewSet,
-  cardMatchesTags,
   FLASHCARD_BULK_MENU_ITEMS,
   FLASHCARD_REVIEW_SELECTION_MENU_ITEMS,
   flashcardReviewSettingsAreValid,
@@ -74,8 +72,7 @@ const draft = reactive<FlashcardReviewSetDraft>({
   icon: '',
   color: '#C7F464',
   tags: [],
-  selectionMode: 'tags',
-  includedCards: [],
+  assignedCards: [],
   excludedCards: [],
   mode: 'manual',
   cardSides: DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
@@ -112,8 +109,7 @@ function serializedDraft() {
       icon: draft.icon,
       color: draft.color,
       tags: draft.tags,
-      selectionMode: draft.selectionMode,
-      includedCards: draft.includedCards,
+      assignedCards: draft.assignedCards,
       settings: flashcardReviewSettingsSignature(draft),
       excludedCards,
       sortOrder: draft.sortOrder,
@@ -131,8 +127,7 @@ function applyReviewSet(reviewSet: FlashcardReviewSet) {
     icon: reviewSet.icon || '',
     color: reviewSet.color || '#C7F464',
     tags: [...reviewSet.tags],
-    selectionMode: reviewSet.selectionMode || 'tags',
-    includedCards: [...(reviewSet.includedCards || [])],
+    assignedCards: [...(reviewSet.assignedCards || [])],
     excludedCards: [...(reviewSet.excludedCards || [])],
     mode: reviewSet.mode,
     cardSides: reviewSet.cardSides,
@@ -174,11 +169,7 @@ const canSave = computed(() => (
   && flashcardReviewSettingsAreValid(draft)
 ))
 const matchingCardCount = computed(() => isOwner.value
-  ? store.cards.filter(card => cardMatchesReviewSet(card, {
-      tags: draft.tags,
-      selectionMode: draft.selectionMode,
-      includedCards: draft.includedCards,
-    })).length
+  ? store.cards.filter(card => card.archived !== true && draft.assignedCards.includes(card.id)).length
   : currentReviewSet.value?.matchingCardCount || 0)
 const sourceCards = computed(() => {
   if (!currentReviewSet.value || currentReviewSet.value.accessRole === 'owner') return store.cards
@@ -191,9 +182,7 @@ const cardTableTags = computed(() => {
   return [...tags.values()]
 })
 const orderedMatchingCards = computed(() => sortFlashcardsForReview(
-  sourceCards.value.filter(card => card.archived !== true && (draft.selectionMode === 'cards'
-    ? (draft.includedCards || []).includes(card.id)
-    : cardMatchesTags(card, draft.tags))),
+  sourceCards.value.filter(card => card.archived !== true && draft.assignedCards.includes(card.id)),
   draft.sortMode,
   draft.sortDirection,
 ))
@@ -391,22 +380,11 @@ async function remove() {
             />
           </v-col>
 
-          <v-col v-if="draft.selectionMode !== 'cards'" cols="12">
+          <v-col cols="12">
             <FlashcardTagCombobox
               v-model="draft.tags"
-              hint="Leave empty to include every flashcard"
+              label="Review set tags"
             />
-          </v-col>
-
-          <v-col v-else cols="12">
-            <v-alert
-              type="info"
-              variant="tonal"
-              density="compact"
-              icon="mdi-card-multiple-outline"
-            >
-              This Review set uses custom selected cards. Add cards from a card list’s bulk menu.
-            </v-alert>
           </v-col>
         </v-row>
 
@@ -425,13 +403,9 @@ async function remove() {
         <div class="review-set-summary mt-4">
           <v-icon icon="mdi-cards-outline" color="secondary" />
           <div>
-            <strong>{{ matchingCardCount }} matching {{ matchingCardCount === 1 ? 'card' : 'cards' }}</strong>
+            <strong>{{ matchingCardCount }} assigned {{ matchingCardCount === 1 ? 'card' : 'cards' }}</strong>
             <p>
-              {{ draft.selectionMode === 'cards'
-                ? 'Custom selected cards'
-                : draft.tags.length
-                ? 'Cards matching any selected tag'
-                : isOwner ? 'Every card in your library' : 'Every card in the owner’s library' }}
+              Cards are assigned from Your cards. Review set tags are metadata only.
             </p>
           </div>
         </div>
@@ -447,7 +421,7 @@ async function remove() {
           <div>
             <h2 class="text-subtitle-1 font-weight-black">Cards</h2>
             <p class="text-body-2 muted">
-              {{ includedCardCount }} included of {{ orderedMatchingCards.length }} matching
+              {{ includedCardCount }} included of {{ orderedMatchingCards.length }} assigned
             </p>
           </div>
           <v-icon icon="mdi-card-multiple-outline" color="secondary" />
@@ -468,12 +442,8 @@ async function remove() {
           :source-review-set-id="draft.id"
           :row-class="cardRowClass"
           :table-surface="false"
-          :empty-title="draft.selectionMode === 'cards'
-            ? 'No custom cards selected'
-            : 'No cards match this Review set'"
-          :empty-description="draft.selectionMode === 'cards'
-            ? 'Add cards from a card list’s bulk menu.'
-            : 'Change the selected tags to include cards in this Review set.'"
+          empty-title="No assigned cards"
+          empty-description="Select cards from Your cards, then assign them to this Review set."
           add-aria-label="Add a card to this Review set"
           @add-card="openNewCard"
           @open-card="openCard"

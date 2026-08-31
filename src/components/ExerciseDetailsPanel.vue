@@ -65,6 +65,10 @@ onBeforeUnmount(() => {
     tabindex="0"
     :aria-label="`Exercise details for ${exercise.name}`"
   >
+    <div v-if="$slots['before-image']" class="exercise-details__before-image">
+      <slot name="before-image" />
+    </div>
+
     <div
       class="exercise-details__image mb-4"
       role="img"
@@ -77,8 +81,9 @@ onBeforeUnmount(() => {
         alt=""
         eager
         :transition="false"
+        :cover="false"
+        v-show="index === activeImageIndex"
         class="exercise-details__image-frame"
-        :class="{ 'exercise-details__image-frame--active': index === activeImageIndex }"
       />
       <div v-if="!exerciseImages.length" class="exercise-details__image-empty" aria-hidden="true">
         <v-icon icon="mdi-dumbbell" size="3rem" />
@@ -174,10 +179,10 @@ onBeforeUnmount(() => {
   height: 100%;
   min-height: 0;
   margin-inline: auto;
+  padding-inline: 1rem;
   overflow-x: hidden;
   overflow-y: auto;
   border: .0625rem solid rgb(var(--v-theme-on-surface) / .08);
-  border-radius: 1.5rem;
   background: rgb(var(--v-theme-surface) / .72);
   color: rgb(var(--v-theme-on-surface));
   overscroll-behavior: contain;
@@ -191,30 +196,25 @@ onBeforeUnmount(() => {
   outline-offset: -.125rem;
 }
 
+.exercise-details__before-image {
+  padding: 1rem 0;
+}
+
 .exercise-details__image {
   position: relative;
+  display: block;
   width: 100%;
-  height: clamp(20rem, 34vh, 15rem);
+  max-width: none;
   overflow: hidden;
 }
 
 .exercise-details__image-frame {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-}
-
-.exercise-details__image-frame :deep(.v-img__img) {
-  object-fit: contain;
-}
-
-.exercise-details__image-frame--active {
-  opacity: 1;
+  width: 100%;
 }
 
 .exercise-details__image-empty {
   display: grid;
-  height: 100%;
+  min-height: 12rem;
   place-items: center;
   color: rgb(var(--v-theme-on-surface) / .4);
 }
@@ -242,7 +242,7 @@ onBeforeUnmount(() => {
 }
 
 .exercise-details__content {
-  padding: 1rem 1rem 1.5rem;
+  padding: 1rem 0 0;
 }
 
 .exercise-details__heading {
@@ -309,10 +309,6 @@ onBeforeUnmount(() => {
 }
 
 @media (orientation: landscape) and (max-height: 43.75rem) {
-  .exercise-details__image {
-    height: clamp(8rem, 42vh, 13rem);
-  }
-
   .exercise-details__heading h2 {
     font-size: clamp(1.35rem, 4vw, 2rem);
   }
@@ -323,7 +319,6 @@ onBeforeUnmount(() => {
     scroll-behavior: auto;
   }
 
-  .exercise-details__image-frame,
   .exercise-details__image-steps span {
     transition-duration: 0s;
   }

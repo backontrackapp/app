@@ -55,6 +55,7 @@ function openCard(card: Flashcard, cards: Flashcard[]) {
           :tags="store.tags"
           library-actions
           selectable
+          show-unassigned-filter
           :interactive="false"
           @update:filtered-count="filteredCardCount = $event"
           @add-card="openNewCard"

@@ -134,7 +134,7 @@ async function performImport(resolution: FlashcardDuplicateResolution) {
         <h2 class="text-h6 font-weight-black">Paste your CSV table</h2>
         <p class="text-body-2 muted mt-2 mb-4">
           <template v-if="isReviewSetImport">
-            Front and back are required. Transliteration, note, and image URL are optional. Imported cards inherit this Review set’s tags; CSV tags are ignored.
+            Front and back are required. Transliteration, note, image URL, and tags are optional. Imported cards are assigned to this Review set; its tags are unchanged.
           </template>
           <template v-else>
             Front and back are required. Transliteration, note, image URL, and tags are optional; separate multiple tags with a vertical bar (|).
@@ -193,7 +193,7 @@ async function performImport(resolution: FlashcardDuplicateResolution) {
           <div class="flashcard-import-summary mt-4">
             <v-icon icon="mdi-check-circle-outline" color="success" />
             <strong>{{ parsed.rows.length }} card{{ parsed.rows.length === 1 ? '' : 's' }} ready</strong>
-            <span v-if="isReviewSetImport" class="muted">Review set tags will be applied</span>
+            <span v-if="isReviewSetImport" class="muted">Cards will be assigned to this Review set</span>
             <span v-else class="muted">{{ distinctTagCount }} distinct tag{{ distinctTagCount === 1 ? '' : 's' }}</span>
           </div>
 

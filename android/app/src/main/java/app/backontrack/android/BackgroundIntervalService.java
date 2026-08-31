@@ -134,12 +134,16 @@ public class BackgroundIntervalService extends Service {
     private static final class ReviewCard {
         final String front;
         final String back;
+        final String ttsFront;
+        final String ttsBack;
         final String frontAudio;
         final String backAudio;
 
-        ReviewCard(String front, String back, String frontAudio, String backAudio) {
+        ReviewCard(String front, String back, String ttsFront, String ttsBack, String frontAudio, String backAudio) {
             this.front = front;
             this.back = back;
+            this.ttsFront = ttsFront;
+            this.ttsBack = ttsBack;
             this.frontAudio = frontAudio;
             this.backAudio = backAudio;
         }
@@ -292,6 +296,8 @@ public class BackgroundIntervalService extends Service {
             reviewCards.add(new ReviewCard(
                 card.optString("front", ""),
                 card.optString("back", ""),
+                card.optString("ttsFront", ""),
+                card.optString("ttsBack", ""),
                 card.optString("frontAudio", ""),
                 card.optString("backAudio", "")
             ));
@@ -505,7 +511,9 @@ public class BackgroundIntervalService extends Service {
         stopSpeechPlayback();
         ReviewCard card = reviewCards.get(phase.cardIndex);
         lastReviewSpeechKey = phase.key;
-        pendingReviewSpeechText = "front".equals(phase.side) ? card.front : card.back;
+        pendingReviewSpeechText = "front".equals(phase.side)
+            ? (card.ttsFront.isEmpty() ? card.front : card.ttsFront)
+            : (card.ttsBack.isEmpty() ? card.back : card.ttsBack);
         pendingReviewSpeechLanguage = "front".equals(phase.side)
             ? reviewFrontLanguage
             : reviewBackLanguage;

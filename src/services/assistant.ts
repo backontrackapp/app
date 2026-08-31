@@ -106,8 +106,7 @@ function reviewSetDraft(reviewSet: FlashcardReviewSet): FlashcardReviewSetDraft 
     icon: reviewSet.icon || '',
     color: reviewSet.color,
     tags: [...reviewSet.tags],
-    selectionMode: reviewSet.selectionMode || 'tags',
-    includedCards: [...(reviewSet.includedCards || [])],
+    assignedCards: [...(reviewSet.assignedCards || [])],
     excludedCards: [...(reviewSet.excludedCards || [])],
     mode: reviewSet.mode,
     cardSides: reviewSet.cardSides,
@@ -222,7 +221,6 @@ export function assistantReadToolResult(
           .map(set => ({
             id: set.id,
             name: set.name,
-            selection_mode: set.selectionMode || 'tags',
             card_count: set.matchingCardCount,
             settings: {
               mode: set.mode,
@@ -377,6 +375,8 @@ export function assistantWritePlan(
         id: current.id,
         front,
         back,
+        ttsFront: current.ttsFront || '',
+        ttsBack: current.ttsBack || '',
         transliteration,
         note,
         tags: [...current.tags],
@@ -558,7 +558,7 @@ export function assistantWritePlan(
     newCards,
     existingCardIds,
     reusedCardIds,
-    convertsTagSelection: reviewSet.selectionMode !== 'cards',
+    convertsTagSelection: false,
     maxCards: reviewSet.maxCards,
   }
 }

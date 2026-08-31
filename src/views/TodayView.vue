@@ -11,6 +11,7 @@ import ContentIcon from '@/components/ContentIcon.vue'
 import AppDialog from '@/components/AppDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import DateSwipeFeedback from '@/components/DateSwipeFeedback.vue'
+import NumberPad from '@/components/NumberPad.vue'
 import StickyActionBanner from '@/components/StickyActionBanner.vue'
 import TaskCard from '@/components/TaskCard.vue'
 import TaskImageLogBottomSheet from '@/components/TaskImageLogBottomSheet.vue'
@@ -171,7 +172,6 @@ const lockInDescription = computed(() => {
   const formattedTarget = Number(target.toFixed(2))
   return `${progress.task.name} now totals ${formattedTarget}${unit ? ` ${unit}` : ''}. Locking prevents more changes for this day.`
 })
-const keypadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'backspace'] as const
 const taskActionTitle = computed(() =>
   taskActionProgress.value?.programStep?.name
     || taskActionProgress.value?.task.name
@@ -186,6 +186,7 @@ type TaskMainActionId =
   | 'undo-resolution-following'
   | 'start-interval'
   | 'start-review'
+  | 'start-program'
   | 'log-amount'
   | 'log-with-image'
   | 'log-time'
@@ -202,6 +203,7 @@ interface TaskMainActionItem {
 }
 
 function completionSourceName(completion: ProgramStepCompletionProgress) {
+  if (completion.type === 'workout') return 'Workout'
   if (completion.type === 'interval') {
     return intervalStore.templates.find(item => item.id === completion.intervalTemplate)?.name
       || 'Saved interval'
@@ -238,6 +240,24 @@ function programStepRequirementItems(progress: TaskProgress): ProgramStepRequire
         subtitle: completion.complete ? 'Checked off' : 'Not checked off',
         icon: completion.complete ? 'mdi-check-circle' : 'mdi-check-circle-outline',
         ...exercisePresentation,
+        complete: completion.complete,
+        disabled: locked,
+      }
+    }
+
+    if (completion.type === 'workout') {
+      const interval = intervalMeta(progress, completion)
+      return {
+        id: completion.id,
+        title,
+        subtitle: [
+          completion.complete ? 'Complete' : '',
+          exercise ? 'Confirm reps and weight' : 'Exercise optional',
+          interval?.duration ? `${interval.duration} interval` : '',
+        ].filter(Boolean).join(' · '),
+        icon: completion.complete ? 'mdi-check-circle' : 'mdi-dumbbell',
+        ...exercisePresentation,
+        color: TASK_TYPE_PRESENTATION.program.color,
         complete: completion.complete,
         disabled: locked,
       }
@@ -355,6 +375,9 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
   }
   const locked = Boolean(progress.locked)
   if (progress.programStep) {
+    if (!taskActionCompletionId.value && !progress.complete) {
+      items.push({ id: 'start-program', title: 'Start program', icon: 'mdi-play', disabled: locked })
+    }
     const canMarkIncomplete = progress.complete && (
       progress.sealed
       || Boolean(progress.completionItems?.some(item => item.type !== 'quantity' && item.complete))
@@ -1015,6 +1038,17 @@ function runTaskMainAction(action: TaskMainActionItem) {
     void startFlashcardTask(progress)
     return
   }
+  if (action.id === 'start-program') {
+    void router.push({
+      name: 'program-runner',
+      params: { taskId: progress.task.id },
+      query: {
+        date: progress.scheduledDate,
+        step: progress.programStep?.id || '',
+      },
+    })
+    return
+  }
   if (action.id === 'log-amount') {
     void openExact(progress, progress.task.type === 'step_counter')
     return
@@ -1064,6 +1098,19 @@ function runProgramStepRequirement(progress: TaskProgress, completionId: string)
   }
   if (completion.type === 'interval') {
     void startIntervalTask(progress, completion)
+    return
+  }
+  if (completion.type === 'workout') {
+    void router.push({
+      name: 'program-runner',
+      params: { taskId: progress.task.id },
+      query: {
+        date: progress.scheduledDate,
+        step: progress.programStep?.id || '',
+        focus: completion.id,
+        resume: '1',
+      },
+    })
     return
   }
   void startFlashcardTask(progress, completion)
@@ -1257,13 +1304,6 @@ function editTaskLogEntry(entry: Entry) {
   exactDialog.value = true
 }
 
-function toggleExactSign() {
-  if (!exactAmountInput.value || exactAmountInput.value === '0') return
-  exactAmountInput.value = exactAmountInput.value.startsWith('-')
-    ? exactAmountInput.value.slice(1)
-    : `-${exactAmountInput.value}`
-}
-
 function requestTaskLogDeletion(entry: Entry) {
   if (taskActionProgress.value?.sealed || busy.value || isHealthConnectEntry(entry)) return
   taskLogDeleteEntry.value = entry
@@ -1447,19 +1487,6 @@ async function resumeActiveReview() {
     params: { sessionId: active.id },
     query: { from: 'tasks', autoplay: '1' },
   })
-}
-
-function pressKeypad(key: typeof keypadKeys[number]) {
-  if (key === 'backspace') {
-    exactAmountInput.value = exactAmountInput.value.slice(0, -1)
-    return
-  }
-  if (key === '.') {
-    if (!exactAmountInput.value.includes('.')) exactAmountInput.value = `${exactAmountInput.value || '0'}.`
-    return
-  }
-  if (exactAmountInput.value.length >= 10) return
-  exactAmountInput.value = exactAmountInput.value === '0' ? key : `${exactAmountInput.value}${key}`
 }
 
 async function submitExact(mode: 'add' | 'subtract' | 'set') {
@@ -1855,31 +1882,8 @@ async function saveTaskLogEntry() {
             :autofocus="allowAutomaticFocus"
             :error-messages="exactAmountError"
           />
-          <div v-else class="amount-keypad">
-            <div class="amount-keypad__display">
-              <v-btn
-                v-if="exactEditingEntry"
-                icon="mdi-plus-minus-variant"
-                variant="text"
-                aria-label="Change amount sign"
-                @click="toggleExactSign"
-              />
-              <output aria-live="polite">{{ exactAmountInput || '0' }}</output>
-            </div>
-            <div class="amount-keypad__keys">
-              <v-btn
-                v-for="key in keypadKeys"
-                :key="key"
-                size="large"
-                variant="tonal"
-                :aria-label="key === 'backspace' ? 'Delete last digit' : key === '.' ? 'Decimal point' : key"
-                :disabled="key === '.' && exactAmountInput.includes('.')"
-                @click="pressKeypad(key)"
-              >
-                <v-icon v-if="key === 'backspace'" icon="mdi-backspace-outline" />
-                <template v-else>{{ key }}</template>
-              </v-btn>
-            </div>
+          <div v-else>
+            <NumberPad v-model="exactAmountInput" :allow-negative="Boolean(exactEditingEntry)" />
             <p v-if="exactAmountError" class="text-caption text-error mt-2">
               {{ exactAmountError }}
             </p>
@@ -2368,11 +2372,6 @@ async function saveTaskLogEntry() {
   background: rgb(var(--v-theme-error));
 }
 .task-main-action :deep(.v-list-item__prepend > .v-icon) { color: rgb(var(--v-theme-secondary)); }
-.amount-keypad { display: grid; gap: 1rem; }
-.amount-keypad__display { display: flex; min-height: 4.5rem; align-items: center; justify-content: space-between; padding: .75rem 1rem; border: .0625rem solid rgb(var(--v-theme-on-surface) / .16); border-radius: 1rem; background: rgb(var(--v-theme-surface-variant)); font-size: 2rem; font-weight: 900; line-height: 1; }
-.amount-keypad__display output { margin-left: auto; }
-.amount-keypad__keys { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; }
-.amount-keypad__keys .v-btn { min-width: 0; height: 3.375rem; font-size: 1.05rem; font-weight: 850; }
 .exact-actions {
   display: grid;
   grid-template:

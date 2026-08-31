@@ -26,6 +26,9 @@ final class MigrationRunner
         '202608120002' => [
             '8b7eab5a67dab5fce77cc4342fe2ae9324fbcb5761e96cee3a5e996e79b0d73e',
         ],
+        '202608310003' => [
+            'bbe8a96f2fbffc89de2fc5fa39e2005585056a2bfb525550868570f157edb842',
+        ],
     ];
 
     /** @var array<string, list<string>> */

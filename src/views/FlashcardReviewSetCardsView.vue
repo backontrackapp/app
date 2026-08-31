@@ -77,7 +77,7 @@ function bulkUpdateCards(action: Parameters<typeof store.bulkUpdateReviewSetCard
           <div class="min-width-0">
             <h1 class="text-h6 font-weight-black text-truncate">{{ reviewSet.name }}</h1>
             <p class="text-body-2 muted mt-1">
-              <template v-if="reviewSet.accessRole === 'owner'">Your live matching cards</template>
+              <template v-if="reviewSet.accessRole === 'owner'">Your assigned cards</template>
               <template v-else>Shared by {{ reviewSet.ownerName || 'another account' }}</template>
             </p>
           </div>
@@ -112,8 +112,8 @@ function bulkUpdateCards(action: Parameters<typeof store.bulkUpdateReviewSetCard
           : canEdit ? ['delete'] : []"
         :bulk-action-handler="bulkUpdateCards"
         add-aria-label="Add a card to this Review set"
-        empty-title="No matching cards"
-        :empty-description="canEdit ? 'Add a card to this live Review set.' : 'The owner has not added a matching card yet.'"
+        empty-title="No assigned cards"
+        :empty-description="canEdit ? 'Add a card to assign it to this Review set.' : 'The owner has not assigned a card yet.'"
         first-card-label="Add the first card"
         @update:filtered-count="filteredCardCount = $event"
         @add-card="openNewCard"

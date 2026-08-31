@@ -6,6 +6,7 @@ import type {
 } from '@/types/domain'
 
 const COMPLETION_TYPES = new Set<ProgramStepCompletionType>([
+  'workout',
   'check',
   'quantity',
   'interval',
@@ -13,7 +14,7 @@ const COMPLETION_TYPES = new Set<ProgramStepCompletionType>([
 ])
 
 export function createProgramStepCompletion(
-  type: ProgramStepCompletionType = 'check',
+  type: ProgramStepCompletionType = 'workout',
 ): ProgramStepCompletion {
   return {
     id: createLocalRecordId(),
@@ -46,7 +47,7 @@ function normalizedCompletion(value: unknown): ProgramStepCompletion | undefined
     ) as TargetOperator
     completion.unit = String(record.unit || 'count')
     completion.customUnit = String(record.customUnit ?? record.custom_unit ?? '') || undefined
-  } else if (completion.type === 'interval') {
+  } else if (completion.type === 'interval' || completion.type === 'workout') {
     completion.intervalTemplate = String(
       record.intervalTemplate ?? record.interval_template ?? '',
     ) || undefined
@@ -91,7 +92,7 @@ export function programStepCompletionPayload(completions: ProgramStepCompletion[
       unit: completion.unit || '',
       customUnit: completion.customUnit || '',
     } : {}),
-    ...(completion.type === 'interval' ? {
+    ...(completion.type === 'interval' || completion.type === 'workout' ? {
       intervalTemplate: completion.intervalTemplate || '',
     } : {}),
     ...(completion.type === 'flashcards' ? {

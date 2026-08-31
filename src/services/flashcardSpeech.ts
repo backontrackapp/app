@@ -51,6 +51,8 @@ interface FlashcardSpeechPlugin {
     cards: Array<{
       front: string
       back: string
+      ttsFront: string
+      ttsBack: string
       frontAudio: string
       backAudio: string
     }>
@@ -566,6 +568,8 @@ export async function syncBackgroundFlashcardReview(
       cards: session.queue.map(card => ({
         front: card.front,
         back: card.back,
+        ttsFront: card.ttsFront || '',
+        ttsBack: card.ttsBack || '',
         frontAudio: resolveFlashcardAudioPlaybackUrl(card.frontAudio || ''),
         backAudio: resolveFlashcardAudioPlaybackUrl(card.backAudio || ''),
       })),

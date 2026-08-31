@@ -341,13 +341,9 @@ async function reorderReviewSets(result: LongPressDragResult) {
                   </span>
                 </div>
                 <div class="review-set__meta mt-2">
-                  <span v-if="reviewSet.selectionMode === 'cards'" class="review-set__meta-item">
+                  <span class="review-set__meta-item">
                     <v-icon icon="mdi-card-multiple-outline" size="small" />
-                    <span>Custom selected cards</span>
-                  </span>
-                  <span v-else-if="!reviewSet.tags.length" class="review-set__meta-item">
-                    <v-icon icon="mdi-cards-outline" size="small" />
-                    <span>All cards</span>
+                    <span>Assigned cards</span>
                   </span>
                   <span class="review-set__meta-item">
                     <v-icon
@@ -385,7 +381,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
       <v-card v-else-if="store.loaded && !archivedReviewSets.length" class="surface-card pa-7 text-center">
         <v-icon icon="mdi-cards-playing-outline" size="40" color="secondary" />
         <h3 class="text-h6 font-weight-black mt-3">Build your first Review set</h3>
-        <p class="text-body-2 muted mt-2 mb-5">Choose which tags to review and how the cards should move.</p>
+        <p class="text-body-2 muted mt-2 mb-5">Assign cards to a set, then choose how they should move.</p>
         <v-btn color="secondary" :to="{ name: 'flashcard-review-set-new' }">Create Review set</v-btn>
       </v-card>
 
@@ -450,13 +446,9 @@ async function reorderReviewSets(result: LongPressDragResult) {
                   Shared by {{ reviewSet.ownerName || 'another account' }}
                 </p>
                 <div class="review-set__meta mt-2">
-                  <span v-if="reviewSet.selectionMode === 'cards'" class="review-set__meta-item">
+                  <span class="review-set__meta-item">
                     <v-icon icon="mdi-card-multiple-outline" size="small" />
-                    <span>Custom selected cards</span>
-                  </span>
-                  <span v-else-if="!reviewSet.tags.length" class="review-set__meta-item">
-                    <v-icon icon="mdi-cards-outline" size="small" />
-                    <span>All owner cards</span>
+                    <span>Assigned cards</span>
                   </span>
                   <span class="review-set__meta-item">
                     <v-icon :icon="reviewSet.mode === 'passive' ? 'mdi-play-speed' : 'mdi-gesture-tap'" size="small" />

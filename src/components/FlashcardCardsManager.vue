@@ -61,6 +61,7 @@ const props = withDefaults(defineProps<{
   emptyDescription?: string
   firstCardLabel?: string
   showSearchFilter?: boolean
+  showUnassignedFilter?: boolean
   tableSurface?: boolean
   showActionColumn?: boolean
   showLastColumn?: boolean
@@ -80,6 +81,7 @@ const props = withDefaults(defineProps<{
   emptyDescription: 'Add a prompt and answer, then keep entering cards without closing the form.',
   firstCardLabel: 'Add your first card',
   showSearchFilter: true,
+  showUnassignedFilter: false,
   tableSurface: true,
   showActionColumn: true,
   showLastColumn: true,
@@ -95,6 +97,9 @@ const emit = defineEmits<{
 const store = useFlashcardStore()
 const router = useRouter()
 const searchQuery = ref<string | null>('')
+const showUnassignedCards = ref(false)
+const filterMenuOpen = ref(false)
+const filterMenuTarget = ref<HTMLElement>()
 const selectedCardIds = ref<string[]>([])
 const bulkError = ref('')
 const bulkNotice = ref('')
@@ -115,13 +120,19 @@ const reviewSetName = ref('')
 const destinationReviewSetId = ref('')
 
 const tagNameMap = computed(() => new Map(props.tags.map(tag => [tag.id, tag.name])))
-const filteredCards = computed(() => props.cards.filter(card => cardMatchesSearch(
-  card,
-  [
-    ...card.tags.map(tag => tagNameMap.value.get(tag) || ''),
-    ...(card.tagDetails || []).map(tag => tag.name),
-  ],
-  searchQuery.value || '',
+const assignedCardIds = computed(() => new Set(store.reviewSets.flatMap(reviewSet => (
+  reviewSet.assignedCards || []
+))))
+const filteredCards = computed(() => props.cards.filter(card => (
+  (!showUnassignedCards.value || !assignedCardIds.value.has(card.id))
+  && cardMatchesSearch(
+    card,
+    [
+      ...card.tags.map(tag => tagNameMap.value.get(tag) || ''),
+      ...(card.tagDetails || []).map(tag => tag.name),
+    ],
+    searchQuery.value || '',
+  )
 )))
 const availableBulkMenuItems = computed(() => {
   const actions = props.libraryActions
@@ -158,7 +169,6 @@ const selectedCardsHaveTags = computed(() => selectedCards.value.some(card => ca
 const customReviewSets = computed(() => (store.reviewSets || []).filter(set => (
   set.accessRole === 'owner'
   && !set.archived
-  && set.selectionMode === 'cards'
   && set.id !== props.sourceReviewSetId
 )))
 const canInjectIntoReviewSet = computed(() => reviewSetDestination.value === 'new'
@@ -196,9 +206,19 @@ watch(filteredCards, cards => {
   emit('update:filteredCount', cards.length)
 }, { immediate: true })
 
-watch(searchQuery, () => {
+watch([searchQuery, showUnassignedCards], () => {
   selectedCardIds.value = []
 })
+
+function clearFilters() {
+  searchQuery.value = ''
+  showUnassignedCards.value = false
+}
+
+function toggleUnassignedCards() {
+  showUnassignedCards.value = !showUnassignedCards.value
+  filterMenuOpen.value = false
+}
 
 watch(firstSwapColumn, (column) => {
   if (secondSwapColumn.value === column) {
@@ -358,7 +378,7 @@ async function deleteSelectedCards() {
   deleteCardsDialog.value = false
 }
 
-async function injectSelectedCardsIntoReviewSet() {
+async function assignSelectedCardsToReviewSet() {
   if (!canInjectIntoReviewSet.value) return
   const destination = reviewSetDestination.value
   bulkError.value = ''
@@ -398,14 +418,58 @@ async function injectSelectedCardsIntoReviewSet() {
 <template>
   <div class="flashcard-cards-manager">
     <div class="card-filters mb-3">
-      <v-text-field
-        v-if="showSearchFilter"
-        v-model="searchQuery"
-        label="Search cards"
-        clearable
-        autocomplete="off"
-        prepend-inner-icon="mdi-magnify"
-      />
+      <div v-if="showSearchFilter" class="card-filter-query">
+        <v-text-field
+          v-model="searchQuery"
+          label="Search cards"
+          clearable
+          autocomplete="off"
+          prepend-inner-icon="mdi-magnify"
+        >
+          <template v-if="showUnassignedFilter" #append-inner>
+            <span ref="filterMenuTarget">
+              <v-badge
+                :model-value="showUnassignedCards"
+                color="secondary"
+                dot
+                location="top end"
+                offset-x="2"
+                offset-y="2"
+              >
+                <v-btn
+                  icon="mdi-filter-variant"
+                  variant="text"
+                  :aria-label="showUnassignedCards
+                    ? 'Filter cards: unassigned cards only'
+                    : 'Filter cards'"
+                  :aria-pressed="showUnassignedCards"
+                  @pointerdown.stop
+                  @touchstart.stop
+                  @click.stop="filterMenuOpen = true"
+                />
+              </v-badge>
+            </span>
+          </template>
+        </v-text-field>
+        <ActionBottomSheet
+          v-if="showUnassignedFilter"
+          v-model="filterMenuOpen"
+          title="Filters"
+          aria-label="Card filters"
+          :menu-target="filterMenuTarget"
+        >
+          <v-list-item
+            :prepend-icon="showUnassignedCards
+              ? 'mdi-checkbox-marked'
+              : 'mdi-checkbox-blank-outline'"
+            title="Unassigned cards"
+            :active="showUnassignedCards"
+            color="secondary"
+            :aria-pressed="showUnassignedCards"
+            @click="toggleUnassignedCards"
+          />
+        </ActionBottomSheet>
+      </div>
       <div
         v-if="hasActions"
         class="card-filter-actions"
@@ -502,7 +566,7 @@ async function injectSelectedCardsIntoReviewSet() {
       <v-btn v-if="!cards.length && canAdd" color="secondary" @click="emit('add-card')">
         {{ firstCardLabel }}
       </v-btn>
-      <v-btn v-else-if="cards.length" variant="tonal" @click="searchQuery = ''">Clear search</v-btn>
+      <v-btn v-else-if="cards.length" variant="tonal" @click="clearFilters">Clear filters</v-btn>
     </v-card>
 
     <template v-if="hasBulkActions">
@@ -526,9 +590,9 @@ async function injectSelectedCardsIntoReviewSet() {
 
       <ActionBottomSheet
         v-model="reviewSetDialog"
-        title="Inject into Review set"
-        :description="`Use ${selectedCardIds.length} selected ${selectedCardIds.length === 1 ? 'card' : 'cards'}.`"
-        aria-label="Inject selected cards into a Review set"
+        title="Assign to Review set"
+        :description="`Assign ${selectedCardIds.length} selected ${selectedCardIds.length === 1 ? 'card' : 'cards'}.`"
+        aria-label="Assign selected cards to a Review set"
       >
         <template #content>
           <div v-if="reviewSetDialog">
@@ -543,7 +607,7 @@ async function injectSelectedCardsIntoReviewSet() {
                 :disabled="bulkSaving"
               />
               <v-radio
-                label="Inject into an existing custom Review set"
+                label="Assign to an existing Review set"
                 value="existing"
                 hide-details="auto"
                 :disabled="bulkSaving || !customReviewSets.length"
@@ -595,9 +659,9 @@ async function injectSelectedCardsIntoReviewSet() {
                 color="secondary"
                 :loading="bulkSaving"
                 :disabled="!canInjectIntoReviewSet"
-                @click="injectSelectedCardsIntoReviewSet"
+                @click="assignSelectedCardsToReviewSet"
               >
-                {{ reviewSetDestination === 'new' ? 'Create set' : 'Inject cards' }}
+                {{ reviewSetDestination === 'new' ? 'Create set' : 'Assign cards' }}
               </v-btn>
             </div>
           </div>
@@ -760,6 +824,7 @@ async function injectSelectedCardsIntoReviewSet() {
 
 <style scoped>
 .card-filters { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: .75rem; }
+.card-filter-query { min-width: 0; }
 .card-filter-actions { display: flex; align-items: stretch; gap: .25rem; }
 .card-filter-actions--only { grid-column: 1 / -1; justify-content: flex-end; }
 .card-filter-action { min-width: 4rem; min-height: 3.75rem; height: auto !important; padding: .125rem .375rem !important; text-transform: none; }

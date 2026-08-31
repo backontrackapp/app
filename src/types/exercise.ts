@@ -1,4 +1,10 @@
 export type ExerciseLocale = 'en' | 'de' | 'es'
+export type WeightUnit = 'kg' | 'lb'
+
+export interface ExerciseSet {
+  repetitions: number
+  weight: number
+}
 
 export interface ExerciseImageVariants {
   main?: string
