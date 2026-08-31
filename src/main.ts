@@ -15,6 +15,7 @@ import { installPostGestureClickRecovery } from './services/postGestureClickReco
 import { installMobileKeyboardViewport } from './services/mobileKeyboardViewport'
 import { closeTopOverlay } from './services/overlayStack'
 import { installScreenOrientationPolicy } from './services/screenOrientation'
+import { reapplyReviewSetAudioFocus } from './services/reviewSetAudioFocus'
 import { installSeoMetadata } from './services/seo'
 import { installTaskNotificationRouting } from './services/taskReminders'
 import { startOfflineSync } from './services/offlineSync'
@@ -78,7 +79,8 @@ if (nativePlatform === 'android' || nativePlatform === 'ios') {
   const removeMobileKeyboardViewport = installMobileKeyboardViewport()
   window.addEventListener('pagehide', removeMobileKeyboardViewport, { once: true })
   void NativeApp.addListener('appStateChange', ({ isActive }) => {
-    if (!isActive) void flushClientErrors()
+    if (isActive) void reapplyReviewSetAudioFocus()
+    else void flushClientErrors()
   })
 }
 

@@ -20,6 +20,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(BackgroundIntervalPlugin.class);
         registerPlugin(BackgroundSyncStagePlugin.class);
         registerPlugin(FlashcardSpeechPlugin.class);
+        registerPlugin(ReviewSetAudioFocusPlugin.class);
         registerPlugin(PhoneSpeechRecognitionPlugin.class);
         registerPlugin(ScreenWakeLockPlugin.class);
         registerPlugin(HealthConnectPlugin.class);
@@ -56,7 +57,7 @@ public class MainActivity extends BridgeActivity {
     public void onResume() {
         super.onResume();
         appVisible = true;
-        TransientAudioFocus.setAppVisible(true);
+        TransientAudioFocus.reapplyActiveFocusIfNecessary();
         updateSystemBarVisibility();
     }
 
@@ -64,12 +65,6 @@ public class MainActivity extends BridgeActivity {
     public void onPause() {
         appVisible = false;
         super.onPause();
-    }
-
-    @Override
-    public void onStop() {
-        TransientAudioFocus.setAppVisible(false);
-        super.onStop();
     }
 
     @Override

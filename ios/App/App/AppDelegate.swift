@@ -4,6 +4,71 @@ import CapacitorBackgroundRunner
 import AVFoundation
 import Speech
 
+final class ReviewSetAudioFocusController {
+    static let shared = ReviewSetAudioFocusController()
+
+    private(set) var requested = false
+
+    private init() {}
+
+    func setRequested(_ requested: Bool) throws {
+        self.requested = requested
+        if requested {
+            try activate()
+        } else {
+            try AVAudioSession.sharedInstance().setActive(
+                false,
+                options: .notifyOthersOnDeactivation
+            )
+        }
+    }
+
+    func reapplyIfNecessary() throws {
+        guard requested else { return }
+        try activate()
+    }
+
+    private func activate() throws {
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.playback, mode: .spokenAudio, options: .duckOthers)
+        try session.setActive(true)
+    }
+}
+
+@objc(ReviewSetAudioFocusPlugin)
+class ReviewSetAudioFocusPlugin: CAPPlugin, CAPBridgedPlugin {
+    let identifier = "ReviewSetAudioFocusPlugin"
+    let jsName = "ReviewSetAudioFocus"
+    let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "setActive", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "reapply", returnType: CAPPluginReturnPromise)
+    ]
+
+    @objc func setActive(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            do {
+                try ReviewSetAudioFocusController.shared.setRequested(
+                    call.getBool("active") ?? false
+                )
+                call.resolve()
+            } catch {
+                call.reject("Review set audio focus could not be updated.", nil, error)
+            }
+        }
+    }
+
+    @objc func reapply(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            do {
+                try ReviewSetAudioFocusController.shared.reapplyIfNecessary()
+                call.resolve()
+            } catch {
+                call.reject("Review set audio focus could not be restored.", nil, error)
+            }
+        }
+    }
+}
+
 @objc(PhoneSpeechRecognitionPlugin)
 class PhoneSpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
     let identifier = "PhoneSpeechRecognitionPlugin"
@@ -182,7 +247,11 @@ class PhoneSpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
         recognitionRequest = nil
         recognitionTask = nil
         latestTranscript = ""
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        if ReviewSetAudioFocusController.shared.requested {
+            try? ReviewSetAudioFocusController.shared.reapplyIfNecessary()
+        } else {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 }
 
@@ -190,6 +259,7 @@ class PhoneSpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
 class AppBridgeViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         supportedOrientations = [UIInterfaceOrientation.portrait.rawValue]
+        bridge?.registerPluginType(ReviewSetAudioFocusPlugin.self)
         bridge?.registerPluginType(PhoneSpeechRecognitionPlugin.self)
     }
 }
@@ -227,7 +297,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
-        // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
+        try? ReviewSetAudioFocusController.shared.reapplyIfNecessary()
     }
 
     func applicationWillTerminate(_ application: UIApplication) {

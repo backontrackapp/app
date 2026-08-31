@@ -30,6 +30,7 @@ import {
   prepareFlashcardEjectCue,
 } from '@/services/intervalCues'
 import { reviewRunnerSessionMenuItems } from '@/services/runnerSessionActions'
+import { setReviewSetAudioFocus } from '@/services/reviewSetAudioFocus'
 import { requestScreenWakeLock, type ScreenWakeLock } from '@/services/screenWakeLock'
 import { confirmSwipeHint, REVIEW_SET_CARD_SWIPE_HINT } from '@/services/swipeHints'
 import { prepareFlashcardSpeechWordTracking } from '@/services/spokenText'
@@ -166,6 +167,9 @@ let resumeAfterSessionActions = false
 let resumeAfterSessionSettings = false
 let resumeAfterCardEditor = false
 const speechFailureWarnedSessionIds = new Set<string>()
+const reviewAudioFocusScope = `standalone-review:${String(
+  route.params.sessionId || route.params.reviewSetId || 'preview',
+)}`
 
 const currentSessionId = ref('')
 const previewSession = ref<FlashcardReviewSession>()
@@ -338,6 +342,12 @@ const canNavigateCards = computed(() => Boolean(
   (session.value?.status === 'running' || session.value?.status === 'paused')
   && session.value.queue.length > 1,
 ))
+const shouldHoldReviewAudioFocus = computed(() => Boolean(
+  (session.value?.status === 'running'
+    || (session.value?.status === 'paused' && visibilityPaused.value))
+  && session.value.speechEnabled
+  && session.value.queue.length,
+))
 const sessionSettingsMinimumCards = computed(() => {
   if (sessionSettingsDraft.mode === 'passive' && sessionSettingsDraft.indefinite) return 1
   return Math.min(100, (session.value?.viewedCount || 0) + (session.value?.ejectedCount || 0) + 1)
@@ -420,6 +430,10 @@ watch(shouldKeepScreenAwake, (keepAwake) => {
   else void releaseWakeLock()
 })
 
+watch(shouldHoldReviewAudioFocus, (active) => {
+  void setReviewSetAudioFocus(reviewAudioFocusScope, active)
+}, { immediate: true, flush: 'sync' })
+
 onMounted(async () => {
   mounted = true
   try {
@@ -489,6 +503,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   void releaseWakeLock()
   void stopFlashcardSpeech()
+  void setReviewSetAudioFocus(reviewAudioFocusScope, false)
 })
 
 async function acquireWakeLock() {
@@ -913,6 +928,7 @@ function handleVisibilityChange() {
         if (canUseNativeBackground.value && nativeBackgroundReady.value) {
           preserveBackgroundHandoff = true
           savePassiveState()
+          await setReviewSetAudioFocus(reviewAudioFocusScope, false)
           return
         }
         await stopFlashcardSpeech()
@@ -925,6 +941,10 @@ function handleVisibilityChange() {
         const restored = await reconcileBackgroundReview()
         if (restored) return
       }
+      await setReviewSetAudioFocus(
+        reviewAudioFocusScope,
+        shouldHoldReviewAudioFocus.value,
+      )
       if (visibilityPaused.value && session.value?.status === 'paused') {
         await resumeReview()
       }
@@ -1283,6 +1303,10 @@ async function reconcileBackgroundReview(
 
   nativeBackgroundReady.value = false
   await stopFlashcardSpeech()
+  await setReviewSetAudioFocus(
+    reviewAudioFocusScope,
+    shouldHoldReviewAudioFocus.value && !state.finished,
+  )
   await stopBackgroundFlashcardReview(false)
   localElapsedMs.value = Math.max(localElapsedMs.value, state.elapsedMs)
   lastTickAt = Date.now()

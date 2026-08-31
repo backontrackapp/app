@@ -72,6 +72,7 @@ import {
   intervalFlashcardReviewPlaybackIsActive,
   intervalGlobalRepetitionSettings,
   intervalRunProgress,
+  intervalStepPlaysFlashcardReview,
   reconcileIntervalRuntime,
   rebaseIntervalRuntimeForDefinition,
   resolveIntervalStep,
@@ -85,6 +86,7 @@ import { loadExerciseOptions } from '@/services/exercises'
 import { programStepRequirementName } from '@/services/programStepCompletions'
 import { toDateKey } from '@/services/schedule'
 import { intervalRunnerSessionMenuItems } from '@/services/runnerSessionActions'
+import { setReviewSetAudioFocus } from '@/services/reviewSetAudioFocus'
 import { confirmSwipeHint, REVIEW_SET_CARD_SWIPE_HINT } from '@/services/swipeHints'
 import { prepareFlashcardSpeechWordTracking } from '@/services/spokenText'
 import { useFlashcardStore } from '@/stores/flashcards'
@@ -113,6 +115,9 @@ const router = useRouter()
 const store = useIntervalStore()
 const flashcardStore = useFlashcardStore()
 const taskStore = useTaskStore()
+const reviewAudioFocusScope = `interval-review:${String(
+  route.params.sessionId || route.params.templateId || 'preview',
+)}`
 const displayRemainingMs = ref(0)
 const progressRingsContent = ref<HTMLElement>()
 const timerValueElement = ref<HTMLElement>()
@@ -287,6 +292,19 @@ const flashcardReviewPlaybackEnabled = computed(() => {
       step,
       displayRemainingMs.value,
     ),
+  )
+})
+const shouldHoldReviewAudioFocus = computed(() => {
+  const item = session.value
+  const review = item?.flashcardReview
+  const step = current.value?.step
+  return Boolean(
+    item?.status === 'running'
+    && review?.speechEnabled
+    && !review.speechPaused
+    && review.cards.length
+    && step
+    && intervalStepPlaysFlashcardReview(step),
   )
 })
 const flashcardReviewElapsedMs = computed(() => {
@@ -586,6 +604,10 @@ watch([
   if (!flashcardNavigating.value) void speakCurrentFlashcardSide()
 }, { flush: 'post' })
 
+watch(shouldHoldReviewAudioFocus, (active) => {
+  void setReviewSetAudioFocus(reviewAudioFocusScope, active)
+}, { immediate: true, flush: 'sync' })
+
 watch([
   () => flashcardPhase.value?.card.id,
   () => flashcardPhase.value?.side,
@@ -755,6 +777,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('pagehide', handlePageHide)
   void wakeLock?.release()
   void stopFlashcardSpeech()
+  void setReviewSetAudioFocus(reviewAudioFocusScope, false)
 })
 
 async function speakCurrentFlashcardSide(allowPaused = false) {
@@ -992,7 +1015,11 @@ function handlePageHide() {
   mirrorCurrentRuntime()
   void wakeLock?.release()
   wakeLock = undefined
-  if (!nativeBackgroundIntervalIsActive()) void stopFlashcardSpeech()
+  if (nativeBackgroundIntervalIsActive()) {
+    void setReviewSetAudioFocus(reviewAudioFocusScope, false)
+  } else {
+    void stopFlashcardSpeech()
+  }
 }
 
 async function handleVisibility() {
@@ -1010,6 +1037,10 @@ async function handleVisibility() {
       }
       wakeLock = await requestIntervalWakeLock()
       await tick()
+      await setReviewSetAudioFocus(
+        reviewAudioFocusScope,
+        shouldHoldReviewAudioFocus.value,
+      )
       if (backgroundWasActive && flashcardPhase.value) {
         lastSpokenFlashcardKey = `${session.value.id}:${flashcardPhase.value.key}`
       }
@@ -1020,7 +1051,11 @@ async function handleVisibility() {
   } else if (document.visibilityState !== 'visible') {
     await wakeLock?.release()
     wakeLock = undefined
-    if (!nativeBackgroundIntervalIsActive()) await stopFlashcardSpeech()
+    if (nativeBackgroundIntervalIsActive()) {
+      await setReviewSetAudioFocus(reviewAudioFocusScope, false)
+    } else {
+      await stopFlashcardSpeech()
+    }
   }
 }
 

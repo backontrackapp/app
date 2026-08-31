@@ -18,6 +18,7 @@ const emit = defineEmits<{
 }>()
 
 const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
+const isDevelopmentMode = import.meta.env.MODE === 'dev'
 const menuId = `account-menu-${useId()}`
 const activator = ref<HTMLElement | null>(null)
 const menu = ref<HTMLElement | null>(null)
@@ -145,7 +146,11 @@ onBeforeUnmount(unbindListeners)
       @click="toggleMenu"
       @keydown.down.prevent="openMenu"
     >
-      <v-avatar color="secondary" size="36">
+      <v-avatar
+        color="secondary"
+        size="36"
+        :class="{ 'app-bar__account-avatar--development': isDevelopmentMode }"
+      >
         <v-img v-if="showAvatar" :src="accountAvatar" alt="" cover @error="avatarFailed = true" />
         <span v-else>{{ accountInitials }}</span>
       </v-avatar>
@@ -219,6 +224,11 @@ onBeforeUnmount(unbindListeners)
   color: rgb(var(--v-theme-on-secondary));
   font-size: .75rem;
   font-weight: 900;
+}
+
+.app-bar__account :deep(.v-avatar.app-bar__account-avatar--development) {
+  border: .125rem solid rgb(var(--v-theme-error));
+  border-radius: 100%;
 }
 
 .account-menu-popover {

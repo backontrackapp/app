@@ -98,8 +98,6 @@ export function buildExerciseOptions(
           equipment,
           exercise.body_part,
           name,
-          ...primaryMuscles,
-          ...secondaryMuscles,
         ].join(' ')),
       }
     })

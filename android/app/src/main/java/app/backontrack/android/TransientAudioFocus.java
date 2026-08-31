@@ -6,10 +6,9 @@ import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 
 /**
- * Holds transient audio focus after Review set playback first becomes active. Playback leases
- * identify the scopes that need focus, but pausing a scope does not restore other media while the
- * app remains visible. Backgrounding abandons the focus request, and foregrounding only reapplies
- * it when a Review set playback scope is still active.
+ * Holds transient audio focus while one or more Review set playback scopes are active. The shared
+ * lease count prevents one scope from restoring another app's volume while another scope is still
+ * running, including while BackOnTrack is minimized or the screen is off.
  */
 final class TransientAudioFocus {
 
@@ -42,11 +41,9 @@ final class TransientAudioFocus {
     private AudioFocusRequest focusRequest;
     private int activeLeases;
     private boolean focusGranted;
-    private boolean appVisible;
 
     private TransientAudioFocus(Context context) {
         audioManager = context.getSystemService(AudioManager.class);
-        appVisible = MainActivity.isAppVisible();
     }
 
     static Lease acquire(Context context, AudioAttributes audioAttributes) {
@@ -61,11 +58,6 @@ final class TransientAudioFocus {
     static void reapplyActiveFocusIfNecessary() {
         TransientAudioFocus focus = instance;
         if (focus != null) focus.reapplyFocusIfNecessary();
-    }
-
-    static void setAppVisible(boolean visible) {
-        TransientAudioFocus focus = instance;
-        if (focus != null) focus.updateAppVisibility(visible);
     }
 
     private static TransientAudioFocus get(Context context) {
@@ -92,7 +84,7 @@ final class TransientAudioFocus {
                 .setOnAudioFocusChangeListener(focusChangeListener)
                 .build();
         }
-        if (!focusGranted && appVisible) {
+        if (!focusGranted) {
             focusGranted = audioManager != null
                 && audioManager.requestAudioFocus(focusRequest)
                     == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
@@ -101,19 +93,9 @@ final class TransientAudioFocus {
         return new Lease(this);
     }
 
-    private synchronized void updateAppVisibility(boolean visible) {
-        appVisible = visible;
-        if (visible) {
-            reapplyFocusIfNecessary();
-            return;
-        }
-        abandonFocus();
-        if (activeLeases <= 0) focusRequest = null;
-    }
-
     private synchronized void handleAudioFocusChange(int focusChange) {
         if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
-            focusGranted = appVisible && focusRequest != null;
+            focusGranted = activeLeases > 0 && focusRequest != null;
             return;
         }
 
@@ -128,8 +110,7 @@ final class TransientAudioFocus {
 
     private synchronized void reapplyFocusIfNecessary() {
         if (
-            !appVisible
-                || activeLeases <= 0
+            activeLeases <= 0
                 || focusGranted
                 || audioManager == null
                 || focusRequest == null
@@ -140,7 +121,9 @@ final class TransientAudioFocus {
 
     private synchronized void releaseLease() {
         activeLeases = Math.max(0, activeLeases - 1);
-        if (activeLeases == 0 && !appVisible) focusRequest = null;
+        if (activeLeases > 0) return;
+        abandonFocus();
+        focusRequest = null;
     }
 
     private void abandonFocus() {

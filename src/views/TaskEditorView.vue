@@ -326,6 +326,11 @@ function setCompletionStyle(
   syncStepCompletionProjection(step)
 }
 
+function setCompletionExercise(completion: ProgramStepCompletion, value: string) {
+  completion.exercise = value || undefined
+  if (completion.exercise) completion.label = undefined
+}
+
 async function addCompletion(step: ProgramStepDraft) {
   step.completions ||= []
   const completion = createProgramStepCompletion('check')
@@ -416,11 +421,11 @@ function orderedProgramItems(steps: ProgramStepDraft[], cycleLength: number) {
 watch(() => draft.type, (type) => {
   if (typeLocked.value) return
   if (type === 'duration') {
-    draft.unit = 'hours'; draft.targetValue = 5
+    draft.unit = 'hours'; draft.targetValue = 5; draft.quickLogEnabled = true
   } else if (type === 'daily_total') {
-    draft.unit = 'g'; draft.targetValue = 150
+    draft.unit = 'g'; draft.targetValue = 150; draft.quickLogEnabled = true
   } else if (type === 'step_counter') {
-    draft.unit = 'steps'; draft.customUnit = ''; draft.targetValue = 10000; draft.targetOperator = 'gte'
+    draft.unit = 'steps'; draft.customUnit = ''; draft.targetValue = 10000; draft.targetOperator = 'gte'; draft.quickLogEnabled = true
   } else if (type === 'program' && !draft.steps.length) addStep(false)
 }, { immediate: true })
 
@@ -1213,10 +1218,11 @@ async function deleteTaskPermanently() {
                       />
                     </div>
                     <ExerciseSelector
-                      v-model="completion.exercise"
+                      :model-value="completion.exercise"
                       label="Exercise (optional)"
                       dialog-title="Choose an exercise"
                       class="mb-4"
+                      @update:model-value="setCompletionExercise(completion, $event)"
                     />
                     <v-select
                       :model-value="completionStyleValue(completion)"
@@ -1250,7 +1256,7 @@ async function deleteTaskPermanently() {
                         </span>
                       </template>
                     </v-select>
-                    <v-row v-if="completion.type !== 'quantity'" no-gutters class="mt-4">
+                    <v-row v-if="completion.type !== 'quantity' && !completion.exercise" no-gutters class="mt-4">
                       <v-col cols="12">
                         <v-text-field
                           v-model="completion.label"
