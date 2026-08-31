@@ -7,6 +7,8 @@ import type {
 } from '@/types/exercise'
 
 const exerciseOptionsPromises = new Map<ExerciseLocale, Promise<ExerciseOption[]>>()
+const abdominalSearchTerms = new Set(['ab', 'abs', 'abdominal', 'abdominals'])
+const pectoralisSearchTerms = new Set(['chest', 'pecs'])
 
 function normalizeSearchText(value: string) {
   return value
@@ -98,6 +100,8 @@ export function buildExerciseOptions(
           equipment,
           exercise.body_part,
           name,
+          ...primaryMuscles,
+          ...secondaryMuscles,
         ].join(' ')),
       }
     })
@@ -111,7 +115,84 @@ export function filterExerciseOptions(options: ExerciseOption[], query: string) 
   const terms = normalizeSearchText(query).split(' ').filter(Boolean)
   if (!terms.length) return options
 
-  return options.filter(option => terms.every(term => option.searchText.includes(term)))
+  return options
+    .filter(option => terms.every((term) => {
+      if (option.searchText.includes(term)) return true
+      if (abdominalSearchTerms.has(term)) {
+        return option.bodyPart === 'core'
+          || [...option.primaryMuscles, ...option.secondaryMuscles].includes('obliques')
+      }
+      return pectoralisSearchTerms.has(term) && hasPectoralisMuscle(option)
+    }))
+    .sort((first, second) => compareSearchResults(first, second, terms))
+}
+
+function compareSearchResults(first: ExerciseOption, second: ExerciseOption, terms: string[]) {
+  const primaryDifference = firstMuscleSearchIndex(first.primaryMuscles, terms)
+    - firstMuscleSearchIndex(second.primaryMuscles, terms)
+  if (primaryDifference) return primaryDifference
+  if (firstMuscleSearchIndex(first.primaryMuscles, terms) !== Number.MAX_SAFE_INTEGER) {
+    return first.name.localeCompare(second.name)
+  }
+
+  const secondaryDifference = firstMuscleSearchIndex(first.secondaryMuscles, terms)
+    - firstMuscleSearchIndex(second.secondaryMuscles, terms)
+  if (secondaryDifference) return secondaryDifference
+  if (firstMuscleSearchIndex(first.secondaryMuscles, terms) !== Number.MAX_SAFE_INTEGER) {
+    return first.name.localeCompare(second.name)
+  }
+
+  const bodyPartDifference = bodyPartSearchRank(first, terms) - bodyPartSearchRank(second, terms)
+  if (bodyPartDifference) return bodyPartDifference
+  if (bodyPartSearchRank(first, terms) !== Number.MAX_SAFE_INTEGER) {
+    return first.name.localeCompare(second.name)
+  }
+
+  const nameDifference = textSearchRank(first.name, terms) - textSearchRank(second.name, terms)
+  if (nameDifference) return nameDifference
+  if (textSearchRank(first.name, terms) !== Number.MAX_SAFE_INTEGER) {
+    return first.name.localeCompare(second.name)
+  }
+
+  const remainingDifference = textSearchRank(`${first.category} ${first.equipment}`, terms)
+    - textSearchRank(`${second.category} ${second.equipment}`, terms)
+  if (remainingDifference) return remainingDifference
+
+  return first.bodyPartLabel.localeCompare(second.bodyPartLabel)
+    || first.name.localeCompare(second.name)
+}
+
+function firstMuscleSearchIndex(muscles: string[], terms: string[]) {
+  const index = muscles.findIndex(muscle => (
+    terms.some(term => muscleTextMatchesSearchTerm(normalizeSearchText(muscle), term))
+  ))
+  return index < 0 ? Number.MAX_SAFE_INTEGER : index
+}
+
+function bodyPartSearchRank(option: ExerciseOption, terms: string[]) {
+  if (terms.some(term => textMatchesSearchTerm(option.bodyPart, term))) return 0
+  if (terms.some(term => abdominalSearchTerms.has(term) && option.bodyPart === 'core')) return 0
+  return Number.MAX_SAFE_INTEGER
+}
+
+function textSearchRank(text: string, terms: string[]) {
+  return terms.some(term => normalizeSearchText(text).includes(term))
+    ? 0
+    : Number.MAX_SAFE_INTEGER
+}
+
+function hasPectoralisMuscle(option: ExerciseOption) {
+  return [...option.primaryMuscles, ...option.secondaryMuscles]
+    .some(muscle => muscle.includes('pectoralis'))
+}
+
+function muscleTextMatchesSearchTerm(muscleText: string, term: string) {
+  return muscleText.includes(term)
+    || (pectoralisSearchTerms.has(term) && muscleText.includes('pectoralis'))
+}
+
+function textMatchesSearchTerm(text: string, term: string) {
+  return normalizeSearchText(text).includes(term)
 }
 
 export function groupExerciseOptions(options: ExerciseOption[]) {

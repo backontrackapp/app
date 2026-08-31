@@ -54,14 +54,24 @@ const loading = ref(false)
 const loadError = ref('')
 const query = ref('')
 const exerciseOptions = shallowRef<ExerciseOption[]>([])
+const failedExerciseImageUrls = ref(new Set<string>())
 const searchField = ref<{ focus: () => void }>()
 const virtualList = ref<{ scrollToIndex: (index: number) => void }>()
 const activeBodyPart = ref('')
 let loadRequestId = 0
 let stickyHeaderFrame = 0
 const filteredOptions = computed(() => filterExerciseOptions(exerciseOptions.value, query.value))
+const hasSearchQuery = computed(() => Boolean(query.value.trim()))
 const groupedOptions = computed(() => groupExerciseOptions(filteredOptions.value))
 const virtualItems = computed<ExerciseVirtualItem[]>(() => {
+  if (hasSearchQuery.value) {
+    return filteredOptions.value.map(exercise => ({
+      type: 'exercise' as const,
+      key: `exercise:${exercise.id}`,
+      exercise,
+    }))
+  }
+
   const items: ExerciseVirtualItem[] = []
   for (const group of groupedOptions.value) {
     items.push({
@@ -97,6 +107,10 @@ function difficultyLabel(exercise: ExerciseOption) {
   return exercise.difficulty === 'beginner' ? 'Easy' : exercise.difficultyLabel
 }
 
+function exerciseImageFailed(imageUrl: string) {
+  failedExerciseImageUrls.value = new Set(failedExerciseImageUrls.value).add(imageUrl)
+}
+
 async function ensureExerciseOptions(force = false) {
   if (!force && (exerciseOptions.value.length || loading.value)) return
 
@@ -120,7 +134,8 @@ async function openSelector() {
   dialogOpen.value = true
   await ensureExerciseOptions()
   await nextTick()
-  scrollSelectedIntoView()
+  activeBodyPart.value = groupedOptions.value[0]?.bodyPart || ''
+  virtualList.value?.scrollToIndex(0)
 }
 
 function selectExercise(exercise: ExerciseOption) {
@@ -139,17 +154,6 @@ function focusSearch() {
 
 function exerciseOptionId(exerciseId: string) {
   return `exercise-selector-option-${selectorId}-${exerciseId}`
-}
-
-function scrollSelectedIntoView() {
-  if (!props.modelValue) return
-  const selectedIndex = virtualItems.value.findIndex(item => (
-    item.type === 'exercise' && item.exercise.id === props.modelValue
-  ))
-  if (selectedIndex < 0) return
-  const selected = virtualItems.value[selectedIndex]
-  if (selected?.type === 'exercise') activeBodyPart.value = selected.exercise.bodyPart
-  virtualList.value?.scrollToIndex(selectedIndex)
 }
 
 function updateActiveBodyPart(event: Event) {
@@ -237,11 +241,11 @@ onBeforeUnmount(() => cancelAnimationFrame(stickyHeaderFrame))
 
   <AppDialog
     v-model="dialogOpen"
-    max-width="48rem"
+    fullscreen
     :aria-labelledby="dialogTitleId"
     @after-enter="focusSearch"
   >
-    <v-card class="exercise-selector__dialog surface-card" rounded="xl">
+    <v-card class="exercise-selector__dialog surface-card" rounded="0">
       <v-card-title class="exercise-selector__header">
         <span :id="dialogTitleId">{{ dialogTitle }}</span>
         <div class="exercise-selector__header-actions">
@@ -290,7 +294,7 @@ onBeforeUnmount(() => cancelAnimationFrame(stickyHeaderFrame))
         <v-icon icon="mdi-dumbbell" size="2rem" />
         <div>
           <p class="font-weight-bold">No exercises found</p>
-          <p class="text-body-2 muted mt-1">Try another category, muscle, body part, or name.</p>
+          <p class="text-body-2 muted mt-1">Try another category, equipment, body part, or name.</p>
         </div>
       </div>
 
@@ -300,7 +304,7 @@ onBeforeUnmount(() => cancelAnimationFrame(stickyHeaderFrame))
         @scroll.capture.passive="updateActiveBodyPart"
       >
         <h3
-          v-if="activeBodyPartGroup"
+          v-if="!hasSearchQuery && activeBodyPartGroup"
           class="exercise-selector__group-title exercise-selector__sticky-category"
           aria-hidden="true"
         >
@@ -314,7 +318,6 @@ onBeforeUnmount(() => cancelAnimationFrame(stickyHeaderFrame))
           :items="virtualItems"
           item-key="key"
           :item-height="144"
-          height="min(32rem, 54dvh)"
           role="listbox"
           aria-label="Exercises"
         >
@@ -343,21 +346,19 @@ onBeforeUnmount(() => cancelAnimationFrame(stickyHeaderFrame))
               @click="selectExercise(item.exercise)"
             >
               <template #prepend>
-                <v-img
-                  class="exercise-selector__option-image"
-                  :src="item.exercise.imageUrl"
-                  :alt="`${item.exercise.name} exercise`"
-                  cover
-                >
-                  <template #placeholder>
-                    <span class="exercise-selector__image-placeholder" aria-hidden="true" />
-                  </template>
-                  <template #error>
-                    <span class="exercise-selector__image-fallback">
-                      <v-icon icon="mdi-dumbbell" size="2rem" />
-                    </span>
-                  </template>
-                </v-img>
+                <div class="exercise-selector__option-image">
+                  <img
+                    v-if="item.exercise.imageUrl && !failedExerciseImageUrls.has(item.exercise.imageUrl)"
+                    :src="item.exercise.imageUrl"
+                    :alt="`${item.exercise.name} exercise`"
+                    decoding="async"
+                    loading="eager"
+                    @error="exerciseImageFailed(item.exercise.imageUrl)"
+                  >
+                  <span v-else class="exercise-selector__image-fallback">
+                    <v-icon icon="mdi-dumbbell" size="2rem" />
+                  </span>
+                </div>
               </template>
 
               <div class="exercise-selector__option-copy">
@@ -505,8 +506,11 @@ onBeforeUnmount(() => cancelAnimationFrame(stickyHeaderFrame))
 
 .exercise-selector__dialog {
   display: flex;
-  max-height: calc(100dvh - 2rem);
+  height: 100%;
+  max-height: none;
   overflow: hidden;
+  padding-top: max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem));
+  padding-bottom: max(env(safe-area-inset-bottom, 0rem), var(--safe-area-inset-bottom, 0rem));
   flex-direction: column;
 }
 
@@ -526,7 +530,9 @@ onBeforeUnmount(() => cancelAnimationFrame(stickyHeaderFrame))
 }
 
 .exercise-selector__list {
+  height: 100%;
   min-height: 0;
+  flex: 1 1 auto;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -537,6 +543,8 @@ onBeforeUnmount(() => cancelAnimationFrame(stickyHeaderFrame))
 .exercise-selector__list-shell {
   position: relative;
   min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 
 .exercise-selector__group-title {
@@ -592,11 +600,20 @@ onBeforeUnmount(() => cancelAnimationFrame(stickyHeaderFrame))
 }
 
 .exercise-selector__option-image {
+  display: grid;
   width: 8rem;
   height: 8rem;
   flex: 0 0 auto;
+  overflow: hidden;
+  place-items: center;
   border-radius: 1rem;
   background: rgb(var(--v-theme-surface-variant));
+}
+
+.exercise-selector__option-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .exercise-selector__option-copy {
@@ -712,7 +729,7 @@ onBeforeUnmount(() => cancelAnimationFrame(stickyHeaderFrame))
   .exercise-selector__list,
   .exercise-selector__state {
     min-height: 0;
-    flex: 1 1 58dvh;
+    flex: 1 1 auto;
   }
 
   .exercise-selector__option {
