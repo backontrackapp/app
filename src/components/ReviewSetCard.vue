@@ -1,16 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
-import FlashcardResponseText from '@/components/FlashcardResponseText.vue'
-import FitReviewContent from '@/components/FitReviewContent.vue'
-import SpokenText from '@/components/SpokenText.vue'
+import FlashcardReviewFace from '@/components/FlashcardReviewFace.vue'
 import { REFIT_TEXT_CONTENT_EVENT } from '@/composables/useFitLargestWord'
-import { flashcardTextFontSize } from '@/services/flashcards'
-import { speechLanguageUsesPinyin } from '@/services/spokenText'
+import { flashcardReviewFaceValue } from '@/services/flashcards'
 import { REVIEW_SET_CARD_SWIPE_HINT } from '@/services/swipeHints'
 import type {
-  FlashcardBackDisplay,
   FlashcardReviewCardQuickTag,
   FlashcardReviewCardSides,
+  FlashcardReviewFaceValue,
   FlashcardReviewMode,
   FlashcardReviewQueueCard,
   FlashcardReviewSide,
@@ -25,7 +22,8 @@ interface ReviewCardBuffer {
   side: FlashcardReviewSide
   cardSides: FlashcardReviewCardSides
   invertFaces: boolean
-  backDisplay: FlashcardBackDisplay
+  frontDisplay: FlashcardReviewFaceValue
+  backDisplay: FlashcardReviewFaceValue
   revealed: boolean
   speechLanguage: string
   spokenWord?: FlashcardSpeechWord
@@ -38,7 +36,8 @@ const props = withDefaults(defineProps<{
   mode?: FlashcardReviewMode
   cardSides?: FlashcardReviewCardSides
   invertFaces?: boolean
-  backDisplay?: FlashcardBackDisplay
+  frontDisplay?: FlashcardReviewFaceValue
+  backDisplay?: FlashcardReviewFaceValue
   dense?: boolean
   disabled?: boolean
   revealed?: boolean
@@ -64,6 +63,7 @@ const props = withDefaults(defineProps<{
   mode: 'passive',
   cardSides: 'both',
   invertFaces: false,
+  frontDisplay: 'front',
   backDisplay: 'back',
   dense: false,
   disabled: false,
@@ -121,6 +121,7 @@ function snapshotBuffer(): ReviewCardBuffer {
     side: props.side,
     cardSides: props.cardSides,
     invertFaces: props.invertFaces,
+    frontDisplay: props.frontDisplay,
     backDisplay: props.backDisplay,
     revealed: props.revealed,
     speechLanguage: props.speechLanguage,
@@ -273,9 +274,8 @@ function bufferIsHidden(index: number) {
   return index !== activeBufferIndex.value
 }
 
-function bufferColorizesPinyin(buffer: ReviewCardBuffer) {
-  return buffer.side === 'back'
-    && speechLanguageUsesPinyin(buffer.speechLanguage)
+function bufferFaceValue(buffer: ReviewCardBuffer) {
+  return flashcardReviewFaceValue(buffer, buffer.side)
 }
 
 const standaloneAriaLabel = computed(() => {
@@ -368,7 +368,12 @@ defineExpose({ refitContent })
       :class="imageBufferClasses(index)"
       :aria-hidden="bufferIsHidden(index)"
     >
-      <img v-if="buffer.card.image" :src="buffer.card.image" alt="" class="interval-review-card__image" />
+      <img
+        v-if="buffer.card.image && bufferFaceValue(buffer) !== 'image'"
+        :src="buffer.card.image"
+        alt=""
+        class="interval-review-card__image"
+      >
     </span>
     <div class="interval-review-card__main">
       <div class="interval-review-card__content">
@@ -390,29 +395,13 @@ defineExpose({ refitContent })
             :class="bufferClasses(index)"
             :aria-hidden="bufferIsHidden(index)"
           >
-              <strong
-                :class="{ 'interval-review-card__face--hidden': buffer.side !== 'front' }"
-                :aria-hidden="buffer.side !== 'front' ? 'true' : undefined"
-                :style="{ fontSize: flashcardTextFontSize(buffer.card.front, 'face', 'compact') }"
-              >
-                <SpokenText
-                  :text="buffer.card.front"
-                  :language="buffer.speechLanguage"
-                />
-              </strong>
-              <FlashcardResponseText
-                :class="{ 'interval-review-card__face--hidden': buffer.side !== 'back' }"
-                :aria-hidden="buffer.side !== 'back' ? 'true' : undefined"
-                :back="buffer.card.back"
-                :transliteration="buffer.card.transliteration"
-                :note="buffer.card.note"
-                :back-display="buffer.backDisplay"
-                show-transliteration
-                density="compact"
-                :speech-language="buffer.speechLanguage"
-                :spoken-word="buffer.side === 'back' ? buffer.spokenWord : undefined"
-                :colorize-pinyin="bufferColorizesPinyin(buffer)"
+              <FlashcardReviewFace
+                :card="buffer.card"
+                :value="bufferFaceValue(buffer)"
+                :language="buffer.speechLanguage"
+                :spoken-word="buffer.spokenWord"
                 :words-pressable="speechEnabled && canReplay"
+                dense
                 @press-word="(word, spokenWord) => emit('speakWord', word, spokenWord)"
               />
           </div>
@@ -502,7 +491,12 @@ defineExpose({ refitContent })
             :class="imageBufferClasses(index)"
             :aria-hidden="bufferIsHidden(index)"
           >
-            <img v-if="buffer.card.image" :src="buffer.card.image" alt="" class="review-card__image" />
+            <img
+              v-if="buffer.card.image && bufferFaceValue(buffer) !== 'image'"
+              :src="buffer.card.image"
+              alt=""
+              class="review-card__image"
+            >
           </span>
           <small>{{ displayedBuffer.side === 'back' ? 'Back' : 'Front' }}</small>
           <span class="review-card__content-window">
@@ -513,39 +507,14 @@ defineExpose({ refitContent })
               :class="bufferClasses(index)"
               :aria-hidden="bufferIsHidden(index)"
             >
-              <FitReviewContent
-                :class="{ 'review-card-buffer__face--hidden': buffer.side !== 'front' }"
-                :text="buffer.card.front"
+              <FlashcardReviewFace
+                :card="buffer.card"
+                :value="bufferFaceValue(buffer)"
                 :language="buffer.speechLanguage"
-                :aria-hidden="buffer.side !== 'front'"
+                :spoken-word="buffer.spokenWord"
+                :words-pressable="speechEnabled && canReplay"
+                @press-word="(word, spokenWord) => emit('speakWord', word, spokenWord)"
               />
-              <span
-                class="review-card__content"
-                :class="{ 'review-card-buffer__face--hidden': buffer.side !== 'back' }"
-                :aria-hidden="buffer.side !== 'back'"
-              >
-                <span class="review-card__answer">
-                  <span
-                    v-if="buffer.cardSides === 'both' && !buffer.invertFaces && !buffer.card.note.trim()"
-                    class="review-card__front-reference"
-                  >
-                    {{ buffer.card.front }}
-                  </span>
-                  <FlashcardResponseText
-                    :back="buffer.card.back"
-                    :transliteration="buffer.card.transliteration"
-                    :note="buffer.card.note"
-                    :back-display="buffer.backDisplay"
-                    show-transliteration
-                    fit-largest-word
-                    :speech-language="buffer.speechLanguage"
-                    :spoken-word="buffer.side === 'back' ? buffer.spokenWord : undefined"
-                    :colorize-pinyin="bufferColorizesPinyin(buffer)"
-                    :words-pressable="speechEnabled && canReplay"
-                    @press-word="(word, spokenWord) => emit('speakWord', word, spokenWord)"
-                  />
-                </span>
-              </span>
             </span>
           </span>
           <span v-if="speechEnabled" class="review-card__hint">
@@ -579,7 +548,12 @@ defineExpose({ refitContent })
             :class="imageBufferClasses(index)"
             :aria-hidden="bufferIsHidden(index)"
           >
-            <img v-if="buffer.card.image" :src="buffer.card.image" alt="" class="review-card__image" />
+            <img
+              v-if="buffer.card.image && bufferFaceValue(buffer) !== 'image'"
+              :src="buffer.card.image"
+              alt=""
+              class="review-card__image"
+            >
           </span>
           <div class="passive-card__content">
             <small>{{ displayedBuffer.side === 'front' ? 'Front' : 'Back' }}</small>
@@ -591,39 +565,14 @@ defineExpose({ refitContent })
                 :class="bufferClasses(index)"
                 :aria-hidden="bufferIsHidden(index)"
               >
-                <FitReviewContent
-                  :class="{ 'review-card-buffer__face--hidden': buffer.side !== 'front' }"
-                  :text="buffer.card.front"
+                <FlashcardReviewFace
+                  :card="buffer.card"
+                  :value="bufferFaceValue(buffer)"
                   :language="buffer.speechLanguage"
-                  :aria-hidden="buffer.side !== 'front'"
+                  :spoken-word="buffer.spokenWord"
+                  :words-pressable="speechEnabled && canReplay"
+                  @press-word="(word, spokenWord) => emit('speakWord', word, spokenWord)"
                 />
-                <span
-                  class="review-card__content"
-                  :class="{ 'review-card-buffer__face--hidden': buffer.side !== 'back' }"
-                  :aria-hidden="buffer.side !== 'back'"
-                >
-                  <span class="review-card__answer">
-                    <FlashcardResponseText
-                      :back="buffer.card.back"
-                      :transliteration="buffer.card.transliteration"
-                      :note="buffer.card.note"
-                      :back-display="buffer.backDisplay"
-                      show-transliteration
-                      fit-largest-word
-                      :speech-language="buffer.speechLanguage"
-                      :spoken-word="buffer.side === 'back' ? buffer.spokenWord : undefined"
-                      :colorize-pinyin="bufferColorizesPinyin(buffer)"
-                      :words-pressable="speechEnabled && canReplay"
-                      @press-word="(word, spokenWord) => emit('speakWord', word, spokenWord)"
-                    />
-                    <span
-                      v-if="buffer.cardSides === 'both' && !buffer.invertFaces && !buffer.card.note.trim()"
-                      class="review-card__front-reference"
-                    >
-                      {{ buffer.card.front }}
-                    </span>
-                  </span>
-                </span>
               </span>
             </span>
             <span v-if="speechEnabled" class="review-card__hint">
@@ -710,10 +659,7 @@ defineExpose({ refitContent })
 .review-card__content-window { position: relative; width: 100%; height: 0; min-height: 0; flex: 1 1 0; }
 .review-card__value-buffer { position: absolute; display: grid; inset: 0; width: 100%; height: 100%; min-height: 0; }
 .review-card__value-buffer > * { grid-area: 1 / 1; }
-.review-card-buffer__face--hidden { visibility: hidden; }
 .review-card__content { position: absolute; display: flex; inset: 0; width: 100%; height: 100%; min-height: 0; max-height: 100%; align-items: center; align-self: stretch; justify-content: center; flex-direction: column; font-size: var(--fit-review-content-size, 3.6rem); }
-.review-card__answer { position: absolute; display: flex; inset: 0; width: 100%; height: 100%; min-width: 0; min-height: 0; max-height: 100%; align-items: center; justify-content: center; flex-direction: column; gap: .45rem; }
-.review-card__front-reference { max-width: 30rem; overflow-wrap: anywhere; color: rgba(var(--v-theme-on-surface), .48); font-size: clamp(.72rem, 2.2vw, .88rem); line-height: 1.4; white-space: pre-wrap; }
 .review-card__hint { display: flex; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .48); font-size: .72rem; font-weight: 800; transition: opacity 200ms ease; }
 .review-card__hint.text-disabled { opacity: .2; }
 .passive-card { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); padding: 2rem 2rem 5.5rem; border: .0625rem solid rgba(var(--v-theme-secondary), .28); border-radius: 1.5rem; align-items: center; flex: 1 1 auto; flex-direction: column; gap: 1.5rem; overflow: hidden; background: rgb(var(--v-theme-surface)); color: inherit; font: inherit; text-align: center; touch-action: none; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); }
@@ -748,10 +694,6 @@ defineExpose({ refitContent })
 .interval-review-card__face-window { display: grid; width: 100%; min-height: 0; overflow: hidden; flex: 1 1 auto; }
 .interval-review-card__faces { display: grid; width: 100%; min-height: 0; grid-area: 1 / 1; place-items: center; }
 .interval-review-card__faces > * { grid-area: 1 / 1; max-width: 100%; }
-.interval-review-card__face--hidden { visibility: hidden; }
-.interval-review-card__content strong { overflow-wrap: anywhere; font-size: clamp(1.05rem, 4.5vw, 1.5rem); line-height: 1.3; white-space: pre-wrap; }
-.interval-review-card :deep(.flashcard-response-text__supporting) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.interval-review-card :deep(.flashcard-response-text__supporting[data-response-part="note"]) { display: block; text-overflow: ellipsis; white-space: nowrap; -webkit-line-clamp: unset; }
 .interval-review-card__tag-actions { position: relative; z-index: 1; display: grid; padding: 0 1rem .75rem; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: .3rem; }
 .interval-review-card__quick-tags { display: flex; grid-column: 2; justify-self: center; gap: .3rem; }
 .interval-review-card__tag-control { height: 1.5rem !important; min-height: 1.5rem !important; font-size: .625rem; }
@@ -809,9 +751,6 @@ defineExpose({ refitContent })
   .interval-review-card__tag-actions { padding: 0 .65rem .5rem; }
   .interval-review-card__heading,
   .interval-review-card__meta { gap: .5rem; }
-  .interval-review-card__content strong { display: -webkit-box; overflow: hidden; font-size: clamp(.9rem, 2.5dvh, 1.2rem); -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
-  .interval-review-card :deep(.flashcard-response-text--compact) { max-height: none; }
-  .interval-review-card :deep(.flashcard-response-text__supporting) { display: -webkit-box; text-overflow: clip; white-space: pre-wrap; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
   .interval-review-card__main { display: flex; min-height: 0; flex: 1 1 auto; overflow: hidden; }
   .interval-review-card__content { width: 100%; min-height: 0; padding: clamp(.5rem, 2dvh, 1rem); flex: 1 1 auto; gap: clamp(.35rem, 1.5dvh, .65rem); }
   .interval-review-card__face-window,

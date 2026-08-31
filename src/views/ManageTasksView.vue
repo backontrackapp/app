@@ -7,13 +7,17 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import ContentIcon from '@/components/ContentIcon.vue'
 import { nextScheduledDates } from '@/services/schedule'
 import { taskDisplayIcon, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
+import { taskGoalTracker } from '@/services/taskTrackers'
+import { formatTrackingValue } from '@/services/tracking'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
+import { useTrackingStore } from '@/stores/tracking'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import type { Task } from '@/types/domain'
 
 const store = useTaskStore()
+const trackingStore = useTrackingStore()
 const intervalStore = useIntervalStore()
 const flashcardStore = useFlashcardStore()
 const router = useRouter()
@@ -37,6 +41,7 @@ onMounted(() => {
   if (!tasks.value.length) store.load().catch(() => undefined)
   if (!intervalStore.loaded) intervalStore.load().catch(() => undefined)
   if (!flashcardStore.loaded) flashcardStore.load().catch(() => undefined)
+  if (!trackingStore.loaded) trackingStore.load().catch(() => undefined)
 })
 
 function attachedIntervalName(task: Task) {
@@ -68,6 +73,16 @@ function scheduleLabel(task: Task) {
 function nextLabel(task: Task) {
   const next = nextScheduledDates(task, 1)[0]
   return next ? format(next, 'EEE, MMM d') : 'No upcoming dates'
+}
+
+function goalTracker(task: Task) {
+  return taskGoalTracker(task, trackingStore.trackers)
+}
+
+function targetLabel(task: Task) {
+  const tracker = goalTracker(task)
+  if (tracker) return formatTrackingValue(tracker, tracker.targetValue)
+  return `${task.targetValue} ${task.customUnit || task.unit || ''}`.trim()
 }
 
 function requestStatusChange(task: Task) {
@@ -164,9 +179,9 @@ async function confirmStatusChange() {
                     <v-icon icon="mdi-cards-playing-outline" size="15" class="mr-1" />
                     {{ attachedReviewSetName(task) }}
                   </p>
-                  <p v-else-if="task.targetValue" class="target-copy mt-3">
-                    Target: <strong>{{ task.targetValue }} {{ task.customUnit || task.unit }}</strong>
-                    <span v-if="task.goalPeriod === 'week'"> / week</span>
+                  <p v-else-if="goalTracker(task) || task.targetValue" class="target-copy mt-3">
+                    Target: <strong>{{ targetLabel(task) }}</strong>
+                    <span v-if="goalTracker(task)?.trackingWindow === 'week' || task.goalPeriod === 'week'"> / week</span>
                   </p>
                 </div>
                 <v-btn

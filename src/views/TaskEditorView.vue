@@ -19,7 +19,7 @@ import { reviewSetCardCount } from '@/services/flashcards'
 import { formatIntervalDuration, intervalDuration, intervalStepCount } from '@/services/intervals'
 import { createProgramStepCompletion } from '@/services/programStepCompletions'
 import { requestTaskReminderPermission, taskReminderSettingsAvailable } from '@/services/taskReminders'
-import { taskSupportsImageLogging, taskSupportsQuickLog, TASK_TYPE_OPTIONS, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
+import { taskSupportsImageLogging, taskSupportsQuickLog, TASK_CREATE_TYPE_OPTIONS, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import { TASK_RETIREMENT_ACTIONS, type TaskRetirementActionId } from '@/services/taskRetirementActions'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
@@ -176,7 +176,9 @@ const units = [
 const draft = reactive<TaskDraft>({
   name: '',
   description: '',
-  type: (route.query.type as TaskType) || 'check',
+  type: TASK_CREATE_TYPE_OPTIONS.some(option => option.type === route.query.type)
+    ? route.query.type as TaskType
+    : 'check',
   icon: '',
   color: '#C7F464',
   mandatory: true,
@@ -282,6 +284,20 @@ function removeTrackingTracker(id: string) {
 function trackingTrackerFor(id: string) {
   return trackingStore.trackers.find(tracker => tracker.id === id)
 }
+
+const trackingTaskHint = computed(() => {
+  const [trackerId] = draft.trackingTrackers || []
+  const tracker = trackerId ? trackingTrackerFor(trackerId) : undefined
+  if (
+    draft.trackingTrackers?.length === 1
+    && tracker
+    && ['number', 'duration'].includes(tracker.kind)
+    && tracker.targetValue > 0
+  ) {
+    return 'This tracker provides the task target, goal, tracking window, and logs.'
+  }
+  return 'This task completes after every selected tracker is logged for the scheduled date.'
+})
 
 function reviewSetSummary(reviewSetId?: string) {
   const reviewSet = flashcardStore.reviewSets.find(item => item.id === reviewSetId)
@@ -795,7 +811,7 @@ async function deleteTaskPermanently() {
           <label class="field-label">Task type</label>
           <div class="type-selector mt-2">
             <button
-              v-for="option in TASK_TYPE_OPTIONS"
+              v-for="option in TASK_CREATE_TYPE_OPTIONS"
               :key="option.type"
               type="button"
               class="editor-type"
@@ -952,7 +968,7 @@ async function deleteTaskPermanently() {
             multiple
             chips
             :rules="[value => Boolean(value?.length) || 'Select at least one tracker']"
-            hint="This task completes after every selected tracker is logged for the scheduled date."
+            :hint="trackingTaskHint"
             persistent-hint
           >
             <template #item="{ props: itemProps, item }">

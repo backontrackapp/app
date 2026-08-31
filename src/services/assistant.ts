@@ -1,6 +1,8 @@
 import { api } from '@/lib/api'
 import {
   cardMatchesReviewSet,
+  DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
+  DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
   flashcardEjectBehavior,
   flashcardEjectExcludes,
   flashcardEjectLoadsNext,
@@ -119,7 +121,8 @@ function reviewSetDraft(reviewSet: FlashcardReviewSet): FlashcardReviewSetDraft 
     frontSeconds: reviewSet.frontSeconds,
     backSeconds: reviewSet.backSeconds,
     backSpeechRepeatCount: reviewSet.backSpeechRepeatCount,
-    backDisplay: reviewSet.backDisplay || 'back',
+    frontDisplay: reviewSet.frontDisplay || DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
+    backDisplay: reviewSet.backDisplay || DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
     speechEnabled: reviewSet.speechEnabled,
     backSpeechRate: reviewSet.backSpeechRate,
     frontLanguage: reviewSet.frontLanguage,
@@ -155,7 +158,8 @@ function reviewSetChanges(
   add('Front duration', `${current.frontSeconds} sec`, `${draft.frontSeconds} sec`)
   add('Back duration', `${current.backSeconds} sec`, `${draft.backSeconds} sec`)
   add('Back speech repeats', current.backSpeechRepeatCount, draft.backSpeechRepeatCount)
-  add('Back value', current.backDisplay || 'back', draft.backDisplay || 'back')
+  add('Front value', current.frontDisplay || DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY, draft.frontDisplay || DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY)
+  add('Back value', current.backDisplay || DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY, draft.backDisplay || DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY)
   add('Read aloud', current.speechEnabled, draft.speechEnabled)
   add('Back speech speed', `${current.backSpeechRate}×`, `${draft.backSpeechRate}×`)
   add('Front language', current.frontLanguage, draft.frontLanguage)
@@ -235,7 +239,8 @@ export function assistantReadToolResult(
               front_seconds: set.frontSeconds,
               back_seconds: set.backSeconds,
               back_speech_repeat_count: set.backSpeechRepeatCount,
-              back_display: set.backDisplay || 'back',
+              front_display: set.frontDisplay || DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
+              back_display: set.backDisplay || DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
               speech_enabled: set.speechEnabled,
               back_speech_rate: set.backSpeechRate,
               front_language: set.frontLanguage,
@@ -460,8 +465,15 @@ export function assistantWritePlan(
     draft.backSpeechRepeatCount = nullableInteger(
       call.arguments.back_speech_repeat_count, 1, 5, 'Back speech repeat count',
     ) ?? draft.backSpeechRepeatCount
+    draft.frontDisplay = nullableChoice(
+      call.arguments.front_display,
+      ['front', 'back', 'transliteration', 'note', 'image'] as const,
+      'Front value',
+    ) ?? draft.frontDisplay
     draft.backDisplay = nullableChoice(
-      call.arguments.back_display, ['back', 'transliteration'] as const, 'Back value',
+      call.arguments.back_display,
+      ['front', 'back', 'transliteration', 'note', 'image'] as const,
+      'Back value',
     ) ?? draft.backDisplay
     draft.speechEnabled = nullableBoolean(call.arguments.speech_enabled, 'Read aloud')
       ?? draft.speechEnabled

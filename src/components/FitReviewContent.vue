@@ -8,6 +8,9 @@ const props = defineProps<{
   text: string
   language?: string
   spokenWord?: FlashcardSpeechWord
+  colorizePinyin?: boolean
+  toneSource?: string
+  pinyin?: boolean
   wordsPressable?: boolean
 }>()
 
@@ -36,6 +39,9 @@ useFitLargestWord(
         :language="language"
         :active-start="spokenWord?.start"
         :active-end="spokenWord?.end"
+        :colorize-pinyin="colorizePinyin"
+        :tone-source="toneSource"
+        :pinyin="pinyin"
         :words-pressable="wordsPressable"
         @press-word="(word, spokenWord) => emit('pressWord', word, spokenWord)"
       />

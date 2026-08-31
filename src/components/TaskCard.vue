@@ -62,26 +62,41 @@ const isSessionDuration = computed(() =>
   && (isInterval.value || isFlashcards.value)
   && task.value.sessionGoalType === 'duration',
 )
-const isTracking = computed(() => !step.value && task.value.type === 'tracking')
+const goalTracker = computed(() => !step.value ? props.progress.tracker : undefined)
+const isTrackerGoal = computed(() => Boolean(goalTracker.value))
+const isTracking = computed(() => !step.value && task.value.type === 'tracking' && !isTrackerGoal.value)
 const isJournal = computed(() => !step.value && task.value.type === 'journal')
-const isDailyTotal = computed(() => !step.value && task.value.type === 'daily_total')
-const isStepCounter = computed(() => !step.value && task.value.type === 'step_counter')
-const isNumeric = computed(() => !isCheck.value
+const isDailyTotal = computed(() => !step.value && (
+  task.value.type === 'daily_total' || goalTracker.value?.kind === 'number'
+))
+const isStepCounter = computed(() => !step.value && (
+  task.value.type === 'step_counter' || goalTracker.value?.source === 'health_connect_steps'
+))
+const isNumeric = computed(() => isTrackerGoal.value || (!isCheck.value
   && !hasMultipleStepCompletions.value
   && !isTracking.value
   && !isJournal.value
   && !isInterval.value
-  && !isFlashcards.value)
+  && !isFlashcards.value))
 const target = computed(() => isTracking.value
   ? task.value.trackingTrackers?.length ?? 0
   : isSessionDuration.value
     ? task.value.sessionTargetSeconds ?? 0
     : hasMultipleStepCompletions.value
       ? stepCompletionItems.value.length
-      : singleStepCompletion.value?.targetValue ?? task.value.targetValue ?? 0)
-const unit = computed(() => singleStepCompletion.value?.customUnit || singleStepCompletion.value?.unit || task.value.customUnit || task.value.unit || '')
-const operator = computed(() => ({ gte: 'at least', lte: 'at most', eq: 'exactly' })[singleStepCompletion.value?.targetOperator || task.value.targetOperator || 'gte'])
-const targetOperator = computed(() => singleStepCompletion.value?.targetOperator || task.value.targetOperator || 'gte')
+      : singleStepCompletion.value?.targetValue ?? goalTracker.value?.targetValue ?? task.value.targetValue ?? 0)
+const unit = computed(() => singleStepCompletion.value?.customUnit
+  || singleStepCompletion.value?.unit
+  || goalTracker.value?.unit
+  || task.value.customUnit
+  || task.value.unit
+  || '')
+const operator = computed(() => ({ gte: 'at least', lte: 'at most', eq: 'exactly' })[
+  singleStepCompletion.value?.targetOperator || goalTracker.value?.targetOperator || task.value.targetOperator || 'gte'
+])
+const targetOperator = computed(() => (
+  singleStepCompletion.value?.targetOperator || goalTracker.value?.targetOperator || task.value.targetOperator || 'gte'
+))
 const currentGoalState = computed(() => isCheck.value
   || hasMultipleStepCompletions.value
   || (isInterval.value && !isSessionDuration.value)
@@ -138,6 +153,7 @@ function formatValue(value: number) {
     return `${value} of ${stepCompletionItems.value.length} requirements`
   }
   if (isSessionDuration.value) return formatIntervalDuration(value)
+  if (goalTracker.value?.kind === 'duration') return formatIntervalDuration(value)
   if (task.value.type === 'duration' && !step.value) return `${value % 1 === 0 ? value : value.toFixed(2)}h`
   if (isStepCounter.value) return `${Math.round(value).toLocaleString()} steps`
   return `${Number(value.toFixed(2))}${unit.value ? ` ${unit.value}` : ''}`
@@ -209,7 +225,7 @@ const stateIcon = computed(() => {
   if (isSkippedTask.value) return 'mdi-skip-next-outline'
   if (props.progress.complete) return 'mdi-check-bold'
   if (props.progress.locked) return 'mdi-lock-outline'
-  return taskDisplayIcon(task.value, {
+  return task.value.icon || goalTracker.value?.icon || taskDisplayIcon(task.value, {
     intervalIcon: props.interval?.icon,
     reviewSetIcon: props.reviewSet?.icon,
   })
@@ -389,7 +405,7 @@ onBeforeUnmount(() => {
             / {{ isSessionDuration ? '' : `${operator} ` }}{{ formatValue(target) }}
           </span>
         </div>
-        <span v-if="task.goalPeriod === 'week' && !step" class="period-pill">This week</span>
+        <span v-if="(goalTracker?.trackingWindow === 'week' || task.goalPeriod === 'week') && !step" class="period-pill">This week</span>
       </div>
       <v-progress-linear
         v-if="showsProgress"

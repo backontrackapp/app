@@ -20,6 +20,7 @@ import {
   taskInsightDailyValues,
   taskInsightProfile,
 } from '@/services/taskInsights'
+import { taskGoalTracker } from '@/services/taskTrackers'
 import {
   reviewSetInsightDailyValues,
   reviewSetInsightRangeBounds,
@@ -124,7 +125,7 @@ const factorSources = computed<TrackingFactorSource[]>(() => [
     factorMode: ['number', 'duration', 'rating'].includes(tracker.kind) ? 'quantity' as const : 'presence' as const,
     ...trackerScale(tracker),
   })),
-  ...tasks.activeTasks.map((task) => ({
+  ...tasks.activeTasks.filter(task => !taskGoalTracker(task, tracking.trackers)).map((task) => ({
     id: `task:${task.id}`,
     source: 'task' as const,
     name: `Task · ${task.name}`,

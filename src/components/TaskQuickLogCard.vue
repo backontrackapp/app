@@ -19,8 +19,10 @@ const vRipple = Ripple
 const task = computed(() => props.progress.task)
 const title = computed(() => props.progress.programStep?.name || task.value.name)
 const presentation = computed(() => TASK_TYPE_PRESENTATION[task.value.type])
+const goalTracker = computed(() => props.progress.tracker)
+const isTrackerGoal = computed(() => Boolean(goalTracker.value))
 const displayIcon = computed(() => task.value.active
-  ? taskDisplayIcon(task.value, {
+  ? task.value.icon || goalTracker.value?.icon || taskDisplayIcon(task.value, {
       intervalIcon: props.intervalIcon,
       reviewSetIcon: props.reviewSetIcon,
     })
@@ -37,13 +39,14 @@ const isSessionDuration = computed(() => (
   && task.value.sessionGoalType === 'duration'
 ))
 const hasProgress = computed(() => {
-  if (hasMultipleCompletions.value || isSessionDuration.value) return true
+  if (hasMultipleCompletions.value || isSessionDuration.value || isTrackerGoal.value) return true
   if (!props.progress.programStep && task.value.type === 'tracking') return true
   const type = singleCompletion.value?.type || task.value.type
   return ['quantity', 'duration', 'daily_total', 'step_counter'].includes(type)
 })
 const target = computed(() => {
   if (hasMultipleCompletions.value) return completionItems.value.length
+  if (goalTracker.value) return goalTracker.value.targetValue
   if (!props.progress.programStep && task.value.type === 'tracking') {
     return task.value.trackingTrackers?.length ?? 0
   }
@@ -52,6 +55,7 @@ const target = computed(() => {
 })
 const unit = computed(() => singleCompletion.value?.customUnit
   || singleCompletion.value?.unit
+  || goalTracker.value?.unit
   || task.value.customUnit
   || task.value.unit
   || '')
@@ -62,10 +66,11 @@ const remainingLabel = computed(() => {
   if (hasMultipleCompletions.value) {
     return `${remaining} ${remaining === 1 ? 'requirement' : 'requirements'} remaining`
   }
-  if (!props.progress.programStep && task.value.type === 'tracking') {
+  if (!props.progress.programStep && task.value.type === 'tracking' && !isTrackerGoal.value) {
     return `${remaining} ${remaining === 1 ? 'tracker' : 'trackers'} remaining`
   }
   if (isSessionDuration.value) return `${formatIntervalDuration(remaining)} remaining`
+  if (goalTracker.value?.kind === 'duration') return `${formatIntervalDuration(remaining)} remaining`
   if (!props.progress.programStep && task.value.type === 'duration') {
     return `${Number(remaining.toFixed(2))}h remaining`
   }

@@ -4,10 +4,12 @@ import { format, isSameWeek, startOfWeek } from 'date-fns'
 import { useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import RecentSessionIdentity from '@/components/RecentSessionIdentity.vue'
 import WeekNavigator from '@/components/WeekNavigator.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { flashcardReviewHistoryItems } from '@/services/flashcardHistory'
 import { formatReviewDuration, reviewSetCardCount, reviewSortTitle } from '@/services/flashcards'
+import { exercisePresentationById } from '@/services/exercisePresentations'
 import { FLASHCARD_REVIEW_SET_ACTIONS } from '@/services/flashcardReviewSetActions'
 import { RECENT_SESSION_ACTIONS, type RecentSessionAction } from '@/services/recentSessionActions'
 import { groupSessionsByDate } from '@/services/sessionHistory'
@@ -61,7 +63,22 @@ onMounted(() => {
 })
 
 function recentReviewColor(session: FlashcardReviewHistoryItem) {
+  if (recentReviewPresentation(session).color) return recentReviewPresentation(session).color
   return session.status === 'completed' ? 'success' : 'warning'
+}
+
+function recentReviewExercise(session: FlashcardReviewHistoryItem) {
+  return exercisePresentationById(session.presentation.exercise)?.name
+}
+
+function recentReviewPresentation(session: FlashcardReviewHistoryItem) {
+  if (session.presentation.icon || session.presentation.color) return session.presentation
+  if (session.source === 'flashcards') {
+    const reviewSet = store.reviewSets.find((item) => item.id === session.reviewSet)
+    return reviewSet ? { icon: reviewSet.icon, color: reviewSet.color } : {}
+  }
+  const template = intervalStore.templates.find((item) => item.id === session.template)
+  return template ? { icon: template.icon, color: template.color } : {}
 }
 
 function isRecentReviewDayExpanded(dayKey: string) {
@@ -516,14 +533,15 @@ async function reorderReviewSets(result: LongPressDragResult) {
                     @click="openRecentReviewActions(session)"
                   >
                     <template #prepend>
-                      <v-icon
-                        :icon="session.status === 'completed' ? 'mdi-check-circle-outline' : 'mdi-stop-circle-outline'"
-                        :color="recentReviewColor(session)"
+                      <RecentSessionIdentity
+                        :presentation="recentReviewPresentation(session)"
+                        :fallback-icon="session.status === 'completed' ? 'mdi-check-circle-outline' : 'mdi-stop-circle-outline'"
+                        :fallback-color="recentReviewColor(session)"
                       />
                     </template>
                     <span class="text-body-1">{{ session.name }}</span>
                     <span class="recent-review-meta">
-                      {{ format(new Date(session.startedAt), 'h:mm a') }} · {{ session.sourceLabel }}
+                      {{ format(new Date(session.startedAt), 'h:mm a') }} · {{ session.sourceLabel }}<template v-if="recentReviewExercise(session)"> · {{ recentReviewExercise(session) }}</template>
                     </span>
                     <div class="recent-review-progress">
                       <v-progress-linear

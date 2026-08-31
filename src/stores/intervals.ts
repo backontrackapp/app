@@ -4,7 +4,12 @@ import { ApiError, api, apiAssetUrl } from '@/lib/api'
 import { createLocalRecordId } from '@/lib/localDatabase'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
-import { DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER } from '@/services/flashcards'
+import {
+  DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
+  DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
+  DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
+  normalizeFlashcardReviewFaceValue,
+} from '@/services/flashcards'
 import {
   completedIntervalFlashcardReviewSeconds,
   createRuntimeState,
@@ -23,6 +28,7 @@ import type {
   IntervalTemplate,
   IntervalTemplateDraft,
   QuickIntervalSettings,
+  SessionPresentation,
 } from '@/types/domain'
 
 const RECOVERY_KEY = 'backontrack-active-interval'
@@ -73,9 +79,14 @@ function mapSession(record: Record<string, any>): IntervalSession {
             ? { maxCards: Number(flashcardSnapshot.maxCards || flashcardSnapshot.cards.length) }
             : {}),
           backSpeechRepeatCount: Number(flashcardSnapshot.backSpeechRepeatCount || 1),
-          backDisplay: flashcardSnapshot.backDisplay === 'transliteration'
-            ? 'transliteration'
-            : 'back',
+          frontDisplay: normalizeFlashcardReviewFaceValue(
+            flashcardSnapshot.frontDisplay,
+            DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
+          ),
+          backDisplay: normalizeFlashcardReviewFaceValue(
+            flashcardSnapshot.backDisplay,
+            DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
+          ),
           cards: flashcardSnapshot.cards.map((card: Record<string, any>) => ({
             ...card,
             ejectCount: Number(card.ejectCount || 0),
@@ -120,6 +131,9 @@ function mapSession(record: Record<string, any>): IntervalSession {
     plannedSeconds: Number(record.planned_seconds || 0),
     elapsedSeconds: Number(record.elapsed_seconds || 0),
     runtime: record.runtime_state,
+    presentation: record.presentation_snapshot && typeof record.presentation_snapshot === 'object'
+      ? record.presentation_snapshot
+      : {},
     updated: record.updated,
   }
 }
@@ -361,6 +375,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     programStepCompletion?: string
     taskDate?: string
     flashcardReview?: IntervalFlashcardReviewSnapshot
+    presentation?: SessionPresentation
   }) {
     if (activeSession.value) return activeSession.value
     const activeRecords = await api.collection('interval_sessions').getList(1, 1, {
@@ -380,6 +395,14 @@ export const useIntervalStore = defineStore('intervals', () => {
         api.authStore.record?.settings?.intervalTypeSounds ?? input.cues.typeSounds,
       ),
     }
+    const template = input.template
+      ? templates.value.find((item) => item.id === input.template)
+      : undefined
+    const presentation: SessionPresentation = {
+      icon: input.presentation?.icon || template?.icon || (input.source === 'quick' ? 'mdi-flash' : 'mdi-timer-outline'),
+      color: input.presentation?.color || template?.color || (input.source === 'quick' ? 'secondary' : '#C7F464'),
+      ...(input.presentation?.exercise ? { exercise: input.presentation.exercise } : {}),
+    }
     const record = await api.collection('interval_sessions').create({
       owner: api.authStore.record!.id,
       template: input.template || '',
@@ -396,6 +419,7 @@ export const useIntervalStore = defineStore('intervals', () => {
       planned_seconds: intervalDuration(input.definition),
       elapsed_seconds: 0,
       runtime_state: runtime,
+      presentation_snapshot: presentation,
       ...(input.flashcardReview ? { flashcard_snapshot: input.flashcardReview } : {}),
     })
     const session = mapSession(record)

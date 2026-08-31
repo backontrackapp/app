@@ -6,6 +6,8 @@ The interval editor does not expose the former optional template description fie
 
 Interval steps use their selected preset type as the step name. The editable **Interval name** field is shown only for the **Custom** type; selecting any preset replaces the stored name with that preset's label.
 
+Each non-confirmation step can run as a **Timer** or **Stopwatch**. Timer is the default and counts down from its selected duration. Stopwatch does not need a duration: it counts the time spent on the current step until **Completed** is selected. Stopwatch time is included in the recorded session elapsed time, while the progress rings hold their current position.
+
 The interval editor uses one archive/restore action in place of direct deletion. For an active interval, the action asks whether to archive it or delete it permanently. Archiving removes the template from interval plans and new attachment choices while preserving its definition and completed run history. Archived intervals appear in the collapsible Archive section and can be opened to restore or permanently delete. Permanent deletion removes the reusable template while completed runs keep their snapshots.
 
 ## Interval card actions
@@ -26,7 +28,7 @@ Settings provides a sound choice for each interval type. In addition to packaged
 
 Recent runs are grouped by day, with every group collapsed by default.
 
-Runs created from an interval that has since been archived remain in recent history without an archive tag.
+Runs created from an interval that has since been archived remain in recent history without an archive tag. Each run keeps the interval's icon and color from when it started. When the run was launched as part of an exercise requirement, its exercise image and name appear there as well.
 
 Selecting a recent run opens its action menu. **See details** reopens the saved completion summary; **Delete** asks for confirmation and removes the run from history immediately. Deleting a run also removes any Review history derived from that Interval, but does not reverse task progress already recorded by the completed session.
 

@@ -62,6 +62,8 @@ public class BackgroundFlashcardService extends Service {
     private String cardSides = "both";
     private boolean invertFaces = false;
     private String side = "front";
+    private String frontDisplay = "front";
+    private String backDisplay = "back";
     private String frontLanguage = "";
     private String backLanguage = "";
     private long frontDurationMs = 5000L;
@@ -117,14 +119,27 @@ public class BackgroundFlashcardService extends Service {
         final String back;
         final String ttsFront;
         final String ttsBack;
+        final String transliteration;
+        final String note;
         final String frontAudio;
         final String backAudio;
 
-        Card(String front, String back, String ttsFront, String ttsBack, String frontAudio, String backAudio) {
+        Card(
+            String front,
+            String back,
+            String ttsFront,
+            String ttsBack,
+            String transliteration,
+            String note,
+            String frontAudio,
+            String backAudio
+        ) {
             this.front = front;
             this.back = back;
             this.ttsFront = ttsFront;
             this.ttsBack = ttsBack;
+            this.transliteration = transliteration;
+            this.note = note;
             this.frontAudio = frontAudio;
             this.backAudio = backAudio;
         }
@@ -195,6 +210,8 @@ public class BackgroundFlashcardService extends Service {
                 encoded.optString("back", ""),
                 encoded.optString("ttsFront", ""),
                 encoded.optString("ttsBack", ""),
+                encoded.optString("transliteration", ""),
+                encoded.optString("note", ""),
                 encoded.optString("frontAudio", ""),
                 encoded.optString("backAudio", "")
             ));
@@ -214,6 +231,8 @@ public class BackgroundFlashcardService extends Service {
         invertFaces = "both".equals(cardSides) && config.optBoolean("invertFaces", false);
         side = "back".equals(config.optString("side")) ? "back" : "front";
         if (!"both".equals(cardSides)) side = cardSides;
+        frontDisplay = reviewFaceValue(config.optString("frontDisplay", "front"), "front");
+        backDisplay = reviewFaceValue(config.optString("backDisplay", "back"), "back");
         frontDurationMs = Math.max(1000L, config.optLong("frontSeconds", 5L) * 1000L);
         baseBackDurationMs = Math.max(1000L, config.optLong("backSeconds", 5L) * 1000L);
         backSpeechRepeatCount = Math.max(1, Math.min(5, config.optInt("backSpeechRepeatCount", 1)));
@@ -302,12 +321,35 @@ public class BackgroundFlashcardService extends Service {
         if (MainActivity.isAppVisible() || cardIndex >= cards.size()) return;
         stopSpeechPlayback();
         Card card = cards.get(cardIndex);
-        pendingSpeechText = "front".equals(side)
-            ? (card.ttsFront.isEmpty() ? card.front : card.ttsFront)
-            : (card.ttsBack.isEmpty() ? card.back : card.ttsBack);
+        String faceValue = "front".equals(side) ? frontDisplay : backDisplay;
+        pendingSpeechText = faceText(card, faceValue);
         pendingSpeechLanguage = "front".equals(side) ? frontLanguage : backLanguage;
-        pendingRecordingUrl = "front".equals(side) ? card.frontAudio : card.backAudio;
+        pendingRecordingUrl = faceRecording(card, faceValue);
         speakPendingSide();
+    }
+
+    private static String reviewFaceValue(String value, String fallback) {
+        return "front".equals(value)
+            || "back".equals(value)
+            || "transliteration".equals(value)
+            || "note".equals(value)
+            || "image".equals(value)
+                ? value
+                : fallback;
+    }
+
+    private static String faceText(Card card, String value) {
+        if ("front".equals(value)) return card.ttsFront.isEmpty() ? card.front : card.ttsFront;
+        if ("back".equals(value)) return card.ttsBack.isEmpty() ? card.back : card.ttsBack;
+        if ("transliteration".equals(value)) return card.transliteration;
+        if ("note".equals(value)) return card.note;
+        return "";
+    }
+
+    private static String faceRecording(Card card, String value) {
+        if ("front".equals(value)) return card.frontAudio;
+        if ("back".equals(value)) return card.backAudio;
+        return "";
     }
 
     private void speakPendingSide() {

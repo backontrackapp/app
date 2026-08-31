@@ -36,11 +36,13 @@ export function taskCanLogAmounts(progress?: TaskProgress) {
   if (progress.programStep) return progress.completionItems?.length
     ? progress.completionItems.some(item => item.type === 'quantity')
     : progress.programStep.completionType === 'quantity'
-  return progress.task.type === 'duration' || progress.task.type === 'daily_total'
+  return progress.task.type === 'duration' || progress.task.type === 'daily_total' || Boolean(progress.tracker)
 }
 
 export function taskCanLogAdditionalValue(progress?: TaskProgress) {
-  return Boolean(progress && !progress.programStep && progress.task.type === 'step_counter')
+  return Boolean(progress && !progress.programStep && (
+    progress.task.type === 'step_counter' || progress.tracker?.source === 'health_connect_steps'
+  ))
 }
 
 export function taskIntervalCanStart(progress: TaskProgress, currentDate: string) {
@@ -69,7 +71,7 @@ export function taskNeedsReview(progress: TaskProgress, currentDate: string) {
 
   const isQuantitative = progress.programStep
     ? false
-    : ['duration', 'daily_total', 'step_counter'].includes(progress.task.type)
+    : ['duration', 'daily_total', 'step_counter'].includes(progress.task.type) || Boolean(progress.tracker)
       || (['interval', 'flashcards'].includes(progress.task.type)
         && progress.task.sessionGoalType === 'duration')
   const targetMet = isQuantitative && meetsTarget(
@@ -77,9 +79,9 @@ export function taskNeedsReview(progress: TaskProgress, currentDate: string) {
     progress.programStep?.targetValue
       ?? (progress.task.sessionGoalType === 'duration'
         ? progress.task.sessionTargetSeconds
-        : progress.task.targetValue)
+        : progress.tracker?.targetValue ?? progress.task.targetValue)
       ?? 0,
-    progress.programStep?.targetOperator ?? progress.task.targetOperator ?? 'gte',
+    progress.programStep?.targetOperator ?? progress.tracker?.targetOperator ?? progress.task.targetOperator ?? 'gte',
   )
 
   return !progress.complete && !targetMet

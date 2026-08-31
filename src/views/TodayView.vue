@@ -50,6 +50,7 @@ import type {
   ProgramStepCompletionProgress,
   ProgramStepRequirementListItem,
   TaskProgress,
+  TrackingEntry,
   TrackingTracker,
 } from '@/types/domain'
 
@@ -108,6 +109,7 @@ const taskStatusUpdating = ref(false)
 const taskSkipDialog = ref(false)
 const taskSkipUpdating = ref(false)
 const taskLogEntries = ref<Entry[]>([])
+const taskTrackerLogEntries = ref<TrackingEntry[]>([])
 const taskLogLoading = ref(false)
 const taskLogError = ref('')
 const taskLogDeleteDialog = ref(false)
@@ -119,6 +121,7 @@ const intervalStartError = ref('')
 const flashcardStartError = ref('')
 const trackingSheetOpen = ref(false)
 const trackingSheetTracker = ref<TrackingTracker>()
+const trackingSheetEntry = ref<TrackingEntry>()
 const trackingSheetDate = ref(toDateKey(new Date()))
 const trackingSheetContext = ref('')
 const valuePulseVersions = ref<Record<string, number>>({})
@@ -164,13 +167,23 @@ const exactAmountError = computed(() => {
   }
   return undefined
 })
+const exactUnit = computed(() => exactProgress.value?.completionItems?.find(
+  item => item.id === exactCompletionId.value,
+)?.customUnit
+  || exactProgress.value?.completionItems?.find(item => item.id === exactCompletionId.value)?.unit
+  || exactProgress.value?.tracker?.unit
+  || exactProgress.value?.task.customUnit
+  || exactProgress.value?.task.unit
+  || '')
 const lockInDescription = computed(() => {
   const progress = lockInProgress.value
   if (!progress) return ''
-  const target = progress.task.targetValue ?? 1
-  const unit = progress.task.customUnit || progress.task.unit || ''
-  const formattedTarget = Number(target.toFixed(2))
-  return `${progress.task.name} now totals ${formattedTarget}${unit ? ` ${unit}` : ''}. Locking prevents more changes for this day.`
+  if (progress.tracker?.kind === 'duration') {
+    return `${progress.task.name} now totals ${formatTrackingValue(progress.tracker, progress.value)}. Locking prevents more changes for this day.`
+  }
+  const value = progress.value
+  const unit = progress.tracker?.unit || progress.task.customUnit || progress.task.unit || ''
+  return `${progress.task.name} now totals ${Number(value.toFixed(2))}${unit ? ` ${unit}` : ''}. Locking prevents more changes for this day.`
 })
 const taskActionTitle = computed(() =>
   taskActionProgress.value?.programStep?.name
@@ -427,7 +440,7 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
   if (taskCanLogAmounts(progress)) {
     items.push({
       id: 'log-amount',
-      title: 'Log amount',
+      title: progress.tracker?.source === 'health_connect_steps' ? 'Log additional value' : 'Log amount',
       icon: 'mdi-plus-minus-variant',
       disabled: locked || Boolean(progress.sealed),
     })
@@ -439,7 +452,7 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
         disabled: locked || Boolean(progress.sealed),
       })
     }
-    if (!progress.programStep && progress.task.type === 'duration') {
+    if (!progress.programStep && (progress.task.type === 'duration' || progress.tracker?.kind === 'duration')) {
       items.push({
         id: 'log-time',
         title: 'Log time',
@@ -448,7 +461,10 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
       })
     }
   }
-  if (!progress.programStep && ['daily_total', 'duration'].includes(progress.task.type)) {
+  if (!progress.programStep && (
+    ['daily_total', 'duration'].includes(progress.task.type)
+    || (progress.tracker && progress.tracker.source !== 'health_connect_steps')
+  )) {
     items.push({
       id: 'toggle-total-lock',
       title: progress.sealed ? 'Unlock total' : 'Lock in total',
@@ -456,18 +472,14 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
       disabled: locked,
     })
   }
-  if (!progress.programStep && progress.task.type === 'step_counter') {
+  if (!progress.programStep && (
+    progress.task.type === 'step_counter' || progress.tracker?.source === 'health_connect_steps'
+  )) {
     items.push({
       id: 'sync-steps',
       title: stepCountLoading.value ? 'Syncing steps…' : 'Sync Health Connect',
       icon: 'mdi-heart-pulse',
       disabled: stepCountLoading.value,
-    })
-    items.push({
-      id: 'log-amount',
-      title: 'Log additional value',
-      icon: 'mdi-plus-minus-variant',
-      disabled: locked,
     })
   }
   if (!progress.programStep && progress.task.type === 'journal' && journalCanWrite(progress)) {
@@ -905,6 +917,7 @@ function openTrackingLogger(progress: TaskProgress, trackerId: string) {
   const tracker = trackingStore.trackers.find(item => item.id === trackerId)
   if (!tracker) return
   trackingSheetTracker.value = tracker
+  trackingSheetEntry.value = undefined
   trackingSheetDate.value = progress.scheduledDate
   trackingSheetContext.value = progress.programStep?.name || progress.task.name
   trackingSheetOpen.value = true
@@ -983,6 +996,7 @@ function openTaskActions(progress: TaskProgress) {
   taskActionCompletionId.value = ''
   taskSheetMode.value = 'actions'
   taskLogEntries.value = []
+  taskTrackerLogEntries.value = []
   taskLogLoading.value = false
   taskLogError.value = ''
   taskSheet.value = true
@@ -994,6 +1008,7 @@ function openProgramStepRequirementActions(progress: TaskProgress, completionId:
   taskActionCompletionId.value = completionId
   taskSheetMode.value = 'actions'
   taskLogEntries.value = []
+  taskTrackerLogEntries.value = []
   taskLogLoading.value = false
   taskLogError.value = ''
   taskSheet.value = true
@@ -1050,7 +1065,13 @@ function runTaskMainAction(action: TaskMainActionItem) {
     return
   }
   if (action.id === 'log-amount') {
-    void openExact(progress, progress.task.type === 'step_counter')
+    if (progress.tracker?.kind === 'duration') {
+      openTrackingLogger(progress, progress.tracker.id)
+      return
+    }
+    void openExact(progress, (
+      progress.task.type === 'step_counter' || progress.tracker?.source === 'health_connect_steps'
+    ))
     return
   }
   if (action.id === 'log-with-image') {
@@ -1152,6 +1173,21 @@ function taskEntrySubtitle(entry: Entry) {
   ].join(' · ')
 }
 
+function trackingEntryTime(entry: TrackingEntry) {
+  const occurred = new Date(entry.occurredAt)
+  return Number.isNaN(occurred.getTime()) ? 'Logged entry' : format(occurred, 'h:mm a')
+}
+
+function editTrackingLogEntry(entry: TrackingEntry) {
+  const progress = taskActionProgress.value
+  if (!progress?.tracker || progress.sealed || entry.sourceType === 'health_connect') return
+  trackingSheetTracker.value = progress.tracker
+  trackingSheetEntry.value = entry
+  trackingSheetDate.value = progress.scheduledDate
+  trackingSheetContext.value = progress.programStep?.name || progress.task.name
+  trackingSheetOpen.value = true
+}
+
 async function openTaskLogHistory() {
   const progress = taskActionProgress.value
   if (!progress || taskLogLoading.value) return
@@ -1160,6 +1196,17 @@ async function openTaskLogHistory() {
   taskLogLoading.value = true
   taskLogError.value = ''
   try {
+    if (progress.tracker) {
+      await trackingStore.loadRange(progress.scheduledDate, progress.scheduledDate)
+      if (request === taskLogRequest) {
+        taskLogEntries.value = []
+        taskTrackerLogEntries.value = trackingStore.entriesFor(
+          progress.tracker.id,
+          progress.scheduledDate,
+        )
+      }
+      return
+    }
     const [entries] = await Promise.all([
       store.loadEntriesForDay(
         progress.task.id,
@@ -1168,7 +1215,10 @@ async function openTaskLogHistory() {
       ),
       store.loadTaskLogImages(progress.task.id).catch(() => []),
     ])
-    if (request === taskLogRequest) taskLogEntries.value = entries
+    if (request === taskLogRequest) {
+      taskLogEntries.value = entries
+      taskTrackerLogEntries.value = []
+    }
   } catch (cause) {
     if (request === taskLogRequest) {
       taskLogError.value = cause instanceof Error ? cause.message : 'Could not load this log history.'
@@ -1259,8 +1309,13 @@ function openImageLogger(progress: TaskProgress, completionId = '') {
 }
 
 function offerDailyTotalLock(progress: TaskProgress, amount: number) {
-  if (progress.programStep || progress.task.type !== 'daily_total' || progress.sealed) return
-  const remaining = (progress.task.targetValue ?? 1) - progress.value
+  if (
+    progress.programStep
+    || (progress.task.type !== 'daily_total' && !progress.tracker)
+    || progress.tracker?.source === 'health_connect_steps'
+    || progress.sealed
+  ) return
+  const remaining = (progress.tracker?.targetValue ?? progress.task.targetValue ?? 1) - progress.value
   if (
     remaining <= 0
     || Number(amount.toFixed(2)) !== Number(remaining.toFixed(2))
@@ -1335,7 +1390,10 @@ function openTimeLogger(progress: TaskProgress) {
   void router.push({
     name: 'task-timer',
     params: { id: progress.task.id },
-    query: { date: progress.scheduledDate },
+    query: {
+      date: progress.scheduledDate,
+      ...(progress.tracker ? { tracker: progress.tracker.id } : {}),
+    },
   })
 }
 
@@ -1370,7 +1428,7 @@ function reviewSetMeta(progress: TaskProgress, completion?: ProgramStepCompletio
 }
 
 function progressDisplayIcon(progress: TaskProgress) {
-  return taskDisplayIcon(progress.task, {
+  return progress.task.icon || progress.tracker?.icon || taskDisplayIcon(progress.task, {
     intervalIcon: intervalMeta(progress)?.icon,
     reviewSetIcon: reviewSetMeta(progress)?.icon,
   })
@@ -1501,19 +1559,35 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
       : exactAmount.value
   const shouldOfferLockIn = mode === 'add'
     && !exactCompletionId.value
-    && progress.task.type === 'daily_total'
-    && Number(amount.toFixed(2)) === Number(((progress.task.targetValue ?? 1) - progress.value).toFixed(2))
+    && (
+      progress.task.type === 'daily_total'
+      || (progress.tracker && progress.tracker.source !== 'health_connect_steps')
+    )
+    && Number(amount.toFixed(2)) === Number(((progress.tracker?.targetValue ?? progress.task.targetValue ?? 1) - progress.value).toFixed(2))
   if (amount === 0) {
     if (mode === 'set') exactDialog.value = false
     return
   }
   exactError.value = ''
-  const update = run(() => store.addEntry(
-    progress,
-    amount,
-    mode === 'add' ? undefined : 'adjustment',
-    exactCompletionId.value,
-  ))
+  const tracker = progress.tracker
+  const occurredAt = isToday(parseISO(progress.scheduledDate))
+    ? new Date()
+    : new Date(`${progress.scheduledDate}T12:00:00`)
+  const update = run(() => tracker
+    ? trackingStore.addEntry({
+        tracker: tracker.id,
+        occurredAt: occurredAt.toISOString(),
+        localDate: progress.scheduledDate,
+        timezoneOffset: occurredAt.getTimezoneOffset(),
+        value: amount,
+        note: '',
+      })
+    : store.addEntry(
+        progress,
+        amount,
+        mode === 'add' ? undefined : 'adjustment',
+        exactCompletionId.value,
+      ))
   pulseProgressValue(progress)
   exactDialog.value = false
   try {
@@ -1630,8 +1704,8 @@ async function saveTaskLogEntry() {
                     :schedule-status="taskScheduleStatus(item)"
                     :busy="progressIsBusy(item)"
                     :value-pulse="valuePulseFor(item)"
-                    :syncing="item.task.type === 'step_counter' && stepCountLoading"
-                    :step-count-error="item.task.type === 'step_counter' ? stepCountError : ''"
+                    :syncing="(item.task.type === 'step_counter' || item.tracker?.source === 'health_connect_steps') && stepCountLoading"
+                    :step-count-error="item.task.type === 'step_counter' || item.tracker?.source === 'health_connect_steps' ? stepCountError : ''"
                     :interval="intervalMeta(item)"
                     :review-set="reviewSetMeta(item)"
                     :program-step-requirements="programStepRequirementItems(item)"
@@ -1677,8 +1751,8 @@ async function saveTaskLogEntry() {
                 :schedule-status="taskScheduleStatus(item)"
                 :busy="progressIsBusy(item)"
                 :value-pulse="valuePulseFor(item)"
-                :syncing="item.task.type === 'step_counter' && stepCountLoading"
-                :step-count-error="item.task.type === 'step_counter' ? stepCountError : ''"
+                :syncing="(item.task.type === 'step_counter' || item.tracker?.source === 'health_connect_steps') && stepCountLoading"
+                :step-count-error="item.task.type === 'step_counter' || item.tracker?.source === 'health_connect_steps' ? stepCountError : ''"
                 :interval="intervalMeta(item)"
                 :review-set="reviewSetMeta(item)"
                 :program-step-requirements="programStepRequirementItems(item)"
@@ -1876,7 +1950,7 @@ async function saveTaskLogEntry() {
           <v-number-input
             v-if="smAndUp"
             v-model="exactDesktopAmount"
-            label="Amount"
+            :label="exactUnit ? `Amount (${exactUnit})` : 'Amount'"
             :precision="null"
             :min="exactEditingEntry ? undefined : 0"
             :autofocus="allowAutomaticFocus"
@@ -1982,6 +2056,7 @@ async function saveTaskLogEntry() {
     <TrackingLogBottomSheet
       v-model="trackingSheetOpen"
       :tracker="trackingSheetTracker"
+      :entry="trackingSheetEntry"
       :date="trackingSheetDate"
       :context="trackingSheetContext"
     />
@@ -2083,6 +2158,27 @@ async function saveTaskLogEntry() {
                   @click.stop="requestTaskLogDeletion(entry)"
                 />
               </div>
+            </template>
+          </v-list-item>
+        </template>
+        <template v-else-if="taskTrackerLogEntries.length">
+          <v-list-item
+            v-for="entry in taskTrackerLogEntries"
+            :key="entry.id"
+            :title="entry.note || taskActionProgress?.tracker?.name || 'Tracker log'"
+            :subtitle="`${trackingEntryTime(entry)} · ${taskActionProgress?.tracker ? formatTrackingValue(taskActionProgress.tracker, entry.value) : entry.value}`"
+            :prepend-icon="entry.sourceType === 'health_connect' ? 'mdi-heart-pulse' : 'mdi-chart-donut'"
+            :disabled="taskActionProgress?.sealed || entry.sourceType === 'health_connect'"
+            rounded="lg"
+            @click="editTrackingLogEntry(entry)"
+          >
+            <template #append>
+              <v-icon
+                v-if="entry.sourceType !== 'health_connect'"
+                icon="mdi-pencil-outline"
+                size="18"
+                color="medium-emphasis"
+              />
             </template>
           </v-list-item>
         </template>

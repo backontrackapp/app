@@ -4,6 +4,7 @@ import type {
   ProgramStepCompletionType,
   TargetOperator,
 } from '@/types/domain'
+import type { ExerciseSet } from '@/types/exercise'
 
 const COMPLETION_TYPES = new Set<ProgramStepCompletionType>([
   'workout',
@@ -37,6 +38,9 @@ function normalizedCompletion(value: unknown): ProgramStepCompletion | undefined
   completion.exercise = typeof record.exercise === 'string'
     ? record.exercise.trim() || undefined
     : undefined
+  if (completion.type === 'workout') {
+    completion.exerciseSets = normalizeExerciseSets(record.exerciseSets ?? record.exercise_sets)
+  }
   if (completion.type !== 'quantity') {
     completion.label = String(record.label || '').trim() || undefined
   }
@@ -57,6 +61,20 @@ function normalizedCompletion(value: unknown): ProgramStepCompletion | undefined
     ) || undefined
   }
   return completion
+}
+
+export function normalizeExerciseSets(value: unknown): ExerciseSet[] {
+  if (!Array.isArray(value)) return []
+  return value.slice(0, 100).flatMap((set) => {
+    if (!set || typeof set !== 'object' || Array.isArray(set)) return []
+    const repetitions = Number((set as Record<string, unknown>).repetitions)
+    const weight = Number((set as Record<string, unknown>).weight)
+    if (!Number.isFinite(repetitions) || !Number.isFinite(weight)) return []
+    return [{
+      repetitions: Math.max(0, Math.round(repetitions)),
+      weight: Math.max(0, weight),
+    }]
+  })
 }
 
 export function normalizeProgramStepCompletions(record: Record<string, any>) {
@@ -83,6 +101,9 @@ export function programStepCompletionPayload(completions: ProgramStepCompletion[
     id: completion.id,
     type: completion.type,
     ...(completion.exercise?.trim() ? { exercise: completion.exercise.trim() } : {}),
+    ...(completion.type === 'workout' ? {
+      exerciseSets: normalizeExerciseSets(completion.exerciseSets),
+    } : {}),
     ...(completion.type !== 'quantity' && completion.label?.trim() ? {
       label: completion.label.trim(),
     } : {}),

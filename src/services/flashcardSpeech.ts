@@ -9,7 +9,11 @@ import {
   type FlashcardSpeechTextPart,
   updateFlashcardSpeechWord,
 } from '@/services/spokenText'
-import { normalizeFlashcardBackSpeechRate } from '@/services/flashcards'
+import {
+  flashcardReviewFaceCanSpeak,
+  flashcardReviewFaceValue,
+  normalizeFlashcardBackSpeechRate,
+} from '@/services/flashcards'
 import type {
   BackgroundFlashcardReviewState,
   FlashcardReviewSession,
@@ -53,6 +57,8 @@ interface FlashcardSpeechPlugin {
       back: string
       ttsFront: string
       ttsBack: string
+      transliteration: string
+      note: string
       frontAudio: string
       backAudio: string
     }>
@@ -65,6 +71,8 @@ interface FlashcardSpeechPlugin {
     frontSeconds: number
     backSeconds: number
     backSpeechRepeatCount: number
+    frontDisplay: string
+    backDisplay: string
     frontLanguage: string
     backLanguage: string
     elapsedMs: number
@@ -556,8 +564,10 @@ export async function syncBackgroundFlashcardReview(
     !isNativeAndroid()
     || session.mode !== 'passive'
     || !session.speechEnabled
-    || !session.frontLanguage
-    || !session.backLanguage
+    || (flashcardReviewFaceCanSpeak(flashcardReviewFaceValue(session, 'front'))
+      && !session.frontLanguage)
+    || (flashcardReviewFaceCanSpeak(flashcardReviewFaceValue(session, 'back'))
+      && !session.backLanguage)
     || session.status !== 'running'
   ) return false
 
@@ -570,6 +580,8 @@ export async function syncBackgroundFlashcardReview(
         back: card.back,
         ttsFront: card.ttsFront || '',
         ttsBack: card.ttsBack || '',
+        transliteration: card.transliteration || '',
+        note: card.note || '',
         frontAudio: resolveFlashcardAudioPlaybackUrl(card.frontAudio || ''),
         backAudio: resolveFlashcardAudioPlaybackUrl(card.backAudio || ''),
       })),
@@ -582,6 +594,8 @@ export async function syncBackgroundFlashcardReview(
       frontSeconds: session.frontSeconds,
       backSeconds: session.backSeconds,
       backSpeechRepeatCount: session.backSpeechRepeatCount,
+      frontDisplay: session.frontDisplay || 'front',
+      backDisplay: session.backDisplay || 'back',
       frontLanguage: session.frontLanguage,
       backLanguage: session.backLanguage,
       elapsedMs: Math.max(0, Math.round(elapsedMs)),

@@ -57,6 +57,10 @@ const draft = reactive<TrackingTrackerDraft>({
   kind: 'yes_no',
   category: 'other',
   unit: '',
+  targetValue: 0,
+  targetOperator: 'gte',
+  trackingWindow: 'occurrence',
+  source: 'manual',
   scaleMin: 1,
   scaleMax: 10,
   favorableDirection: 'neutral',
@@ -73,6 +77,13 @@ const hasEntries = computed(() => Boolean(draft.id && store.entries.some((entry)
 const measurementLocked = computed(() => isEditing.value && hasEntries.value)
 const signature = computed(() => JSON.stringify(draft))
 const changed = computed(() => ready.value && signature.value !== original.value)
+const targetValueModel = computed({
+  get: () => draft.kind === 'duration' ? draft.targetValue / 60 : draft.targetValue,
+  set: (value: number | null) => {
+    const target = Number(value || 0)
+    draft.targetValue = draft.kind === 'duration' ? target * 60 : target
+  },
+})
 
 async function markFormReady() {
   await nextTick()
@@ -103,6 +114,13 @@ watch(() => draft.kind, (kind) => {
     draft.scaleMin = 0
     draft.scaleMax = 0
   }
+})
+
+watch(() => draft.source, (source) => {
+  if (measurementLocked.value || source !== 'health_connect_steps') return
+  draft.kind = 'number'
+  draft.unit = 'steps'
+  draft.dailyAggregation = 'sum'
 })
 
 watch(() => draft.role, (role) => {
@@ -139,6 +157,10 @@ async function save() {
   if (!result?.valid) return
   if (draft.kind === 'rating' && draft.scaleMax <= draft.scaleMin) {
     error.value = 'The top of a rating scale must be greater than the bottom.'
+    return
+  }
+  if (draft.source === 'health_connect_steps' && draft.kind !== 'number') {
+    error.value = 'Health Connect steps require a number tracker.'
     return
   }
   saving.value = true
@@ -252,8 +274,19 @@ function runRetirementAction(action: ContentRetirementActionId) {
           <v-number-input v-model="draft.scaleMin" label="Scale minimum" :disabled="measurementLocked" variant="outlined" />
           <v-number-input v-model="draft.scaleMax" label="Scale maximum" :disabled="measurementLocked" variant="outlined" />
         </div>
+        <v-select
+          v-if="draft.kind === 'number'"
+          v-model="draft.source"
+          label="Source"
+          :disabled="measurementLocked"
+          :items="[
+            { title: 'Log manually', value: 'manual' },
+            { title: 'Health Connect steps', value: 'health_connect_steps' },
+          ]"
+          variant="outlined"
+        />
         <v-text-field
-          v-if="draft.kind === 'number' || draft.kind === 'rating'"
+          v-if="(draft.kind === 'number' || draft.kind === 'rating') && draft.source !== 'health_connect_steps'"
           v-model="draft.unit"
           label="Unit or scale label (optional)"
           maxlength="30"
@@ -261,7 +294,7 @@ function runRetirementAction(action: ContentRetirementActionId) {
           variant="outlined"
         />
         <v-select
-          v-if="draft.kind === 'number'"
+          v-if="draft.kind === 'number' && draft.source !== 'health_connect_steps'"
           v-model="draft.dailyAggregation"
           label="When there are several logs in a day"
           :disabled="measurementLocked"
@@ -275,6 +308,41 @@ function runRetirementAction(action: ContentRetirementActionId) {
         <p v-if="draft.kind === 'event'" class="field-help">Log each occurrence. A day without a log is treated as not occurred.</p>
         <p v-else-if="draft.kind === 'yes_no'" class="field-help">Log an explicit Yes or No for each observation.</p>
         <p v-else class="field-help">Days without a log stay missing.</p>
+      </v-card>
+
+      <v-card v-if="draft.kind === 'number' || draft.kind === 'duration'" class="tracker-form-section surface-card pa-5 mb-4">
+        <div>
+          <h2 class="section-title">Task goal</h2>
+          <p class="field-help">Tasks can use this tracker’s target and tracking window while keeping every value in Tracking.</p>
+        </div>
+        <v-number-input
+          v-model="targetValueModel"
+          :label="draft.kind === 'duration' ? 'Target minutes (optional)' : 'Target (optional)'"
+          :min="0"
+          :precision="null"
+          variant="outlined"
+        />
+        <template v-if="draft.targetValue > 0">
+          <v-select
+            v-model="draft.targetOperator"
+            label="Goal"
+            :items="[
+              { title: 'At least', value: 'gte' },
+              { title: 'At most', value: 'lte' },
+              { title: 'Exactly', value: 'eq' },
+            ]"
+            variant="outlined"
+          />
+          <v-select
+            v-model="draft.trackingWindow"
+            label="Tracking window"
+            :items="[
+              { title: 'Each scheduled day', value: 'occurrence' },
+              { title: 'Calendar week', value: 'week' },
+            ]"
+            variant="outlined"
+          />
+        </template>
       </v-card>
 
     </AppForm>

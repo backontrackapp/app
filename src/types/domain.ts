@@ -1,3 +1,5 @@
+import type { ExerciseSet } from './exercise'
+
 export type TaskType = 'check' | 'duration' | 'daily_total' | 'step_counter' | 'program' | 'interval' | 'flashcards' | 'tracking' | 'journal'
 export type StepSource = 'health_connect'
 
@@ -83,6 +85,7 @@ export interface ProgramStepCompletion {
   id: string
   type: ProgramStepCompletionType
   exercise?: string
+  exerciseSets?: ExerciseSet[]
   label?: string
   targetValue?: number
   targetOperator?: TargetOperator
@@ -134,6 +137,7 @@ export interface Occurrence {
   snapshotTarget?: number
   snapshotUnit?: string
   completionState?: Record<string, boolean>
+  workoutSets?: Record<string, ExerciseSet[]>
 }
 
 export interface Entry {
@@ -184,6 +188,7 @@ export interface TaskProgress {
   status: OccurrenceStatus
   programStep?: ProgramStep
   completionItems?: ProgramStepCompletionProgress[]
+  tracker?: TrackingTracker
   locked?: boolean
 }
 
@@ -197,6 +202,7 @@ export interface TaskDraft extends Omit<Task, 'id'> {
 }
 
 export type IntervalStepKind = 'train' | 'work' | 'rest' | 'prepare' | 'meditation' | 'confirmation' | 'custom'
+export type IntervalStepTiming = 'timer' | 'stopwatch'
 export type IntervalSessionStatus = 'running' | 'paused' | 'completed' | 'ended'
 export type IntervalCueSound =
   | 'cash'
@@ -223,6 +229,7 @@ export interface IntervalStepNode {
   name: string
   kind: IntervalStepKind | ''
   durationSeconds: number
+  timing?: IntervalStepTiming
   color?: string
   skipOnLastRound?: boolean
   flashcardReviewEnabled?: boolean
@@ -269,7 +276,8 @@ export interface IntervalFlashcardReviewSnapshot {
   frontSeconds: number
   backSeconds: number
   backSpeechRepeatCount: number
-  backDisplay?: FlashcardBackDisplay
+  frontDisplay?: FlashcardReviewFaceValue
+  backDisplay?: FlashcardReviewFaceValue
   speechEnabled: boolean
   backSpeechRate: number
   speechPaused?: boolean
@@ -301,10 +309,17 @@ export interface IntervalTemplateDraft extends Omit<IntervalTemplate, 'id'> {
 export interface IntervalRuntimeState {
   stepIndex: number
   remainingMs: number
+  stepElapsedMs?: number
   stepStartedAt?: string
   accumulatedMs: number
   flashcardReviewAccumulatedMs?: number
   updatedAt: string
+}
+
+export interface SessionPresentation {
+  icon?: string
+  color?: string
+  exercise?: string
 }
 
 export interface IntervalSession {
@@ -326,6 +341,7 @@ export interface IntervalSession {
   plannedSeconds: number
   elapsedSeconds: number
   runtime: IntervalRuntimeState
+  presentation: SessionPresentation
   updated: string
 }
 
@@ -353,7 +369,9 @@ export interface QuickIntervalSettings extends QuickIntervalDraft {
 export type FlashcardReviewMode = 'manual' | 'passive'
 export type FlashcardReviewSide = 'front' | 'back'
 export type FlashcardReviewCardSides = 'both' | FlashcardReviewSide
-export type FlashcardBackDisplay = 'back' | 'transliteration'
+export type FlashcardReviewFaceValue = 'front' | 'back' | 'transliteration' | 'note' | 'image'
+/** @deprecated Use FlashcardReviewFaceValue. */
+export type FlashcardBackDisplay = FlashcardReviewFaceValue
 export type FlashcardReviewSort = 'difficult' | 'easiest' | 'never_reviewed' | 'least_recent' | 'recently_added' | 'random'
 export type FlashcardReviewSortDirection = 'asc' | 'desc'
 export type FlashcardReviewEjectBehavior = 'remove' | 'replace' | 'exclude' | 'replace_exclude'
@@ -502,7 +520,8 @@ export interface FlashcardReviewSettings {
   frontSeconds: number
   backSeconds: number
   backSpeechRepeatCount: number
-  backDisplay?: FlashcardBackDisplay
+  frontDisplay?: FlashcardReviewFaceValue
+  backDisplay?: FlashcardReviewFaceValue
   speechEnabled: boolean
   backSpeechRate: number
   frontLanguage: string
@@ -655,11 +674,14 @@ export interface FlashcardReviewSession extends FlashcardReviewSettings {
   programStep?: string
   programStepCompletion?: string
   taskDate?: string
+  presentation: SessionPresentation
 }
 
 export interface FlashcardReviewHistoryItem {
   id: string
   source: 'flashcards' | 'interval'
+  reviewSet?: string
+  template?: string
   status: 'completed' | 'ended'
   name: string
   startedAt: string
@@ -671,6 +693,7 @@ export interface FlashcardReviewHistoryItem {
   errorCount?: number
   ejectedCount?: number
   accuracy?: number
+  presentation: SessionPresentation
 }
 
 export interface FlashcardSpeechLanguage {
@@ -843,6 +866,7 @@ export interface PhoneSpeechResult extends PhoneSpeechPartialResult {
 export type TrackerRole = 'factor' | 'outcome'
 export type TrackerKind = 'yes_no' | 'event' | 'number' | 'rating' | 'duration'
 export type TrackerCategory = 'mindfulness' | 'medication' | 'nutrition' | 'mood' | 'symptom' | 'sleep' | 'activity' | 'other'
+export type TrackerSource = 'manual' | 'health_connect_steps'
 export type DailyAggregation = 'last' | 'average' | 'sum' | 'count'
 export type FavorableDirection = 'higher' | 'lower' | 'neutral'
 
@@ -854,6 +878,10 @@ export interface TrackingTracker {
   kind: TrackerKind
   category: TrackerCategory
   unit: string
+  targetValue: number
+  targetOperator: TargetOperator
+  trackingWindow: GoalPeriod
+  source: TrackerSource
   scaleMin: number
   scaleMax: number
   favorableDirection: FavorableDirection
@@ -882,6 +910,8 @@ export interface TrackingEntry {
   timezoneOffset: number
   value: number
   note: string
+  sourceType?: 'health_connect'
+  sourceSession?: string
 }
 
 export interface TrackingEntryDraft extends Omit<TrackingEntry, 'id'> {

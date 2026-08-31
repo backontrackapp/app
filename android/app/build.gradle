@@ -12,12 +12,17 @@ def hasReleaseSigning = [
     'keyAlias',
     'keyPassword',
 ].every { releaseSigning.getProperty(it) }
+def configuredApplicationId = providers.gradleProperty('backontrackApplicationId')
+    .getOrElse('app.backontrack.android')
+def configuredAppName = providers.gradleProperty('backontrackAppName')
+    .getOrElse('BackOnTrack')
 
 android {
     namespace = "app.backontrack.android"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "app.backontrack.android"
+        applicationId configuredApplicationId
+        manifestPlaceholders = [backontrackAppName: configuredAppName]
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 38

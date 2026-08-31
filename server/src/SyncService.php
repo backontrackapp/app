@@ -19,7 +19,7 @@ final class SyncService
     private const SYNC_COMPACTION_INTERVAL_SECONDS = 3600;
     private const FLASHCARD_REVIEW_PREFERENCE_FIELDS = [
         'mode', 'card_sides', 'invert_faces', 'indefinite', 'time_limit_seconds', 'max_cards', 'front_seconds',
-        'eject_behavior', 'eject_exclude_after', 'back_seconds', 'back_speech_repeat_count', 'back_display',
+        'eject_behavior', 'eject_exclude_after', 'back_seconds', 'back_speech_repeat_count', 'front_display', 'back_display',
         'speech_enabled', 'back_speech_rate', 'front_language', 'back_language', 'sort_mode',
         'excluded_cards',
     ];
@@ -1001,6 +1001,7 @@ final class SyncService
                 'front_seconds' => 5,
                 'back_seconds' => 5,
                 'back_speech_repeat_count' => 1,
+                'front_display' => 'front',
                 'back_display' => 'back',
                 'speech_enabled' => false,
                 'back_speech_rate' => 1.0,
@@ -1016,7 +1017,7 @@ final class SyncService
                     ...array_intersect_key($payload['settings'], array_flip([
                         'mode', 'card_sides', 'invert_faces', 'indefinite', 'time_limit_seconds', 'max_cards',
                         'eject_behavior', 'eject_exclude_after', 'front_seconds', 'back_seconds',
-                        'back_speech_repeat_count', 'back_display', 'speech_enabled', 'back_speech_rate',
+                        'back_speech_repeat_count', 'front_display', 'back_display', 'speech_enabled', 'back_speech_rate',
                         'front_language', 'back_language', 'sort_mode', 'sort_direction',
                     ])),
                 ];
@@ -2879,7 +2880,7 @@ final class SyncService
         if (is_array($settings)) {
             foreach ([
                 'mode', 'card_sides', 'invert_faces', 'indefinite', 'time_limit_seconds', 'max_cards', 'front_seconds',
-                'eject_behavior', 'eject_exclude_after', 'back_seconds', 'back_speech_repeat_count', 'back_display',
+                'eject_behavior', 'eject_exclude_after', 'back_seconds', 'back_speech_repeat_count', 'front_display', 'back_display',
                 'speech_enabled', 'back_speech_rate', 'front_language', 'back_language', 'sort_mode',
                 'excluded_cards',
             ] as $field) {
@@ -2916,11 +2917,11 @@ final class SyncService
         $statement = $this->database->pdo->prepare(
             'INSERT INTO flashcard_review_set_preferences (
                 review_set, account, mode, card_sides, invert_faces, indefinite, time_limit_seconds, max_cards, eject_behavior, eject_exclude_after,
-                front_seconds, back_seconds, back_speech_repeat_count, back_display,
+                front_seconds, back_seconds, back_speech_repeat_count, front_display, back_display,
                 speech_enabled, back_speech_rate, front_language, back_language, sort_mode, excluded_cards, updated_at
              ) VALUES (
                 :review_set, :account, :mode, :card_sides, :invert_faces, :indefinite, :time_limit_seconds, :max_cards, :eject_behavior, :eject_exclude_after,
-                :front_seconds, :back_seconds, :back_speech_repeat_count, :back_display,
+                :front_seconds, :back_seconds, :back_speech_repeat_count, :front_display, :back_display,
                 :speech_enabled, :back_speech_rate, :front_language, :back_language, :sort_mode, :excluded_cards, :updated_at
              ) ON CONFLICT(review_set, account) DO UPDATE SET
                 mode = excluded.mode, card_sides = excluded.card_sides,
@@ -2932,6 +2933,7 @@ final class SyncService
                 eject_exclude_after = excluded.eject_exclude_after,
                 front_seconds = excluded.front_seconds, back_seconds = excluded.back_seconds,
                 back_speech_repeat_count = excluded.back_speech_repeat_count,
+                front_display = excluded.front_display,
                 back_display = excluded.back_display,
                 speech_enabled = excluded.speech_enabled,
                 back_speech_rate = excluded.back_speech_rate,

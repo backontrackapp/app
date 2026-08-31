@@ -6,6 +6,7 @@ import {
   DEFAULT_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
   DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
   FLASHCARD_REVIEW_CARD_SIDE_OPTIONS,
+  FLASHCARD_REVIEW_FACE_VALUE_OPTIONS,
   FLASHCARD_REVIEW_SORT_OPTIONS,
   MAX_FLASHCARD_BACK_SPEECH_REPEATS,
   MAX_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
@@ -19,13 +20,20 @@ import {
   flashcardEjectBehavior,
   flashcardEjectExcludes,
   flashcardEjectLoadsNext,
+  flashcardReviewFaceCanSpeak,
+  flashcardReviewFaceTitle,
+  flashcardReviewFaceValue,
   normalizeFlashcardBackSpeechRate,
 } from '@/services/flashcards'
 import {
   defaultFlashcardSpeechLanguage,
   speechLanguageOptions,
 } from '@/services/flashcardSpeech'
-import type { FlashcardReviewSettings, FlashcardSpeechSupport } from '@/types/domain'
+import type {
+  FlashcardReviewFaceValue,
+  FlashcardReviewSettings,
+  FlashcardSpeechSupport,
+} from '@/types/domain'
 
 const props = withDefaults(defineProps<{
   modelValue: FlashcardReviewSettings
@@ -49,9 +57,15 @@ const props = withDefaults(defineProps<{
 
 const CUSTOM_MAX_CARDS_THRESHOLD = 50
 const settings = computed(() => props.modelValue)
+const frontDisplay = computed({
+  get: () => flashcardReviewFaceValue(settings.value, 'front'),
+  set: (value: FlashcardReviewFaceValue) => {
+    settings.value.frontDisplay = value
+  },
+})
 const backDisplay = computed({
-  get: () => settings.value.backDisplay || 'back',
-  set: (value: 'back' | 'transliteration') => {
+  get: () => flashcardReviewFaceValue(settings.value, 'back'),
+  set: (value: FlashcardReviewFaceValue) => {
     settings.value.backDisplay = value
   },
 })
@@ -112,12 +126,16 @@ const customMaxCardsVisible = computed(() => (
   cardLimit.value.maximum > CUSTOM_MAX_CARDS_THRESHOLD
   && Number(settings.value.maxCards) >= CUSTOM_MAX_CARDS_THRESHOLD
 ))
-const selectedCardSides = computed(() => FLASHCARD_REVIEW_CARD_SIDE_OPTIONS
-  .find(option => option.value === settings.value.cardSides)!)
 const selectedCardSidesHint = computed(() => (
-  settings.value.cardSides === 'both' && settings.value.invertFaces
-    ? 'Show the back first, then the front.'
-    : selectedCardSides.value.hint
+  settings.value.cardSides === 'both'
+    ? `Show the ${flashcardReviewFaceTitle(
+      settings.value.invertFaces ? backDisplay.value : frontDisplay.value,
+    ).toLocaleLowerCase()} first, then the ${flashcardReviewFaceTitle(
+      settings.value.invertFaces ? frontDisplay.value : backDisplay.value,
+    ).toLocaleLowerCase()}.`
+    : `Show only the ${flashcardReviewFaceTitle(
+      settings.value.cardSides === 'front' ? frontDisplay.value : backDisplay.value,
+    ).toLocaleLowerCase()} of each card.`
 ))
 const timeLimitEnabled = computed({
   get: () => (settings.value.timeLimitSeconds || 0) > 0,
@@ -148,6 +166,14 @@ const speechLanguages = computed(() => speechLanguageOptions([
   settings.value.frontLanguage,
   settings.value.backLanguage,
 ]))
+const frontSpeechEnabled = computed(() => (
+  settings.value.cardSides !== 'back'
+  && flashcardReviewFaceCanSpeak(frontDisplay.value)
+))
+const backSpeechEnabled = computed(() => (
+  settings.value.cardSides !== 'front'
+  && flashcardReviewFaceCanSpeak(backDisplay.value)
+))
 const backSpeechRate = computed({
   get: () => normalizeFlashcardBackSpeechRate(settings.value.backSpeechRate),
   set: (value: number) => {
@@ -179,8 +205,16 @@ function updateMode(mode: 'manual' | 'passive') {
 function updateSpeechEnabled(enabled: boolean | null) {
   if (!enabled) return
   const fallback = defaultFlashcardSpeechLanguage(props.speechSupport.languages)
-  if (!settings.value.frontLanguage) settings.value.frontLanguage = fallback
-  if (!settings.value.backLanguage) settings.value.backLanguage = fallback
+  if (frontSpeechEnabled.value && !settings.value.frontLanguage) {
+    settings.value.frontLanguage = fallback
+  }
+  if (backSpeechEnabled.value && !settings.value.backLanguage) {
+    settings.value.backLanguage = fallback
+  }
+}
+
+function faceValueTitle(value: FlashcardReviewFaceValue) {
+  return flashcardReviewFaceTitle(value)
 }
 </script>
 
@@ -203,7 +237,7 @@ function updateSpeechEnabled(enabled: boolean | null) {
         <p class="mode-hint mt-3" aria-live="polite">
           <v-icon icon="mdi-information-outline" size="18" />
           <span v-if="settings.mode === 'manual' && settings.cardSides === 'both'">
-            Reveal the {{ settings.invertFaces ? 'front' : 'back' }} when you're ready, then mark the card as a success or error.
+            Reveal the {{ faceValueTitle(settings.invertFaces ? frontDisplay : backDisplay).toLocaleLowerCase() }} when you're ready, then mark the card as a success or error.
           </span>
           <span v-else-if="settings.mode === 'manual'">
             Grade each card immediately after viewing its selected face.
@@ -266,6 +300,43 @@ function updateSpeechEnabled(enabled: boolean | null) {
         </v-expand-transition>
         <v-divider class="my-5" />
       </template>
+      <label class="field-label">Face values <span class="required-mark">*</span></label>
+      <v-row class="mt-2">
+        <v-col cols="12" sm="6">
+          <v-select
+            v-model="frontDisplay"
+            :items="FLASHCARD_REVIEW_FACE_VALUE_OPTIONS"
+            item-title="title"
+            item-value="value"
+            aria-label="Front face value"
+          >
+            <template #label>Front value <span class="required-mark">*</span></template>
+            <template #item="{ props: itemProps, item }">
+              <v-list-item v-bind="itemProps" :prepend-icon="item.raw.icon" />
+            </template>
+          </v-select>
+        </v-col>
+        <v-col cols="12" sm="6">
+          <v-select
+            v-model="backDisplay"
+            :items="FLASHCARD_REVIEW_FACE_VALUE_OPTIONS"
+            item-title="title"
+            item-value="value"
+            aria-label="Back face value"
+          >
+            <template #label>Back value <span class="required-mark">*</span></template>
+            <template #item="{ props: itemProps, item }">
+              <v-list-item v-bind="itemProps" :prepend-icon="item.raw.icon" />
+            </template>
+          </v-select>
+        </v-col>
+      </v-row>
+      <p class="mode-hint mt-1">
+        <v-icon icon="mdi-information-outline" size="18" />
+        Choose the card field shown on each review face. Image shows the card image directly.
+      </p>
+
+      <v-divider class="my-5" />
       <label class="field-label">Faces to show <span class="required-mark">*</span></label>
       <v-btn-toggle
         v-model="settings.cardSides"
@@ -302,30 +373,6 @@ function updateSpeechEnabled(enabled: boolean | null) {
               inset
               aria-label="Invert front and back faces"
             />
-          </div>
-        </div>
-      </v-expand-transition>
-
-      <v-expand-transition>
-        <div v-if="settings.cardSides !== 'front' && !interval">
-          <div class="response-order-setting mt-5">
-            <v-divider class="mb-3" />
-            <label class="field-label">Back value <span class="required-mark">*</span></label>
-            <v-btn-toggle
-              v-model="backDisplay"
-              mandatory
-              color="secondary"
-              variant="tonal"
-              class="back-display-toggle mt-2"
-              aria-label="Back value"
-            >
-              <v-btn value="back">Back</v-btn>
-              <v-btn value="transliteration">Transliteration</v-btn>
-            </v-btn-toggle>
-            <p class="mode-hint mt-3">
-              <v-icon icon="mdi-information-outline" size="18" />
-              The other column appears underneath, followed by the note.
-            </p>
           </div>
         </div>
       </v-expand-transition>
@@ -368,9 +415,11 @@ function updateSpeechEnabled(enabled: boolean | null) {
           <strong>Read cards aloud</strong>
           <p v-if="speechLoading">Checking speech synthesis on this device…</p>
           <p v-else-if="speechSupport.available">
-            {{ settings.cardSides === 'both'
-              ? 'Speak the front and back whenever each side appears'
-              : `Speak only the ${settings.cardSides} of each card` }}
+            {{ !frontSpeechEnabled && !backSpeechEnabled
+              ? 'The selected image value has no text to read aloud'
+              : settings.cardSides === 'both'
+                ? 'Speak the selected front and back values whenever each face appears'
+                : `Speak the selected ${settings.cardSides} value of each card` }}
           </p>
           <p v-else>Speech synthesis is not available on this device</p>
         </div>
@@ -390,7 +439,7 @@ function updateSpeechEnabled(enabled: boolean | null) {
         <div v-if="settings.speechEnabled">
           <div class="speech-language-fields mt-5">
             <v-select
-              v-if="settings.cardSides !== 'back'"
+              v-if="frontSpeechEnabled"
               v-model="settings.frontLanguage"
               :items="speechLanguages"
               item-title="title"
@@ -401,7 +450,7 @@ function updateSpeechEnabled(enabled: boolean | null) {
               <template #label>Front language <span class="required-mark">*</span></template>
             </v-select>
             <v-select
-              v-if="settings.cardSides !== 'front'"
+              v-if="backSpeechEnabled"
               v-model="settings.backLanguage"
               :items="speechLanguages"
               item-title="title"
@@ -412,7 +461,7 @@ function updateSpeechEnabled(enabled: boolean | null) {
               <template #label>Back language <span class="required-mark">*</span></template>
             </v-select>
             <div
-              v-if="settings.mode === 'passive' && settings.cardSides !== 'front'"
+              v-if="settings.mode === 'passive' && backSpeechEnabled"
               class="speech-repeat-setting"
             >
               <LabeledSlider
@@ -431,7 +480,7 @@ function updateSpeechEnabled(enabled: boolean | null) {
                 Each repeat adds the configured back duration before advancing to the next card.
               </p>
             </div>
-            <div v-if="settings.cardSides !== 'front'" class="back-speech-rate-setting">
+            <div v-if="backSpeechEnabled" class="back-speech-rate-setting">
               <LabeledSlider
                 v-model="backSpeechRate"
                 title="Back speech speed"
@@ -607,8 +656,6 @@ function updateSpeechEnabled(enabled: boolean | null) {
 .mode-toggle :deep(.v-btn) { width: 100%; min-height: 3rem; }
 .faces-toggle { display: grid; width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
 .faces-toggle :deep(.v-btn) { width: 100%; min-height: 3rem; }
-.back-display-toggle { display: grid; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
-.back-display-toggle :deep(.v-btn) { width: 100%; min-height: 3rem; }
 .sort-direction-toggle { display: grid; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
 .sort-direction-toggle :deep(.v-btn) { width: 100%; }
 .eject-behavior-options :deep(.v-selection-control) { min-height: 3rem; }

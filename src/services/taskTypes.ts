@@ -20,6 +20,14 @@ export const TASK_TYPE_OPTIONS: TaskTypePresentation[] = [
   { type: 'journal', title: 'Journaling', subtitle: 'Write a reflection', icon: 'mdi-notebook-edit-outline', color: '#F4B8E4' },
 ]
 
+/** Legacy quantitative task types remain readable for migrated/offline records,
+ * but new quantitative tasks are configured through number or duration trackers. */
+export const TASK_CREATE_TYPE_OPTIONS = TASK_TYPE_OPTIONS.filter((option) => ![
+  'duration',
+  'daily_total',
+  'step_counter',
+].includes(option.type))
+
 export const TASK_TYPE_PRESENTATION = Object.fromEntries(
   TASK_TYPE_OPTIONS.map(option => [option.type, option]),
 ) as Record<TaskType, TaskTypePresentation>
@@ -38,7 +46,7 @@ export function taskDisplayIcon(
 }
 
 export function taskSupportsQuickLog(type: TaskType) {
-  return type !== 'program' && type !== 'tracking'
+  return type !== 'program'
 }
 
 export function taskSupportsImageLogging(type: TaskType) {

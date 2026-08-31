@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { format, isToday, isValid, parseISO } from 'date-fns'
+import { format, isToday, isValid, parseISO, startOfWeek } from 'date-fns'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import type { NavigationGuardNext } from 'vue-router'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -61,10 +61,20 @@ const timerStorageId = computed(() => tracker.value
 const timerTitle = computed(() => tracker.value?.name || task.value?.name || 'Duration')
 const previouslyLoggedHours = computed(() => tracker.value
   ? trackingStore.entries
-    .filter(entry => entry.tracker === tracker.value?.id && entry.localDate === toDateKey(logDate.value))
+    .filter(entry => (
+      entry.tracker === tracker.value?.id
+      && entry.localDate >= toDateKey(
+        tracker.value?.trackingWindow === 'week'
+          ? startOfWeek(logDate.value, { weekStartsOn: 1 })
+          : logDate.value,
+      )
+      && entry.localDate <= toDateKey(logDate.value)
+    ))
     .reduce((total, entry) => total + entry.value, 0) / 3600
   : progress.value?.value || 0)
-const target = computed(() => tracker.value ? 0 : task.value?.targetValue || 0)
+const target = computed(() => tracker.value
+  ? tracker.value.targetValue / 3600
+  : task.value?.targetValue || 0)
 const projectedValue = computed(() => previouslyLoggedHours.value + elapsedHours.value)
 const projectedPercent = computed(() => target.value
   ? progressPercent(projectedValue.value, target.value, task.value?.targetOperator)

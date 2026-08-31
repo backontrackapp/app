@@ -210,6 +210,8 @@ pnpm android:bundle
 
 Both builds embed `https://backontrack.app/server`. The debug APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`, the signed release APK to `android/app/build/outputs/apk/release/app-release.apk`, and the signed AAB to `android/app/build/outputs/bundle/release/app-release.aab`.
 
+Android builds from `main` or `master` keep the `BackOnTrack` name and `app.backontrack.android` package. Builds from every other branch append a normalized branch suffix to the launcher name and use a unique package suffix, so they can be installed alongside the main app and other branch builds.
+
 Release signing uses `private/backontrack-release.jks` and `private/android-signing.properties`. Both files are ignored by Git and required for every future update. Back them up together in a secure password manager or encrypted archive; losing the keystore prevents signing updates as the same Android application.
 
 ## Android live development

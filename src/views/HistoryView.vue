@@ -4,9 +4,12 @@ import { format, subDays } from 'date-fns'
 import { storeToRefs } from 'pinia'
 import { goalState, toDateKey } from '@/services/schedule'
 import { useTaskStore } from '@/stores/tasks'
+import { useTrackingStore } from '@/stores/tracking'
+import { formatTrackingValue } from '@/services/tracking'
 import type { TaskProgress } from '@/types/domain'
 
 const store = useTaskStore()
+const trackingStore = useTrackingStore()
 const { tasks, steps, entries, occurrences } = storeToRefs(store)
 const selected = ref(new Date())
 
@@ -35,19 +38,56 @@ function rateFor(date: Date) {
 
 const selectedItems = computed(() => progressFor(selected.value))
 const selectedRate = computed(() => rateFor(selected.value))
-const selectedEntries = computed(() => entries.value.filter((entry) => entry.entryDate === toDateKey(selected.value)))
+const taskNameByTracker = computed(() => new Map(tasks.value.flatMap(task => (
+  (task.trackingTrackers || []).map(trackerId => [trackerId, task.name] as const)
+))))
+const selectedEntries = computed(() => [
+  ...entries.value
+    .filter((entry) => entry.entryDate === toDateKey(selected.value))
+    .map(entry => ({
+      id: entry.id,
+      name: tasks.value.find(task => task.id === entry.task)?.name || 'Archived task',
+      note: entry.note || '',
+      kind: entry.kind,
+      value: entry.value,
+      unit: entry.unit,
+    })),
+  ...trackingStore.entries
+    .filter(entry => entry.localDate === toDateKey(selected.value))
+    .flatMap((entry) => {
+      const tracker = trackingStore.trackers.find(item => item.id === entry.tracker)
+      const taskName = taskNameByTracker.value.get(entry.tracker)
+      return tracker && taskName ? [{
+        id: entry.id,
+        name: taskName,
+        note: entry.note,
+        kind: tracker.kind === 'duration' ? 'duration' : 'quantity',
+        value: entry.value,
+        unit: tracker.unit,
+        tracker,
+      }] : []
+    }),
+])
 const completedDays = computed(() => days.value.filter((day) => rateFor(day) === 100 && progressFor(day).length).length)
-const totalLogged = computed(() => entries.value.filter((entry) => entry.kind === 'duration').reduce((sum, entry) => sum + entry.value, 0))
+const totalLogged = computed(() => (
+  entries.value.filter((entry) => entry.kind === 'duration').reduce((sum, entry) => sum + entry.value, 0)
+  + trackingStore.entries
+    .filter((entry) => trackingStore.trackers.find(tracker => tracker.id === entry.tracker)?.kind === 'duration')
+    .reduce((sum, entry) => sum + entry.value / 3600, 0)
+))
 
-onMounted(() => { if (!tasks.value.length) store.load().catch(() => undefined) })
+onMounted(() => {
+  if (!tasks.value.length) store.load().catch(() => undefined)
+  if (!trackingStore.loaded) trackingStore.load().catch(() => undefined)
+})
 
 function statusIcon(item: TaskProgress) {
   const isQuantitative = item.programStep
     ? item.completionItems?.length === 1 && item.completionItems[0]?.type === 'quantity'
-    : item.task.type === 'duration' || item.task.type === 'daily_total' || item.task.type === 'step_counter'
+    : item.task.type === 'duration' || item.task.type === 'daily_total' || item.task.type === 'step_counter' || Boolean(item.tracker)
   if (isQuantitative) {
-    const target = item.completionItems?.[0]?.targetValue || item.task.targetValue || 0
-    const operator = item.completionItems?.[0]?.targetOperator || item.task.targetOperator || 'gte'
+    const target = item.completionItems?.[0]?.targetValue || item.tracker?.targetValue || item.task.targetValue || 0
+    const operator = item.completionItems?.[0]?.targetOperator || item.tracker?.targetOperator || item.task.targetOperator || 'gte'
     const state = goalState(item.value, target, operator)
     if (state === 'exceeded') return { icon: 'mdi-alert-outline', color: 'warning', state }
     if (state === 'not_enough') return { icon: 'mdi-trending-down', color: 'error', state }
@@ -70,6 +110,7 @@ function progressValue(item: TaskProgress) {
     return `${item.completionItems.filter(completion => completion.complete).length} / ${item.completionItems.length}`
   }
   if (!item.value) return ''
+  if (item.tracker) return formatTrackingValue(item.tracker, item.value)
   const completion = item.completionItems?.[0]
   const unit = completion?.customUnit
     || completion?.unit
@@ -147,11 +188,11 @@ function progressValue(item: TaskProgress) {
           <v-list-item
             v-for="entry in selectedEntries"
             :key="entry.id"
-            :title="tasks.find(task => task.id === entry.task)?.name || 'Archived task'"
+            :title="entry.name"
             :subtitle="entry.note || entry.kind"
           >
             <template #prepend><v-icon :icon="entry.kind === 'duration' ? 'mdi-timer-outline' : 'mdi-chart-donut'" /></template>
-            <template #append><strong>{{ Number(entry.value.toFixed(2)) }} {{ entry.unit }}</strong></template>
+            <template #append><strong>{{ entry.tracker ? formatTrackingValue(entry.tracker, entry.value) : `${Number(entry.value.toFixed(2))} ${entry.unit}` }}</strong></template>
           </v-list-item>
         </v-list>
       </v-card>

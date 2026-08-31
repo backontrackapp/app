@@ -12,9 +12,10 @@ import type { LongPressDragResult } from '@/directives/longPressDrag'
 import {
   intervalStepPlaysFlashcardReview,
   intervalStepPlaysFlashcardReviewByDefault,
+  intervalStepUsesStopwatch,
 } from '@/services/intervals'
 import { INTERVAL_STEP_TYPES, INTERVAL_TYPE_PRESENTATION } from '@/services/intervalTypes'
-import type { IntervalGroupNode, IntervalNode, IntervalStepKind } from '@/types/domain'
+import type { IntervalGroupNode, IntervalNode, IntervalStepKind, IntervalStepTiming } from '@/types/domain'
 
 const props = defineProps<{
   node: IntervalNode
@@ -74,6 +75,19 @@ const durationSeconds = computed({
     if (props.node.type === 'step') props.node.durationSeconds = value
   },
 })
+
+const timingMode = computed({
+  get: (): IntervalStepTiming => props.node.type === 'step' && intervalStepUsesStopwatch(props.node)
+    ? 'stopwatch'
+    : 'timer',
+  set: (timing: IntervalStepTiming) => {
+    if (props.node.type !== 'step') return
+    props.node.timing = timing
+    if (timing === 'timer' && props.node.durationSeconds <= 0) props.node.durationSeconds = 30
+  },
+})
+
+const usesStopwatch = computed(() => props.node.type === 'step' && intervalStepUsesStopwatch(props.node))
 
 const flashcardReviewEnabled = computed({
   get: () => props.node.type === 'step' && intervalStepPlaysFlashcardReview(props.node),
@@ -184,11 +198,41 @@ function selectKind(kind: IntervalStepKind | null) {
           <v-text-field v-if="node.kind === 'custom'" v-model="node.name" label="Interval name" />
           <fieldset v-if="node.kind !== 'confirmation'" class="duration-wheel">
             <legend>Duration</legend>
-            <TimerWheelPicker v-model="durationSeconds" :active="isExpanded" />
+            <TimerWheelPicker
+              v-if="!usesStopwatch"
+              v-model="durationSeconds"
+              :active="isExpanded"
+            />
+            <p v-else class="duration-wheel__hint">Time is recorded until you mark this step completed.</p>
           </fieldset>
+          <div
+            v-if="node.kind !== 'confirmation'"
+            class="timing-toggle"
+            role="group"
+            aria-label="Step timing"
+          >
+            <v-btn
+              prepend-icon="mdi-timer-outline"
+              :color="timingMode === 'timer' ? 'secondary' : undefined"
+              :variant="timingMode === 'timer' ? 'flat' : 'tonal'"
+              :aria-pressed="timingMode === 'timer'"
+              @click="timingMode = 'timer'"
+            >
+              Timer
+            </v-btn>
+            <v-btn
+              prepend-icon="mdi-timer-stopwatch-outline"
+              :color="timingMode === 'stopwatch' ? 'secondary' : undefined"
+              :variant="timingMode === 'stopwatch' ? 'flat' : 'tonal'"
+              :aria-pressed="timingMode === 'stopwatch'"
+              @click="timingMode = 'stopwatch'"
+            >
+              Stopwatch
+            </v-btn>
+          </div>
           <div>
             <v-checkbox
-              v-if="reviewSetSpeechEnabled"
+              v-if="reviewSetSpeechEnabled && !usesStopwatch"
               v-model="flashcardReviewEnabled"
               label="Play Review set during this step"
               color="secondary"
@@ -297,6 +341,9 @@ function selectKind(kind: IntervalStepKind | null) {
 .nested-nodes--empty { min-height: 3.5rem; align-items: center; }
 .duration-wheel { min-width: 0; margin: 0; padding: 0; border: 0; }
 .duration-wheel > legend { margin-bottom: .5rem; color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; font-weight: 800; }
+.duration-wheel__hint { min-height: 3rem; padding: .75rem 1rem; border-radius: .75rem; background: rgb(var(--v-theme-surface-variant) / .48); color: rgb(var(--v-theme-on-surface) / .62); font-size: .78rem; }
+.timing-toggle { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .125rem; }
+.timing-toggle :deep(.v-btn) { min-width: 0; }
 .type-select-option { display: flex; min-width: 0; align-items: center; gap: .625rem; }
 .group-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
 .group-actions .v-btn { width: 100%; }

@@ -22,6 +22,10 @@ export function mapTrackingTracker(record: Record<string, any>): TrackingTracker
     kind: record.kind,
     category: record.category,
     unit: record.unit || '',
+    targetValue: Number(record.target_value || 0),
+    targetOperator: record.target_operator || 'gte',
+    trackingWindow: record.tracking_window === 'week' ? 'week' : 'occurrence',
+    source: record.source === 'health_connect_steps' ? 'health_connect_steps' : 'manual',
     scaleMin: Number(record.scale_min || 0),
     scaleMax: Number(record.scale_max || 0),
     favorableDirection: record.favorable_direction,
@@ -43,6 +47,8 @@ export function mapTrackingEntry(record: Record<string, any>): TrackingEntry {
     timezoneOffset: Number(record.timezone_offset || 0),
     value: Number(record.value || 0),
     note: record.note || '',
+    sourceType: record.source_type === 'health_connect' ? 'health_connect' : undefined,
+    sourceSession: record.source_session || undefined,
   }
 }
 
@@ -115,6 +121,10 @@ export const useTrackingStore = defineStore('tracking', () => {
       kind: draft.kind,
       category: draft.category,
       unit: draft.unit,
+      target_value: draft.targetValue,
+      target_operator: draft.targetOperator,
+      tracking_window: draft.trackingWindow,
+      source: draft.source,
       scale_min: draft.scaleMin,
       scale_max: draft.scaleMax,
       favorable_direction: draft.favorableDirection,
@@ -154,6 +164,8 @@ export const useTrackingStore = defineStore('tracking', () => {
       timezone_offset: draft.timezoneOffset,
       value: draft.value,
       note: draft.note,
+      source_type: draft.sourceType || '',
+      source_session: draft.sourceSession || '',
     }
     const entry = mapTrackingEntry({ id: createLocalRecordId(), ...payload })
     entries.value.unshift(entry)
@@ -177,6 +189,8 @@ export const useTrackingStore = defineStore('tracking', () => {
       timezone_offset: draft.timezoneOffset,
       value: draft.value,
       note: draft.note,
+      source_type: draft.sourceType || '',
+      source_session: draft.sourceSession || '',
     }
     const index = entries.value.findIndex(item => item.id === draft.id)
     const previous = index >= 0 ? entries.value[index] : undefined
@@ -210,6 +224,34 @@ export const useTrackingStore = defineStore('tracking', () => {
       throw cause
     }
     useSnackbarStore().showDeletion('Log')
+  }
+
+  async function syncHealthConnectSteps(trackerIds: string[], localDate: string, value: number) {
+    const ids = [...new Set(trackerIds)]
+    const occurredAt = new Date(`${localDate}T12:00:00`).toISOString()
+    const sourceSession = `health-connect:${localDate}`
+    await Promise.all(ids.map(async (trackerId) => {
+      const tracker = trackers.value.find(item => item.id === trackerId)
+      if (tracker?.source !== 'health_connect_steps') return
+      const existing = entries.value.find(entry => (
+        entry.tracker === trackerId
+        && entry.localDate === localDate
+        && entry.sourceType === 'health_connect'
+        && entry.sourceSession === sourceSession
+      ))
+      const draft = {
+        tracker: trackerId,
+        occurredAt,
+        localDate,
+        timezoneOffset: new Date(`${localDate}T12:00:00`).getTimezoneOffset(),
+        value,
+        note: '',
+        sourceType: 'health_connect' as const,
+        sourceSession,
+      }
+      if (existing) await updateEntry({ ...draft, id: existing.id })
+      else await addEntry(draft)
+    }))
   }
 
   async function setTrackerActive(id: string, active: boolean) {
@@ -332,6 +374,7 @@ export const useTrackingStore = defineStore('tracking', () => {
     addEntry,
     updateEntry,
     deleteEntry,
+    syncHealthConnectSteps,
     setTrackerActive,
     reorderTrackers,
     setTrackerArchived,

@@ -12,7 +12,9 @@ import {
   createFlashcardReviewPreviewSession,
   DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
   DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
+  DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
   DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
+  DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
   DEFAULT_FLASHCARD_SESSION_CARDS,
   DEFAULT_FLASHCARD_BACK_SPEECH_RATE,
   flashcardEjectExcludes,
@@ -20,6 +22,7 @@ import {
   flashcardEjectLoadsNext,
   flashcardReviewQueueState,
   normalizeFlashcardBackSpeechRate,
+  normalizeFlashcardReviewFaceValue,
   flashcardSwapColumnsError,
   swapFlashcardColumns,
   updateFlashcardReviewExclusions,
@@ -45,6 +48,7 @@ import type {
   FlashcardReviewSetShare,
   FlashcardReviewSettings,
   FlashcardTag,
+  SessionPresentation,
   SquareImageSourceValue,
 } from '@/types/domain'
 
@@ -128,7 +132,14 @@ function mapReviewSet(record: Record<string, any>): FlashcardReviewSet {
     backSpeechRepeatCount: Number(
       record.back_speech_repeat_count || DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
     ),
-    backDisplay: record.back_display === 'transliteration' ? 'transliteration' : 'back',
+    frontDisplay: normalizeFlashcardReviewFaceValue(
+      record.front_display,
+      DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
+    ),
+    backDisplay: normalizeFlashcardReviewFaceValue(
+      record.back_display,
+      DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
+    ),
     speechEnabled: Boolean(record.speech_enabled),
     backSpeechRate: normalizeFlashcardBackSpeechRate(
       Number(record.back_speech_rate ?? DEFAULT_FLASHCARD_BACK_SPEECH_RATE),
@@ -187,7 +198,14 @@ function mapSession(record: Record<string, any>): FlashcardReviewSession {
     backSpeechRepeatCount: Number(
       record.back_speech_repeat_count_snapshot || DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
     ),
-    backDisplay: record.back_display_snapshot === 'transliteration' ? 'transliteration' : 'back',
+    frontDisplay: normalizeFlashcardReviewFaceValue(
+      record.front_display_snapshot,
+      DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
+    ),
+    backDisplay: normalizeFlashcardReviewFaceValue(
+      record.back_display_snapshot,
+      DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
+    ),
     speechEnabled: Boolean(record.speech_enabled_snapshot),
     backSpeechRate: normalizeFlashcardBackSpeechRate(
       Number(record.back_speech_rate_snapshot ?? DEFAULT_FLASHCARD_BACK_SPEECH_RATE),
@@ -220,6 +238,9 @@ function mapSession(record: Record<string, any>): FlashcardReviewSession {
     programStep: record.program_step || undefined,
     programStepCompletion: record.program_step_completion || undefined,
     taskDate: record.task_date || undefined,
+    presentation: record.presentation_snapshot && typeof record.presentation_snapshot === 'object'
+      ? record.presentation_snapshot
+      : {},
   }
 }
 
@@ -1002,7 +1023,14 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       front_seconds: draft.frontSeconds,
       back_seconds: draft.backSeconds,
       back_speech_repeat_count: draft.backSpeechRepeatCount,
-      back_display: draft.backDisplay || 'back',
+      front_display: normalizeFlashcardReviewFaceValue(
+        draft.frontDisplay,
+        DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
+      ),
+      back_display: normalizeFlashcardReviewFaceValue(
+        draft.backDisplay,
+        DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
+      ),
       speech_enabled: draft.speechEnabled,
       back_speech_rate: normalizeFlashcardBackSpeechRate(draft.backSpeechRate),
       front_language: draft.frontLanguage,
@@ -1077,7 +1105,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         frontSeconds: 5,
         backSeconds: 5,
         backSpeechRepeatCount: DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
-        backDisplay: 'back',
+        frontDisplay: DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
+        backDisplay: DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
         speechEnabled: false,
         backSpeechRate: DEFAULT_FLASHCARD_BACK_SPEECH_RATE,
         frontLanguage: '',
@@ -1781,7 +1810,14 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         front_seconds_snapshot: preview.frontSeconds,
         back_seconds_snapshot: preview.backSeconds,
         back_speech_repeat_count_snapshot: preview.backSpeechRepeatCount,
-        back_display_snapshot: preview.backDisplay || 'back',
+        front_display_snapshot: normalizeFlashcardReviewFaceValue(
+          preview.frontDisplay,
+          DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
+        ),
+        back_display_snapshot: normalizeFlashcardReviewFaceValue(
+          preview.backDisplay,
+          DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
+        ),
         speech_enabled_snapshot: preview.speechEnabled,
         back_speech_rate_snapshot: preview.backSpeechRate,
         front_language_snapshot: preview.frontLanguage,
@@ -1801,6 +1837,10 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         program_step: attribution.programStep || '',
         program_step_completion: attribution.programStepCompletion || '',
         task_date: attribution.task ? attribution.taskDate || '' : '',
+        presentation_snapshot: {
+          icon: reviewSet.icon || 'mdi-cards-playing-outline',
+          color: reviewSet.color || '#C7F464',
+        } satisfies SessionPresentation,
       })
     } else {
       record = await api.startFlashcardReviewSession(reviewSetId, attribution)
@@ -2068,7 +2108,14 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           front_seconds_snapshot: sessionSettings.frontSeconds,
           back_seconds_snapshot: sessionSettings.backSeconds,
           back_speech_repeat_count_snapshot: sessionSettings.backSpeechRepeatCount,
-          back_display_snapshot: sessionSettings.backDisplay || 'back',
+          front_display_snapshot: normalizeFlashcardReviewFaceValue(
+            sessionSettings.frontDisplay,
+            DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
+          ),
+          back_display_snapshot: normalizeFlashcardReviewFaceValue(
+            sessionSettings.backDisplay,
+            DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
+          ),
           speech_enabled_snapshot: sessionSettings.speechEnabled,
           back_speech_rate_snapshot: normalizeFlashcardBackSpeechRate(sessionSettings.backSpeechRate),
           front_language_snapshot: sessionSettings.frontLanguage,

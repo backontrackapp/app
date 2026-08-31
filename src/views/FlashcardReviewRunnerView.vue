@@ -21,7 +21,6 @@ import {
   stopFlashcardSpeech,
   syncBackgroundFlashcardReview,
   toggleFlashcardSpeechOverAmplification,
-  waitForFlashcardSpeechCompletion,
   waitForFlashcardSpeechHandoff,
 } from '@/services/flashcardSpeech'
 import {
@@ -37,9 +36,14 @@ import { prepareFlashcardSpeechWordTracking } from '@/services/spokenText'
 import {
   createFlashcardReviewPreviewSession,
   DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
+  DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
+  DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
   FLASHCARD_SETTINGS_APPLY_MENU_ITEMS,
   firstFlashcardReviewSide,
   flashcardBackDurationMs,
+  flashcardReviewFaceCanSpeak,
+  flashcardReviewFaceSpeech,
+  flashcardReviewFaceValue,
   flashcardReviewShowsSide,
   flashcardReviewSettingsAreValid,
   flashcardReviewSettingsSignature,
@@ -113,7 +117,8 @@ const sessionSettingsDraft = reactive<FlashcardReviewSettings>({
   frontSeconds: 5,
   backSeconds: 5,
   backSpeechRepeatCount: 1,
-  backDisplay: 'back',
+  frontDisplay: DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
+  backDisplay: DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
   speechEnabled: false,
   backSpeechRate: 1,
   frontLanguage: '',
@@ -124,7 +129,6 @@ const sessionSettingsDraft = reactive<FlashcardReviewSettings>({
 const tickVersion = ref(0)
 const passiveSide = ref<'front' | 'back'>('front')
 const passiveRemainingMs = ref(0)
-const passiveSpeechPlaying = ref(false)
 const localElapsedMs = ref(0)
 const currentQueueIndex = ref(0)
 const ejectedQueueIndexes: number[] = []
@@ -335,19 +339,24 @@ const currentSpeechSide = computed<FlashcardReviewSide>(() => session.value?.mod
 const currentSpeechLanguage = computed(() => currentSpeechSide.value === 'front'
   ? session.value?.frontLanguage || ''
   : session.value?.backLanguage || '')
+const currentFrontDisplay = computed(() => {
+  const reviewSet = store.reviewSets.find(item => item.id === session.value?.reviewSet)
+  return flashcardReviewFaceValue({
+    frontDisplay: session.value?.frontDisplay || reviewSet?.frontDisplay,
+  }, 'front')
+})
 const currentBackDisplay = computed(() => {
   const reviewSet = store.reviewSets.find(item => item.id === session.value?.reviewSet)
-  return reviewSet?.backDisplay === 'transliteration'
-    || session.value?.backDisplay === 'transliteration'
-    ? 'transliteration'
-    : 'back'
+  return flashcardReviewFaceValue({
+    backDisplay: session.value?.backDisplay || reviewSet?.backDisplay,
+  }, 'back')
 })
 const canUseNativeBackground = computed(() => Boolean(
   nativeFlashcardBackgroundIsAvailable()
   && session.value?.mode === 'passive'
   && session.value.speechEnabled
-  && session.value.frontLanguage
-  && session.value.backLanguage
+  && (!flashcardReviewFaceCanSpeak(currentFrontDisplay.value) || session.value.frontLanguage)
+  && (!flashcardReviewFaceCanSpeak(currentBackDisplay.value) || session.value.backLanguage)
   && session.value.status === 'running',
 ))
 const canNavigateCards = computed(() => Boolean(
@@ -644,7 +653,6 @@ function tick() {
   if (
     session.value?.mode === 'passive'
     && currentCard.value
-    && !passiveSpeechPlaying.value
   ) {
     passiveRemainingMs.value = Math.max(0, passiveRemainingMs.value - delta)
     if (passiveRemainingMs.value === 0 && !passiveAdvancing) void advancePassive()
@@ -998,28 +1006,26 @@ async function speakCurrentSide(allowPaused = false) {
   ) {
     if (!value || !card || !value.speechEnabled) lastSpokenKey = ''
     await stopFlashcardSpeech()
-    if (request === speechRequest) passiveSpeechPlaying.value = false
     return
   }
   if (key === lastSpokenKey) return
 
   lastSpokenKey = key
   const side = currentSpeechSide.value
-  const holdPassiveDuration = value.mode === 'passive' && value.status === 'running'
-  if (holdPassiveDuration) passiveSpeechPlaying.value = true
   try {
-    const text = side === 'front'
-      ? card.ttsFront?.trim() || card.front
-      : card.ttsBack?.trim() || card.back
+    const faceValue = side === 'front' ? currentFrontDisplay.value : currentBackDisplay.value
+    const { text, audio } = flashcardReviewFaceSpeech(card, faceValue)
     const language = side === 'front' ? value.frontLanguage : value.backLanguage
-    const audio = (side === 'front' ? card.frontAudio : card.backAudio) || ''
+    if (!text && !audio) {
+      await stopFlashcardSpeech()
+      return
+    }
     prepareFlashcardSpeechWordTracking(word => {
       if (request === speechRequest && speechKey(true) === key) spokenWord.value = word
     })
     const speechRate = side === 'back' ? value.backSpeechRate : 1
     if (audio) await speakFlashcardText(text, language, '', audio, speechRate)
     else await speakFlashcardText(text, language, '', '', speechRate)
-    if (holdPassiveDuration) await waitForFlashcardSpeechCompletion()
     if (request === speechRequest) speechPlaybackWarning.value = ''
   } catch {
     if (request === speechRequest) spokenWord.value = undefined
@@ -1029,16 +1035,7 @@ async function speakCurrentSide(allowPaused = false) {
     }
   } finally {
     if (request === speechRequest) {
-      passiveSpeechPlaying.value = false
-      lastTickAt = Date.now()
-      if (holdPassiveDuration) {
-        savePassiveState()
-        if (
-          document.visibilityState === 'visible'
-          && !visibilitySpeechHandoff.value
-          && !reconcilingBackground.value
-        ) void syncNativeBackground()
-      }
+      savePassiveState()
     }
   }
 }
@@ -1072,13 +1069,10 @@ async function speakPressedWord(word: string, pressedWord: FlashcardSpeechWord) 
   ) return
 
   const request = ++speechRequest
-  const holdPassiveDuration = value.mode === 'passive' && value.status === 'running'
-  if (holdPassiveDuration) passiveSpeechPlaying.value = true
   spokenWord.value = pressedWord
   speechPlaybackWarning.value = ''
   try {
     await speakFlashcardText(text, currentSpeechLanguage.value, '', '', value.backSpeechRate)
-    await waitForFlashcardSpeechCompletion()
     if (request === speechRequest) speechPlaybackWarning.value = ''
   } catch {
     if (request === speechRequest && !speechFailureWarnedSessionIds.has(value.id)) {
@@ -1088,16 +1082,7 @@ async function speakPressedWord(word: string, pressedWord: FlashcardSpeechWord) 
   } finally {
     if (request === speechRequest) {
       spokenWord.value = undefined
-      passiveSpeechPlaying.value = false
-      lastTickAt = Date.now()
-      if (holdPassiveDuration) {
-        savePassiveState()
-        if (
-          document.visibilityState === 'visible'
-          && !visibilitySpeechHandoff.value
-          && !reconcilingBackground.value
-        ) void syncNativeBackground()
-      }
+      savePassiveState()
     }
   }
 }
@@ -1391,7 +1376,8 @@ function copySessionSettings(value: FlashcardReviewSession) {
     frontSeconds: value.frontSeconds,
     backSeconds: value.backSeconds,
     backSpeechRepeatCount: value.backSpeechRepeatCount,
-    backDisplay: value.backDisplay || 'back',
+    frontDisplay: value.frontDisplay || DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
+    backDisplay: value.backDisplay || DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
     speechEnabled: value.speechEnabled,
     backSpeechRate: value.backSpeechRate,
     frontLanguage: value.frontLanguage,
@@ -1781,6 +1767,7 @@ async function leaveRunner() {
               :mode="session.mode"
               :card-sides="session.cardSides"
               :invert-faces="session.invertFaces"
+              :front-display="currentFrontDisplay"
               :back-display="currentBackDisplay"
               :disabled="busy"
               :revealed="revealed"

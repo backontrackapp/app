@@ -9,6 +9,7 @@ import {
   intervalStepCount,
   intervalStepDurationSeconds,
   intervalStepPlaysFlashcardReview,
+  intervalStepUsesStopwatch,
   reconcileIntervalRuntime,
   resolveIntervalStep,
 } from '@/services/intervals'
@@ -17,6 +18,7 @@ import type { IntervalCueSound, IntervalSession } from '@/types/domain'
 interface BackgroundIntervalStep {
   name: string
   durationMs: number
+  stopwatch: boolean
   requiresConfirmation: boolean
   flashcardReviewEnabled: boolean
   cueSound: IntervalCueSound
@@ -30,6 +32,7 @@ interface BackgroundIntervalPlugin {
     stepIndex: number
     remainingMs: number
     elapsedMs: number
+    stepElapsedMs: number
     soundEnabled: boolean
     vibrationEnabled: boolean
     flashcardReview?: {
@@ -39,6 +42,8 @@ interface BackgroundIntervalPlugin {
         back: string
         ttsFront: string
         ttsBack: string
+        transliteration: string
+        note: string
         frontAudio: string
         backAudio: string
       }>
@@ -47,6 +52,8 @@ interface BackgroundIntervalPlugin {
       frontSeconds: number
       backSeconds: number
       backSpeechRepeatCount: number
+      frontDisplay: string
+      backDisplay: string
       speechEnabled: boolean
       backSpeechRate?: number
       frontLanguage: string
@@ -77,6 +84,7 @@ function nativeSteps(session: IntervalSession) {
     steps.push({
       name: resolved.step.name || `Interval ${index + 1}`,
       durationMs: Math.max(1, Math.round(intervalStepDurationSeconds(resolved.step) * 1000)),
+      stopwatch: intervalStepUsesStopwatch(resolved.step),
       requiresConfirmation: resolved.step.kind === 'confirmation',
       flashcardReviewEnabled: intervalStepPlaysFlashcardReview(resolved.step),
       cueSound: intervalTypeSound(session.cues.typeSounds, resolved.step.kind),
@@ -89,6 +97,10 @@ export async function syncBackgroundInterval(session: IntervalSession) {
   if (Capacitor.getPlatform() !== 'android' || session.status !== 'running') return
   try {
     const runtime = reconcileIntervalRuntime(session.definition, session.runtime).runtime
+    const currentStep = resolveIntervalStep(session.definition, runtime.stepIndex)?.step
+    const stepElapsedMs = currentStep && intervalStepUsesStopwatch(currentStep)
+      ? Math.max(0, runtime.stepElapsedMs || 0)
+      : 0
     const playbackOffsetMs = session.flashcardReview?.playbackOffsetMs
     const nativeFlashcardReviewElapsedMs = (
       runtime.flashcardReviewAccumulatedMs
@@ -107,6 +119,7 @@ export async function syncBackgroundInterval(session: IntervalSession) {
       stepIndex: runtime.stepIndex,
       remainingMs: Math.max(1, Math.round(runtime.remainingMs)),
       elapsedMs: Math.max(0, Math.round(nativeFlashcardReviewElapsedMs)),
+      stepElapsedMs: Math.round(stepElapsedMs),
       soundEnabled: session.cues.soundEnabled,
       vibrationEnabled: session.cues.vibrationEnabled,
       ...(session.flashcardReview?.speechEnabled
@@ -118,6 +131,8 @@ export async function syncBackgroundInterval(session: IntervalSession) {
                 back: card.back,
                 ttsFront: card.ttsFront || '',
                 ttsBack: card.ttsBack || '',
+                transliteration: card.transliteration || '',
+                note: card.note || '',
                 frontAudio: resolveFlashcardAudioPlaybackUrl(card.frontAudio || ''),
                 backAudio: resolveFlashcardAudioPlaybackUrl(card.backAudio || ''),
               })),
@@ -127,6 +142,8 @@ export async function syncBackgroundInterval(session: IntervalSession) {
               frontSeconds: session.flashcardReview.frontSeconds,
               backSeconds: session.flashcardReview.backSeconds,
               backSpeechRepeatCount: session.flashcardReview.backSpeechRepeatCount,
+              frontDisplay: session.flashcardReview.frontDisplay || 'front',
+              backDisplay: session.flashcardReview.backDisplay || 'back',
               speechEnabled: !session.flashcardReview.speechPaused,
               ...(session.flashcardReview.backSpeechRate
                 && session.flashcardReview.backSpeechRate !== 1

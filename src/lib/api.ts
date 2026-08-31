@@ -14,8 +14,11 @@ import type {
   FlashcardReviewSettings,
 } from '@/types/domain'
 import {
+  DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
   DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
+  DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
   flashcardSwapColumnsError,
+  normalizeFlashcardReviewFaceValue,
   swapFlashcardColumns,
 } from '@/services/flashcards'
 import type { AuthActionResponse } from '@/types/auth'
@@ -150,7 +153,14 @@ function flashcardReviewSettingsBody(
     front_seconds: settings.frontSeconds,
     back_seconds: settings.backSeconds,
     back_speech_repeat_count: settings.backSpeechRepeatCount,
-    back_display: settings.backDisplay || 'back',
+    front_display: normalizeFlashcardReviewFaceValue(
+      settings.frontDisplay,
+      DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
+    ),
+    back_display: normalizeFlashcardReviewFaceValue(
+      settings.backDisplay,
+      DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
+    ),
     speech_enabled: settings.speechEnabled,
     back_speech_rate: settings.backSpeechRate,
     front_language: settings.frontLanguage,
@@ -609,7 +619,10 @@ class ApiClient {
           maxCards: Math.min(100, Math.max(1, Number(input.maxCards) || 20)),
           ejectBehavior: 'replace', ejectExcludeAfter: DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
           frontSeconds: 5, backSeconds: 5,
-          backSpeechRepeatCount: 1, backDisplay: 'back', speechEnabled: false,
+          backSpeechRepeatCount: 1,
+          frontDisplay: DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
+          backDisplay: DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
+          speechEnabled: false,
           frontLanguage: '', backLanguage: '', sortMode: 'difficult', sortDirection: 'asc',
         }),
         sort_order: localSets.length,
@@ -1451,7 +1464,14 @@ class ApiClient {
         front_seconds: Number(source.front_seconds || 5),
         back_seconds: Number(source.back_seconds || 5),
         back_speech_repeat_count: Number(source.back_speech_repeat_count || 1),
-        back_display: source.back_display === 'transliteration' ? 'transliteration' : 'back',
+        front_display: normalizeFlashcardReviewFaceValue(
+          source.front_display,
+          DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
+        ),
+        back_display: normalizeFlashcardReviewFaceValue(
+          source.back_display,
+          DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
+        ),
         speech_enabled: Boolean(source.speech_enabled),
         back_speech_rate: Number(source.back_speech_rate || 1),
         front_language: String(source.front_language || ''),

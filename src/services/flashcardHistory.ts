@@ -27,6 +27,7 @@ export function flashcardReviewHistoryItems(
     .map(session => ({
       id: `flashcards-${session.id}`,
       source: 'flashcards' as const,
+      reviewSet: session.reviewSet,
       status: session.status,
       name: session.name,
       startedAt: session.startedAt,
@@ -38,6 +39,7 @@ export function flashcardReviewHistoryItems(
       errorCount: session.errorCount,
       ejectedCount: session.ejectedCount,
       accuracy: sessionAccuracy(session),
+      presentation: session.presentation,
     }))
 
   const intervalReviews = intervalSessions.flatMap((session): FlashcardReviewHistoryItem[] => {
@@ -56,12 +58,14 @@ export function flashcardReviewHistoryItems(
     return [{
       id: `interval-${session.id}`,
       source: 'interval',
+      template: session.template,
       status: session.status,
       name: session.flashcardReview.name,
       startedAt: session.startedAt,
       sourceLabel: 'Interval',
       elapsedSeconds,
       progressPercent: intervalRunProgressPercent(session),
+      presentation: session.presentation,
     }]
   })
 

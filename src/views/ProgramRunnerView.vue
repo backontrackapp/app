@@ -8,7 +8,7 @@ import ExerciseSetEditor from '@/components/ExerciseSetEditor.vue'
 import RunnerStartScreen from '@/components/RunnerStartScreen.vue'
 import { exercisePresentationById } from '@/services/exercisePresentations'
 import { loadExerciseOptions } from '@/services/exercises'
-import { formatIntervalDuration, intervalDuration } from '@/services/intervals'
+import { formatIntervalDuration, intervalDuration, intervalStepKindCount } from '@/services/intervals'
 import { programStepRequirementName } from '@/services/programStepCompletions'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
@@ -90,6 +90,17 @@ const primaryActionLabel = computed(() => {
   if (current.value?.type === 'workout' && !current.value.intervalTemplate) return 'Completed'
   return 'Continue'
 })
+const lockedWorkoutSetCount = computed(() => {
+  if (current.value?.type !== 'workout' || !attachedInterval.value) return undefined
+  return intervalStepKindCount(attachedInterval.value.definition, 'train')
+})
+
+function workoutSetsForCount(value: ExerciseSet[], count: number | undefined) {
+  if (count === undefined) return value.map(set => ({ ...set }))
+  return Array.from({ length: count }, (_, index) => value[index]
+    ? { ...value[index] }
+    : { repetitions: 8, weight: 0 })
+}
 
 function firstOpenRequirementIndex(preferredId = '') {
   const preferred = requirements.value.findIndex(item => item.id === preferredId && !item.complete)
@@ -112,9 +123,26 @@ async function showRequirement(index: number) {
   amount.value = current.value?.type === 'quantity'
     ? Math.max(0, (current.value.targetValue || 0) - current.value.value)
     : 0
-  sets.value = []
+  const workoutSets = current.value?.type === 'workout'
+    ? progress.value?.occurrence?.workoutSets?.[current.value.id] ?? current.value.exerciseSets ?? []
+    : []
+  sets.value = workoutSetsForCount(workoutSets, lockedWorkoutSetCount.value)
+  if (current.value?.type === 'workout' && sets.value.length !== workoutSets.length) {
+    updateWorkoutSets(sets.value)
+  }
   await loadExercise()
   screen.value = 'requirement'
+}
+
+function updateWorkoutSets(value: ExerciseSet[]) {
+  const item = current.value
+  const currentProgress = progress.value
+  const nextSets = workoutSetsForCount(value, lockedWorkoutSetCount.value)
+  sets.value = nextSets
+  if (!item || item.type !== 'workout' || !currentProgress) return
+  void taskStore.saveProgramStepWorkoutSets(currentProgress, item.id, nextSets).catch((cause) => {
+    error.value = cause instanceof Error ? cause.message : 'Could not save workout sets.'
+  })
 }
 
 async function start() {
@@ -303,11 +331,21 @@ onMounted(async () => {
                   class="program-runner__exercise-details"
                 >
                   <template #before-image>
-                    <ExerciseSetEditor v-model="sets" label="Confirm reps and weight" />
+                    <ExerciseSetEditor
+                      :model-value="sets"
+                      label="Confirm reps and weight"
+                      :locked-set-count="lockedWorkoutSetCount"
+                      @update:model-value="updateWorkoutSets"
+                    />
                   </template>
                 </ExerciseDetailsPanel>
                 <v-card v-else class="surface-card pa-4 mt-4">
-                  <ExerciseSetEditor v-model="sets" label="Confirm reps and weight" />
+                  <ExerciseSetEditor
+                    :model-value="sets"
+                    label="Confirm reps and weight"
+                    :locked-set-count="lockedWorkoutSetCount"
+                    @update:model-value="updateWorkoutSets"
+                  />
                 </v-card>
               </template>
 

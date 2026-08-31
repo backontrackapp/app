@@ -9,7 +9,7 @@ use PDOException;
 
 final class Database
 {
-    public const EXPECTED_SCHEMA_VERSION = '202608310003';
+    public const EXPECTED_SCHEMA_VERSION = '202608310007';
 
     public readonly PDO $pdo;
 
@@ -96,6 +96,7 @@ final class Database
                 'sealed', 'completed_at', 'snapshot_name', 'snapshot_target',
                 'snapshot_unit',
                 'completion_state',
+                'workout_sets',
             ],
             'entries' => [
                 'id', 'owner', 'task', 'occurrence', 'program_step', 'entry_date',
@@ -118,16 +119,17 @@ final class Database
                 'definition_snapshot', 'cue_snapshot', 'started_at', 'ended_at',
                 'planned_seconds', 'elapsed_seconds', 'runtime_state', 'task',
                 'program_step', 'task_date', 'note', 'flashcard_snapshot',
-                'program_step_completion',
+                'program_step_completion', 'presentation_snapshot',
             ],
             'tracking_trackers' => [
                 'id', 'owner', 'name', 'description', 'role', 'kind', 'category',
-                'unit', 'scale_min', 'scale_max', 'favorable_direction',
+                'unit', 'target_value', 'target_operator', 'tracking_window', 'source',
+                'scale_min', 'scale_max', 'favorable_direction',
                 'daily_aggregation', 'active', 'archived', 'sort_order', 'color', 'icon',
             ],
             'tracking_entries' => [
                 'id', 'owner', 'tracker', 'occurred_at', 'local_date',
-                'timezone_offset', 'value', 'note',
+                'timezone_offset', 'value', 'note', 'source_type', 'source_session',
             ],
             'journal_entries' => [
                 'id', 'owner', 'title', 'body', 'color', 'occurred_at', 'local_date',

@@ -36,9 +36,13 @@ import {
   cardMatchesTags,
   createIntervalFlashcardReviewSnapshot,
   DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
+  DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
+  DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
   flashcardEjectExcludes,
   flashcardEjectReachesExclusionThreshold,
   flashcardEjectLoadsNext,
+  flashcardReviewFaceSpeech,
+  flashcardReviewFaceValue,
   flashcardReviewActionFromSwipe,
   intervalFlashcardEjectionOffsetMs,
   intervalFlashcardNavigationOffsetMs,
@@ -77,6 +81,7 @@ import {
   rebaseIntervalRuntimeForDefinition,
   resolveIntervalStep,
   intervalStepDurationSeconds,
+  intervalStepUsesStopwatch,
   MAX_GLOBAL_REPETITIONS,
   MIN_GLOBAL_REPETITIONS,
   validateIntervalDefinition,
@@ -119,6 +124,7 @@ const reviewAudioFocusScope = `interval-review:${String(
   route.params.sessionId || route.params.templateId || 'preview',
 )}`
 const displayRemainingMs = ref(0)
+const runnerClockMs = ref(Date.now())
 const progressRingsContent = ref<HTMLElement>()
 const timerValueElement = ref<HTMLElement>()
 const syncing = ref(false)
@@ -194,7 +200,8 @@ const flashcardSettingsDraft = reactive<FlashcardReviewSettings>({
   frontSeconds: 5,
   backSeconds: 5,
   backSpeechRepeatCount: 1,
-  backDisplay: 'back',
+  frontDisplay: DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
+  backDisplay: DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
   speechEnabled: false,
   backSpeechRate: 1,
   frontLanguage: '',
@@ -266,14 +273,18 @@ const persistedSession = computed(() => store.sessions.find((item) => item.id ==
 const session = computed(() => persistedSession.value || previewSession.value)
 const sessionTemplate = computed(() => previewTemplate.value
   || store.templates.find(item => item.id === session.value?.template))
-const sessionIcon = computed(() => sessionTemplate.value?.icon || 'mdi-timer-outline')
-const sessionColor = computed(() => sessionTemplate.value?.color || '#C7F464')
+const sessionIcon = computed(() => session.value?.presentation.icon || sessionTemplate.value?.icon || 'mdi-timer-outline')
+const sessionColor = computed(() => session.value?.presentation.color || sessionTemplate.value?.color || '#C7F464')
 const current = computed(() => session.value ? resolveIntervalStep(session.value.definition, session.value.runtime.stepIndex) : undefined)
 const next = computed(() => session.value ? resolveIntervalStep(session.value.definition, session.value.runtime.stepIndex + 1) : undefined)
 const finished = computed(() => session.value?.status === 'completed' || session.value?.status === 'ended')
 const currentConfirmation = computed(() => current.value?.step.kind === 'confirmation')
+const currentStopwatch = computed(() => Boolean(
+  current.value && intervalStepUsesStopwatch(current.value.step),
+))
 const sessionElapsedMs = computed(() => {
   displayRemainingMs.value
+  runnerClockMs.value
   const item = session.value
   if (!item) return 0
   if (item.status !== 'running' || !item.runtime.stepStartedAt) return item.runtime.accumulatedMs
@@ -324,12 +335,17 @@ const flashcardPhase = computed(() => session.value?.flashcardReview
   : undefined)
 const flashcardReviewSet = computed(() => flashcardStore.reviewSets
   .find(item => item.id === session.value?.flashcardReview?.reviewSet))
+const flashcardFrontDisplay = computed(() => {
+  const review = session.value?.flashcardReview
+  return flashcardReviewFaceValue({
+    frontDisplay: review?.frontDisplay || flashcardReviewSet.value?.frontDisplay,
+  }, 'front')
+})
 const flashcardBackDisplay = computed(() => {
   const review = session.value?.flashcardReview
-  return flashcardReviewSet.value?.backDisplay === 'transliteration'
-    || review?.backDisplay === 'transliteration'
-    ? 'transliteration'
-    : 'back'
+  return flashcardReviewFaceValue({
+    backDisplay: review?.backDisplay || flashcardReviewSet.value?.backDisplay,
+  }, 'back')
 })
 const flashcardContextDisabled = computed(() => Boolean(
   isTemplatePreview.value
@@ -428,6 +444,23 @@ const remainingLabel = computed(() => {
   const minutes = Math.floor(totalSeconds / 60)
   return `${String(minutes).padStart(2, '0')}:${String(totalSeconds % 60).padStart(2, '0')}`
 })
+const stopwatchElapsedMs = computed(() => {
+  const item = session.value
+  if (!item || !currentStopwatch.value) return 0
+  const baseElapsedMs = Math.max(0, item.runtime.stepElapsedMs || 0)
+  if (item.status !== 'running' || !item.runtime.stepStartedAt) return baseElapsedMs
+  return baseElapsedMs + Math.max(0, runnerClockMs.value - new Date(item.runtime.stepStartedAt).getTime())
+})
+const stopwatchLabel = computed(() => {
+  const totalSeconds = Math.max(0, Math.floor(stopwatchElapsedMs.value / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  return hours > 0
+    ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+})
+const displayedTimeLabel = computed(() => currentStopwatch.value ? stopwatchLabel.value : remainingLabel.value)
 const progress = computed(() => {
   if (!session.value || !current.value) {
     return { total: finished.value ? 100 : 0, item: finished.value ? 100 : 0 }
@@ -494,6 +527,27 @@ const attributedExercise = computed(() => {
   const exerciseId = attributedProgramStepCompletion.value?.exercise
   return exercisePresentationById(exerciseId)
 })
+
+function presentationForTemplate(
+  templateId: string | undefined,
+  programStepId?: string,
+  programStepCompletionId?: string,
+) {
+  const template = store.templates.find((item) => item.id === templateId)
+  const completions = programStepId
+    ? taskStore.steps.find((step) => step.id === programStepId)?.completions || []
+    : []
+  const completion = completions.find((item) => item.id === programStepCompletionId)
+    || completions.find((item) => (
+      (item.type === 'interval' || item.type === 'workout')
+      && item.intervalTemplate === templateId
+    ))
+  return {
+    icon: template?.icon || 'mdi-timer-outline',
+    color: template?.color || '#C7F464',
+    ...(completion?.exercise ? { exercise: completion.exercise } : {}),
+  }
+}
 const runnerStageTrackStyle = computed(() => ({
   transform: `translate3d(calc(${runnerExerciseVisible.value ? '-100%' : '0%'} + ${runnerSwipeOffset.value}px), 0, 0)`,
 }))
@@ -678,7 +732,7 @@ watch([progressRingsContent, timerValueElement], ([container, value]) => {
   createTimerFit()
 }, { flush: 'post' })
 
-watch(remainingLabel, () => {
+watch(displayedTimeLabel, () => {
   void nextTick(() => timerFit?.fit({ sync: true }))
 }, { flush: 'post' })
 
@@ -732,6 +786,11 @@ onMounted(async () => {
         plannedSeconds: intervalDuration(template.definition),
         elapsedSeconds: 0,
         runtime,
+        presentation: presentationForTemplate(
+          template.id,
+          originProgramStepId.value || undefined,
+          originProgramStepCompletionId.value || undefined,
+        ),
         updated: now.toISOString(),
       }
       if (originTaskId.value && !eligibleTaskProgress.value.some((item) =>
@@ -822,11 +881,15 @@ async function speakCurrentFlashcardSide(allowPaused = false) {
 
   lastSpokenFlashcardKey = key
   try {
-    const text = phase.side === 'front'
-      ? phase.card.ttsFront?.trim() || phase.card.front
-      : phase.card.ttsBack?.trim() || phase.card.back
+    const faceValue = phase.side === 'front'
+      ? flashcardFrontDisplay.value
+      : flashcardBackDisplay.value
+    const { text, audio } = flashcardReviewFaceSpeech(phase.card, faceValue)
     const language = phase.side === 'front' ? review.frontLanguage : review.backLanguage
-    const audio = (phase.side === 'front' ? phase.card.frontAudio : phase.card.backAudio) || ''
+    if (!text && !audio) {
+      await stopFlashcardSpeech()
+      return
+    }
     prepareFlashcardSpeechWordTracking(word => {
       const current = flashcardPhase.value
       if (current?.key === phase.key && session.value?.id === item.id) {
@@ -1080,6 +1143,7 @@ async function handleVisibility() {
 async function tick() {
   const item = session.value
   if (!item || finished.value || pendingCompletion.value) return
+  runnerClockMs.value = Date.now()
   if (syncing.value) {
     if (item.status === 'running') displayRemainingMs.value = reconciled(item).runtime.remainingMs
     else displayRemainingMs.value = item.runtime.remainingMs
@@ -1333,6 +1397,7 @@ async function startTemplate(
       ...(programStepCompletionId ? { programStepCompletion: programStepCompletionId } : {}),
       taskDate: taskId ? item.taskDate : undefined,
       flashcardReview: item.flashcardReview,
+      presentation: presentationForTemplate(item.template, programStepId, programStepCompletionId),
     })
     if (
       started.task !== taskId
@@ -1458,6 +1523,7 @@ async function advanceCurrent(item: IntervalSession) {
       ...result.runtime,
       stepIndex: nextIndex,
       remainingMs: intervalStepDurationSeconds(nextStep.step) * 1000,
+      stepElapsedMs: 0,
       stepStartedAt: item.status === 'running' && nextStep.step.kind !== 'confirmation'
         ? now
         : undefined,
@@ -1487,6 +1553,17 @@ async function confirmCurrent() {
   await advanceCurrent(item)
 }
 
+async function completeStopwatchStep() {
+  const item = session.value
+  if (
+    !item
+    || item.status !== 'running'
+    || !currentStopwatch.value
+    || finished.value
+  ) return
+  await advanceCurrent(item)
+}
+
 async function skip() {
   const item = session.value
   if (!item || currentConfirmation.value || finished.value) return
@@ -1505,6 +1582,7 @@ async function previous() {
     ...result.runtime,
     stepIndex: previousIndex,
     remainingMs: intervalStepDurationSeconds(previousStep.step) * 1000,
+    stepElapsedMs: 0,
     stepStartedAt: item.status === 'running' && previousStep.step.kind !== 'confirmation'
       ? now
       : undefined,
@@ -2234,7 +2312,8 @@ async function openFlashcardSettings() {
     frontSeconds: review.frontSeconds,
     backSeconds: review.backSeconds,
     backSpeechRepeatCount: review.backSpeechRepeatCount,
-    backDisplay: review.backDisplay || 'back',
+    frontDisplay: review.frontDisplay || DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
+    backDisplay: review.backDisplay || DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
     speechEnabled: review.speechEnabled,
     backSpeechRate: review.backSpeechRate,
     frontLanguage: review.frontLanguage,
@@ -2286,7 +2365,8 @@ async function saveFlashcardSettings(target: FlashcardSettingsApplyTarget = 'ses
         frontSeconds: flashcardSettingsDraft.frontSeconds,
         backSeconds: flashcardSettingsDraft.backSeconds,
         backSpeechRepeatCount: flashcardSettingsDraft.backSpeechRepeatCount,
-        backDisplay: flashcardSettingsDraft.backDisplay || 'back',
+        frontDisplay: flashcardSettingsDraft.frontDisplay || DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
+        backDisplay: flashcardSettingsDraft.backDisplay || DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
         speechEnabled: flashcardSettingsDraft.speechEnabled,
         backSpeechRate: flashcardSettingsDraft.backSpeechRate,
         frontLanguage: flashcardSettingsDraft.frontLanguage,
@@ -2394,6 +2474,7 @@ async function runAgain(repetitions?: number) {
       cues: item.cues,
       template: item.template,
       flashcardReview,
+      presentation: item.presentation,
     })
     playCurrentStepCue(nextSession)
     repetitionDialog.value = false
@@ -2649,7 +2730,7 @@ async function runAgain(repetitions?: number) {
                           'timer-value--count': timerEffect === 'count',
                         }"
                       >
-                        {{ remainingLabel }}
+                        {{ displayedTimeLabel }}
                       </span>
                     </div>
                   </div>
@@ -2660,7 +2741,19 @@ async function runAgain(repetitions?: number) {
 
               <footer class="runner-controls runner-controls--landscape">
                 <v-btn
-                  v-if="currentConfirmation"
+                  v-if="currentStopwatch"
+                  color="secondary"
+                  class="runner-confirm-button"
+                  prepend-icon="mdi-check-bold"
+                  :loading="syncing"
+                  :disabled="isTemplatePreview || session.status !== 'running'"
+                  @touchstart.stop
+                  @click.stop="completeStopwatchStep"
+                >
+                  Completed
+                </v-btn>
+                <v-btn
+                  v-else-if="currentConfirmation"
                   color="secondary"
                   class="runner-confirm-button"
                   append-icon="mdi-arrow-right"
@@ -2711,7 +2804,20 @@ async function runAgain(repetitions?: number) {
 
             <footer class="runner-controls runner-controls--portrait">
               <v-btn
-                v-if="currentConfirmation"
+                v-if="currentStopwatch"
+                class="runner-confirm-button"
+                color="secondary"
+                size="x-large"
+                prepend-icon="mdi-check-bold"
+                :loading="syncing"
+                :disabled="isTemplatePreview || session.status !== 'running'"
+                @touchstart.stop
+                @click.stop="completeStopwatchStep"
+              >
+                Completed
+              </v-btn>
+              <v-btn
+                v-else-if="currentConfirmation"
                 class="runner-confirm-button"
                 color="secondary"
                 size="x-large"
@@ -2745,6 +2851,7 @@ async function runAgain(repetitions?: number) {
               :side="flashcardPhase.side"
               :card-sides="session.flashcardReview.cardSides"
               :invert-faces="session.flashcardReview.invertFaces"
+              :front-display="flashcardFrontDisplay"
               :back-display="flashcardBackDisplay"
               :disabled="flashcardContextDisabled"
               :transition-direction="intervalFlashcardTransitionDirection"

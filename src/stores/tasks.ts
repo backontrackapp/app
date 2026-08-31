@@ -7,12 +7,14 @@ import { readHealthConnectSteps } from '@/services/healthConnect'
 import { healthConnectEntrySession, isHealthConnectEntry } from '@/services/healthConnectEntries'
 import { completedIntervalFlashcardReviewSeconds } from '@/services/intervals'
 import {
+  normalizeExerciseSets,
   normalizeProgramStepCompletions,
   programStepCompletionPayload,
   programStepPrimaryCompletion,
 } from '@/services/programStepCompletions'
 import { dailyTotalCompletionPercent, isTaskScheduled, meetsTarget, programCycleDay, progressPercent, stepsForDate, toDateKey } from '@/services/schedule'
 import { taskNeedsReview } from '@/services/taskCardActions'
+import { taskGoalTracker } from '@/services/taskTrackers'
 import { reconcileTaskReminders } from '@/services/taskReminders'
 import { taskSupportsImageLogging, taskSupportsQuickLog } from '@/services/taskTypes'
 import { useSnackbarStore } from '@/stores/snackbar'
@@ -30,6 +32,7 @@ import type {
   TaskLogImageUpdate,
   TaskProgress,
 } from '@/types/domain'
+import type { ExerciseSet } from '@/types/exercise'
 
 const TASK_PROGRESS_HISTORY_DAYS = 120
 
@@ -42,6 +45,15 @@ const asStringArray = (value: unknown) =>
 const asBooleanRecord = (value: unknown) => value && typeof value === 'object' && !Array.isArray(value)
   ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, item === true || item === 1]))
   : {}
+
+const asWorkoutSetsRecord = (value: unknown): Record<string, ExerciseSet[]> => (
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? Object.fromEntries(Object.entries(value).map(([completionId, sets]) => [
+        completionId,
+        normalizeExerciseSets(sets),
+      ]))
+    : {}
+)
 
 function mapTask(record: Record<string, any>): Task {
   return {
@@ -120,6 +132,7 @@ function mapOccurrence(record: Record<string, any>): Occurrence {
     snapshotTarget: record.snapshot_target || undefined,
     snapshotUnit: record.snapshot_unit || undefined,
     completionState: asBooleanRecord(record.completion_state),
+    workoutSets: asWorkoutSetsRecord(record.workout_sets),
   }
 }
 
@@ -194,6 +207,7 @@ export const useTaskStore = defineStore('tasks', () => {
   const pendingEntryUpserts = new Set<Entry>()
   const pendingEntryDeletes = new Set<string>()
   const pendingProgramShifts = new Set<string>()
+  const workoutSetSaveQueues = new Map<string, Promise<void>>()
 
   const activeTasks = computed(() => tasks.value.filter((task) => task.active && !task.archived))
 
@@ -326,7 +340,8 @@ export const useTaskStore = defineStore('tasks', () => {
     const optimisticPatch = optimisticOccurrencePatches.value[
       occurrenceStatusKey(task.id, dateKey, step?.id)
     ]
-    const trackingTrackerIds = !step && task.type === 'tracking'
+    const goalTracker = !step ? taskGoalTracker(task, trackingStore.trackers) : undefined
+    const trackingTrackerIds = !step && task.type === 'tracking' && !goalTracker
       ? [...new Set(task.trackingTrackers ?? [])]
       : []
     const loggedTrackingTrackerIds = trackingEntryTrackerIdsByDate.value.get(dateKey)
@@ -338,7 +353,30 @@ export const useTaskStore = defineStore('tasks', () => {
       ? journalEntryCountByTaskDate.value.get(occurrenceStatusKey(task.id, dateKey)) || 0
       : 0
     const matchingEntries = entriesFor(task, date, step)
-    const baseValue = trackingTrackerIds.length
+    const goalTrackingStart = goalTracker?.trackingWindow === 'week'
+      ? startOfWeek(date, { weekStartsOn: 1 })
+      : date
+    const goalTrackingEntries = goalTracker
+      ? trackingStore.entries
+        .filter(entry => (
+          entry.tracker === goalTracker.id
+          && entry.localDate >= toDateKey(goalTrackingStart)
+          && entry.localDate <= dateKey
+        ))
+        .sort((left, right) => left.occurredAt.localeCompare(right.occurredAt))
+      : []
+    const goalTrackerValue = !goalTracker
+      ? 0
+      : goalTracker.dailyAggregation === 'average'
+        ? goalTrackingEntries.length
+          ? goalTrackingEntries.reduce((sum, entry) => sum + entry.value, 0) / goalTrackingEntries.length
+          : 0
+        : goalTracker.dailyAggregation === 'last'
+          ? goalTrackingEntries.at(-1)?.value || 0
+          : goalTrackingEntries.reduce((sum, entry) => sum + entry.value, 0)
+    const baseValue = goalTracker
+      ? goalTrackerValue
+      : trackingTrackerIds.length
       ? loggedTrackingTrackerCount
       : !step && task.type === 'journal'
         ? journalEntryCount
@@ -406,13 +444,13 @@ export const useTaskStore = defineStore('tasks', () => {
       ? completionItems.length
       : completionItems?.[0]?.type === 'quantity'
         ? completionItems[0].targetValue ?? 1
-        : trackingTrackerIds.length || (!step && task.type === 'journal'
+        : goalTracker?.targetValue || trackingTrackerIds.length || (!step && task.type === 'journal'
           ? 1
           : isSessionDuration
             ? task.sessionTargetSeconds || 1
             : task.targetValue || 1)
-    const operator = completionItems?.[0]?.targetOperator || task.targetOperator || 'gte'
-    const targetReached = task.type === 'tracking' && !step
+    const operator = completionItems?.[0]?.targetOperator || goalTracker?.targetOperator || task.targetOperator || 'gte'
+    const targetReached = task.type === 'tracking' && !step && !goalTracker
       ? trackingTrackerIds.length > 0 && value === target
       : task.type === 'journal' && !step
         ? value > 0
@@ -424,7 +462,16 @@ export const useTaskStore = defineStore('tasks', () => {
     const manuallyCompletedStep = Boolean(step && occurrenceComplete && occurrenceSealed)
     const isDailyTotal = !step && task.type === 'daily_total'
     const isDurationTotal = !step && task.type === 'duration'
-    const sealed = (isDailyTotal || isDurationTotal || isSessionDuration) && occurrenceSealed
+    const isTrackerDailyTotal = goalTracker?.kind === 'number'
+      && goalTracker.source !== 'health_connect_steps'
+    const isTrackerDurationTotal = goalTracker?.kind === 'duration'
+    const sealed = (
+      isDailyTotal
+      || isDurationTotal
+      || isTrackerDailyTotal
+      || isTrackerDurationTotal
+      || isSessionDuration
+    ) && occurrenceSealed
     const complete = occurrenceSkipped
       ? false
       : completionItems
@@ -433,11 +480,11 @@ export const useTaskStore = defineStore('tasks', () => {
         ? occurrenceComplete
         : manuallyCompleted
           ? true
-          : isDailyTotal
+          : isDailyTotal || isTrackerDailyTotal
             ? sealed
-            : isDurationTotal && sealed
+            : (isDurationTotal || isTrackerDurationTotal) && sealed
               ? true
-            : operator !== 'lte' && targetReached
+              : operator !== 'lte' && targetReached
     return {
       task,
       scheduledDate: toDateKey(date),
@@ -463,6 +510,7 @@ export const useTaskStore = defineStore('tasks', () => {
             : storedStatus,
       programStep: step,
       completionItems,
+      tracker: goalTracker,
       locked: step ? isStepLocked(task, step, date) : false,
     }
   }
@@ -568,12 +616,12 @@ export const useTaskStore = defineStore('tasks', () => {
     if (!progress.length) return undefined
     const earnedProgress = progress.reduce(
       (total, item) => {
-        if (!item.programStep && item.task.type === 'daily_total') {
+        if (!item.programStep && (item.task.type === 'daily_total' || item.tracker)) {
           if (!item.sealed) return total
           return total + dailyTotalCompletionPercent(
             item.value,
-            item.task.targetValue || 0,
-            item.task.targetOperator || 'gte',
+            item.tracker?.targetValue || item.task.targetValue || 0,
+            item.tracker?.targetOperator || item.task.targetOperator || 'gte',
           )
         }
         return total + Math.max(0, Math.min(item.percent, 100))
@@ -771,10 +819,15 @@ export const useTaskStore = defineStore('tasks', () => {
 
   async function refreshStepCount(date = selectedDate.value) {
     const request = ++stepCountRequest
-    const hasScheduledStepCounter = activeTasks.value.some(
+    const legacyStepTasks = activeTasks.value.filter(
       task => task.type === 'step_counter' && isTaskScheduled(task, date),
     )
-    if (!hasScheduledStepCounter) {
+    const stepTrackerIds = activeTasks.value.flatMap((task) => {
+      if (!isTaskScheduled(task, date)) return []
+      const tracker = taskGoalTracker(task, trackingStore.trackers)
+      return tracker?.source === 'health_connect_steps' ? [tracker.id] : []
+    })
+    if (!legacyStepTasks.length && !stepTrackerIds.length) {
       stepCountLoading.value = false
       stepCountError.value = ''
       return
@@ -787,10 +840,7 @@ export const useTaskStore = defineStore('tasks', () => {
       const value = await readHealthConnectSteps(date)
       if (request !== stepCountRequest) return
       const entryDate = toDateKey(date)
-      const stepTasks = activeTasks.value.filter(
-        task => task.type === 'step_counter' && isTaskScheduled(task, date),
-      )
-      for (const task of stepTasks) {
+      for (const task of legacyStepTasks) {
         const occurrence = await ensureOccurrence(task, date)
         const existing = entries.value.find(entry => (
           entry.task === task.id
@@ -833,6 +883,12 @@ export const useTaskStore = defineStore('tasks', () => {
         upsertEntryRecord(record)
         await syncEntryProgress(makeProgress(task, date))
       }
+      await trackingStore.syncHealthConnectSteps(stepTrackerIds, toDateKey(date), value)
+      for (const task of activeTasks.value) {
+        const tracker = taskGoalTracker(task, trackingStore.trackers)
+        if (!tracker || !stepTrackerIds.includes(tracker.id)) continue
+        await syncEntryProgress(makeProgress(task, date))
+      }
     } catch (cause) {
       if (request !== stepCountRequest) return
       await syncTaskReminders()
@@ -849,6 +905,7 @@ export const useTaskStore = defineStore('tasks', () => {
     const key = occurrenceStatusKey(task.id, toDateKey(date), step?.id)
     if (existing) return pendingOccurrenceCreates.get(key) || existing
 
+    const goalTracker = !step ? taskGoalTracker(task, trackingStore.trackers) : undefined
     const occurrence: Occurrence = {
       id: createLocalRecordId(),
       task: task.id,
@@ -859,17 +916,23 @@ export const useTaskStore = defineStore('tasks', () => {
       snapshotName: step?.name || task.name,
       snapshotTarget: step?.completions && step.completions.length > 1
         ? step.completions.length
-        : step?.completions?.[0]?.targetValue ?? step?.targetValue ?? task.targetValue ?? 0,
+        : step?.completions?.[0]?.targetValue
+          ?? step?.targetValue
+          ?? goalTracker?.targetValue
+          ?? task.targetValue
+          ?? 0,
       snapshotUnit: step?.completions && step.completions.length > 1
         ? 'requirements'
         : step?.completions?.[0]?.customUnit
           || step?.completions?.[0]?.unit
           || step?.customUnit
           || step?.unit
+          || goalTracker?.unit
           || task.customUnit
           || task.unit
           || '',
       completionState: {},
+      workoutSets: {},
     }
     occurrences.value.push(occurrence)
     pendingOccurrenceValues.set(key, occurrence)
@@ -887,6 +950,7 @@ export const useTaskStore = defineStore('tasks', () => {
           snapshot_target: occurrence.snapshotTarget,
           snapshot_unit: occurrence.snapshotUnit || '',
           completion_state: {},
+          workout_sets: {},
         })
         Object.assign(occurrence, mapOccurrence(record))
         return occurrence
@@ -958,6 +1022,57 @@ export const useTaskStore = defineStore('tasks', () => {
       completedAt: complete ? new Date().toISOString() : '',
     })
     void syncTaskReminders()
+  }
+
+  async function saveProgramStepWorkoutSets(
+    progress: TaskProgress,
+    completionId: string,
+    value: ExerciseSet[],
+  ) {
+    const stepId = progress.programStep?.id
+    if (!stepId) return
+    const stepIndex = steps.value.findIndex(step => step.id === stepId)
+    const step = stepIndex >= 0 ? steps.value[stepIndex]! : progress.programStep
+    const completion = step.completions?.find(item => item.id === completionId)
+    if (completion?.type !== 'workout') return
+
+    const exerciseSets = normalizeExerciseSets(value)
+    const completions = (step.completions || []).map(item => (
+      item.id === completionId ? { ...item, exerciseSets } : item
+    ))
+    if (stepIndex >= 0) {
+      steps.value = steps.value.toSpliced(stepIndex, 1, { ...step, completions })
+    }
+
+    const queueKey = `${stepId}:${completionId}`
+    const previousSave = workoutSetSaveQueues.get(queueKey) || Promise.resolve()
+    const save = previousSave.catch(() => undefined).then(async () => {
+      const occurrence = await ensureOccurrence(
+        progress.task,
+        parseISO(progress.scheduledDate),
+        step,
+      )
+      const workoutSets = {
+        ...(occurrence.workoutSets || {}),
+        [completionId]: exerciseSets,
+      }
+      occurrence.workoutSets = workoutSets
+
+      await Promise.all([
+        api.collection('program_steps').update(stepId, {
+          completions: programStepCompletionPayload(completions),
+        }),
+        api.collection('occurrences').update(occurrence.id, { workout_sets: workoutSets }),
+      ])
+    })
+    workoutSetSaveQueues.set(queueKey, save)
+    try {
+      await save
+    } finally {
+      if (workoutSetSaveQueues.get(queueKey) === save) {
+        workoutSetSaveQueues.delete(queueKey)
+      }
+    }
   }
 
   async function setProgramStepCompletion(
@@ -1200,7 +1315,16 @@ export const useTaskStore = defineStore('tasks', () => {
   }
 
   async function setTotalSealed(progress: TaskProgress) {
-    if (!['daily_total', 'duration'].includes(progress.task.type) || progress.programStep) return
+    const trackerCanSeal = Boolean(
+      progress.tracker && progress.tracker.source !== 'health_connect_steps',
+    )
+    if (
+      (
+        !['daily_total', 'duration'].includes(progress.task.type)
+        && !trackerCanSeal
+      )
+      || progress.programStep
+    ) return
     const sealed = !progress.sealed
     await updateOccurrenceOptimistically(progress, {
       sealed,
@@ -2133,6 +2257,7 @@ export const useTaskStore = defineStore('tasks', () => {
     makeProgress,
     entriesFor,
     toggleComplete,
+    saveProgramStepWorkoutSets,
     setProgramStepCompletion,
     markProgramStepIncomplete,
     completeAttributedTask,

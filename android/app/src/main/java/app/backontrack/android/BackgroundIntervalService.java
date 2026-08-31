@@ -42,6 +42,7 @@ public class BackgroundIntervalService extends Service {
     public static final String EXTRA_STEP_INDEX = "stepIndex";
     public static final String EXTRA_REMAINING_MS = "remainingMs";
     public static final String EXTRA_ELAPSED_MS = "elapsedMs";
+    public static final String EXTRA_STEP_ELAPSED_MS = "stepElapsedMs";
     public static final String EXTRA_SOUND_ENABLED = "soundEnabled";
     public static final String EXTRA_VIBRATION_ENABLED = "vibrationEnabled";
     public static final String EXTRA_FLASHCARD_REVIEW = "flashcardReview";
@@ -69,6 +70,8 @@ public class BackgroundIntervalService extends Service {
     private int stepIndex;
     private int lastCountdownSecond = -1;
     private long deadlineElapsedMs;
+    private long stopwatchBaseElapsedMs;
+    private long stopwatchStartedElapsedMs;
     private boolean soundEnabled;
     private boolean vibrationEnabled;
     private boolean running;
@@ -80,6 +83,8 @@ public class BackgroundIntervalService extends Service {
     private int reviewBackSpeechRepeatCount = 1;
     private String reviewCardSides = "both";
     private boolean reviewInvertFaces;
+    private String reviewFrontDisplay = "front";
+    private String reviewBackDisplay = "back";
     private String reviewFrontLanguage = "";
     private String reviewBackLanguage = "";
     private String lastReviewSpeechKey = "";
@@ -105,6 +110,11 @@ public class BackgroundIntervalService extends Service {
                 releaseWakeLock();
                 return;
             }
+            if (steps.get(stepIndex).stopwatch) {
+                releaseWakeLock();
+                handler.postDelayed(this, 1000L);
+                return;
+            }
             handler.postDelayed(this, TICK_MS);
         }
     };
@@ -112,6 +122,7 @@ public class BackgroundIntervalService extends Service {
     public static final class IntervalStep {
         final String name;
         final long durationMs;
+        final boolean stopwatch;
         final boolean requiresConfirmation;
         final boolean flashcardReviewEnabled;
         final String cueSound;
@@ -119,12 +130,14 @@ public class BackgroundIntervalService extends Service {
         IntervalStep(
             String name,
             long durationMs,
+            boolean stopwatch,
             boolean requiresConfirmation,
             boolean flashcardReviewEnabled,
             String cueSound
         ) {
             this.name = name;
             this.durationMs = durationMs;
+            this.stopwatch = stopwatch;
             this.requiresConfirmation = requiresConfirmation;
             this.flashcardReviewEnabled = flashcardReviewEnabled;
             this.cueSound = cueSound;
@@ -136,14 +149,27 @@ public class BackgroundIntervalService extends Service {
         final String back;
         final String ttsFront;
         final String ttsBack;
+        final String transliteration;
+        final String note;
         final String frontAudio;
         final String backAudio;
 
-        ReviewCard(String front, String back, String ttsFront, String ttsBack, String frontAudio, String backAudio) {
+        ReviewCard(
+            String front,
+            String back,
+            String ttsFront,
+            String ttsBack,
+            String transliteration,
+            String note,
+            String frontAudio,
+            String backAudio
+        ) {
             this.front = front;
             this.back = back;
             this.ttsFront = ttsFront;
             this.ttsBack = ttsBack;
+            this.transliteration = transliteration;
+            this.note = note;
             this.frontAudio = frontAudio;
             this.backAudio = backAudio;
         }
@@ -242,6 +268,7 @@ public class BackgroundIntervalService extends Service {
             steps.add(new IntervalStep(
                 encoded.optString("name", "Interval " + (index + 1)),
                 Math.max(1L, encoded.optLong("durationMs", 1L)),
+                encoded.optBoolean("stopwatch", false),
                 encoded.optBoolean("requiresConfirmation", false),
                 encoded.optBoolean("flashcardReviewEnabled", true),
                 encoded.optString("cueSound", "go")
@@ -258,7 +285,10 @@ public class BackgroundIntervalService extends Service {
         if (sessionName == null || sessionName.trim().isEmpty()) sessionName = "Interval";
         stepIndex = Math.max(0, Math.min(intent.getIntExtra(EXTRA_STEP_INDEX, 0), steps.size() - 1));
         long remainingMs = Math.max(1L, intent.getLongExtra(EXTRA_REMAINING_MS, steps.get(stepIndex).durationMs));
-        deadlineElapsedMs = SystemClock.elapsedRealtime() + remainingMs;
+        long configuredElapsedMs = SystemClock.elapsedRealtime();
+        deadlineElapsedMs = configuredElapsedMs + remainingMs;
+        stopwatchBaseElapsedMs = Math.max(0L, intent.getLongExtra(EXTRA_STEP_ELAPSED_MS, 0L));
+        stopwatchStartedElapsedMs = configuredElapsedMs;
         lastCountdownSecond = -1;
         soundEnabled = intent.getBooleanExtra(EXTRA_SOUND_ENABLED, true);
         vibrationEnabled = intent.getBooleanExtra(EXTRA_VIBRATION_ENABLED, true);
@@ -298,6 +328,8 @@ public class BackgroundIntervalService extends Service {
                 card.optString("back", ""),
                 card.optString("ttsFront", ""),
                 card.optString("ttsBack", ""),
+                card.optString("transliteration", ""),
+                card.optString("note", ""),
                 card.optString("frontAudio", ""),
                 card.optString("backAudio", "")
             ));
@@ -319,6 +351,8 @@ public class BackgroundIntervalService extends Service {
             : "both";
         reviewInvertFaces = "both".equals(reviewCardSides)
             && review.optBoolean("invertFaces", false);
+        reviewFrontDisplay = reviewFaceValue(review.optString("frontDisplay", "front"), "front");
+        reviewBackDisplay = reviewFaceValue(review.optString("backDisplay", "back"), "back");
         reviewFrontLanguage = review.optString("frontLanguage", "").trim();
         reviewBackLanguage = review.optString("backLanguage", "").trim();
         reviewSpeechOverAmplified = review.optBoolean("overAmplified", false);
@@ -330,6 +364,7 @@ public class BackgroundIntervalService extends Service {
         return !steps.isEmpty()
             && stepIndex >= 0
             && stepIndex < steps.size()
+            && !steps.get(stepIndex).stopwatch
             && steps.get(stepIndex).flashcardReviewEnabled;
     }
 
@@ -511,17 +546,38 @@ public class BackgroundIntervalService extends Service {
         stopSpeechPlayback();
         ReviewCard card = reviewCards.get(phase.cardIndex);
         lastReviewSpeechKey = phase.key;
-        pendingReviewSpeechText = "front".equals(phase.side)
-            ? (card.ttsFront.isEmpty() ? card.front : card.ttsFront)
-            : (card.ttsBack.isEmpty() ? card.back : card.ttsBack);
+        String faceValue = "front".equals(phase.side) ? reviewFrontDisplay : reviewBackDisplay;
+        pendingReviewSpeechText = faceText(card, faceValue);
         pendingReviewSpeechLanguage = "front".equals(phase.side)
             ? reviewFrontLanguage
             : reviewBackLanguage;
         pendingReviewSpeechRate = "back".equals(phase.side) ? reviewBackSpeechRate : 1.0f;
-        pendingReviewRecordingUrl = "front".equals(phase.side)
-            ? card.frontAudio
-            : card.backAudio;
+        pendingReviewRecordingUrl = faceRecording(card, faceValue);
         speakPendingReviewSide();
+    }
+
+    private static String reviewFaceValue(String value, String fallback) {
+        return "front".equals(value)
+            || "back".equals(value)
+            || "transliteration".equals(value)
+            || "note".equals(value)
+            || "image".equals(value)
+                ? value
+                : fallback;
+    }
+
+    private static String faceText(ReviewCard card, String value) {
+        if ("front".equals(value)) return card.ttsFront.isEmpty() ? card.front : card.ttsFront;
+        if ("back".equals(value)) return card.ttsBack.isEmpty() ? card.back : card.ttsBack;
+        if ("transliteration".equals(value)) return card.transliteration;
+        if ("note".equals(value)) return card.note;
+        return "";
+    }
+
+    private static String faceRecording(ReviewCard card, String value) {
+        if ("front".equals(value)) return card.frontAudio;
+        if ("back".equals(value)) return card.backAudio;
+        return "";
     }
 
     private void speakPendingReviewSide() {
@@ -600,7 +656,7 @@ public class BackgroundIntervalService extends Service {
     }
 
     private void advance(long now) {
-        if (steps.get(stepIndex).requiresConfirmation) return;
+        if (steps.get(stepIndex).requiresConfirmation || steps.get(stepIndex).stopwatch) return;
         while (running && now >= deadlineElapsedMs) {
             settleReviewClock(deadlineElapsedMs);
             stepIndex += 1;
@@ -613,6 +669,14 @@ public class BackgroundIntervalService extends Service {
             if (steps.get(stepIndex).requiresConfirmation) {
                 deadlineElapsedMs = now;
                 reviewConfiguredWindowElapsedMs = 0L;
+                return;
+            }
+            if (steps.get(stepIndex).stopwatch) {
+                deadlineElapsedMs = now;
+                stopwatchBaseElapsedMs = 0L;
+                stopwatchStartedElapsedMs = now;
+                reviewConfiguredWindowElapsedMs = 0L;
+                releaseWakeLock();
                 return;
             }
             deadlineElapsedMs += steps.get(stepIndex).durationMs;
@@ -648,6 +712,7 @@ public class BackgroundIntervalService extends Service {
             !soundEnabled
             || MainActivity.isAppVisible()
             || steps.get(stepIndex).requiresConfirmation
+            || steps.get(stepIndex).stopwatch
         ) return;
         long remainingMs = Math.max(0L, deadlineElapsedMs - now);
         int remainingSeconds = (int) Math.ceil(remainingMs / 1000d);
@@ -745,6 +810,18 @@ public class BackgroundIntervalService extends Service {
             text = "Interval session complete";
         } else if (steps.get(stepIndex).requiresConfirmation) {
             text = steps.get(stepIndex).name + " · Confirmation required";
+        } else if (steps.get(stepIndex).stopwatch) {
+            long totalSeconds = (stopwatchBaseElapsedMs + Math.max(
+                0L,
+                SystemClock.elapsedRealtime() - stopwatchStartedElapsedMs
+            )) / 1000L;
+            long hours = totalSeconds / 3600L;
+            long minutes = (totalSeconds % 3600L) / 60L;
+            long seconds = totalSeconds % 60L;
+            String duration = hours > 0L
+                ? String.format(Locale.getDefault(), "%02d:%02d:%02d", hours, minutes, seconds)
+                : String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds);
+            text = steps.get(stepIndex).name + " · " + duration;
         } else {
             long remainingMs = Math.max(0L, deadlineElapsedMs - SystemClock.elapsedRealtime());
             long totalSeconds = (long) Math.ceil(remainingMs / 1000d);

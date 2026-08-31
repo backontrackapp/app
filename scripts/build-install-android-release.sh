@@ -4,7 +4,8 @@ set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 apk_path="$repository_root/android/app/build/outputs/apk/release/app-release.apk"
-application_id="app.backontrack.android"
+source "$repository_root/scripts/native-build-identity.sh"
+application_id="$BACKONTRACK_ANDROID_APPLICATION_ID"
 
 usage() {
   cat <<'EOF'

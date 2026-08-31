@@ -11,6 +11,7 @@ const props = withDefaults(defineProps<{
   unit?: WeightUnit
   label?: string
   disabled?: boolean
+  lockedSetCount?: number
 }>(), {
   modelValue: () => [],
   label: 'Sets',
@@ -26,6 +27,7 @@ const auth = useAuthStore()
 const effectiveUnit = computed<WeightUnit>(() => props.unit || normalizeExerciseWeightUnit(
   auth.user?.settings?.exerciseWeightUnit,
 ))
+const canChangeSetCount = computed(() => props.lockedSetCount === undefined)
 const weightLabel = computed(() => `Weight (${effectiveUnit.value})`)
 const keypadDialog = ref(false)
 const keypadValue = ref('')
@@ -73,7 +75,7 @@ function openKeypad(index: number, field: keyof ExerciseSet) {
   const set = props.modelValue[index]
   if (!set || props.disabled) return
   keypadTarget.value = { index, field }
-  keypadValue.value = String(set[field])
+  keypadValue.value = ''
   keypadDialog.value = true
 }
 
@@ -87,13 +89,94 @@ function saveKeypadValue() {
 
 <template>
   <section class="exercise-set-editor" :aria-labelledby="labelId">
-    <div class="exercise-set-editor__header">
-      <div>
+    <v-alert
+      v-if="!modelValue.length"
+      class="exercise-set-editor__empty"
+      type="info"
+      variant="tonal"
+      density="comfortable"
+      :icon="false"
+    >
+      <div class="exercise-set-editor__header">
         <h3 :id="labelId">{{ label }}</h3>
-        <p>{{ modelValue.length ? `${modelValue.length} ${modelValue.length === 1 ? 'set' : 'sets'}` : 'Add a set to get started.' }}</p>
+        <p>
+          {{ canChangeSetCount
+            ? 'No reps or weight logged. Add a set to get started.'
+            : 'No reps or weight to log because this interval has no Train segments.' }}
+        </p>
       </div>
       <v-btn
-        class="exercise-set-editor__add"
+        v-if="canChangeSetCount"
+        class="exercise-set-editor__add mt-3"
+        block
+        variant="outlined"
+        prepend-icon="mdi-plus"
+        :disabled="disabled"
+        @click="addSet"
+      >
+        Add set
+      </v-btn>
+    </v-alert>
+
+    <template v-else>
+      <div class="exercise-set-editor__header">
+        <h3 :id="labelId">{{ label }}</h3>
+        <p>{{ `${modelValue.length} ${modelValue.length === 1 ? 'set' : 'sets'}` }}</p>
+      </div>
+      <div
+        class="exercise-set-editor__list mt-3"
+        :class="{ 'exercise-set-editor__list--locked': !canChangeSetCount }"
+        role="table"
+        aria-label="Exercise sets"
+      >
+        <div class="exercise-set-editor__table-header" role="row">
+          <span v-if="canChangeSetCount" aria-hidden="true" />
+          <span role="columnheader">Reps</span>
+          <span role="columnheader">{{ weightLabel }}</span>
+          <span aria-hidden="true" />
+        </div>
+        <div v-for="(set, index) in modelValue" :key="index" class="exercise-set-editor__set" role="row">
+          <strong class="exercise-set-editor__set-number" role="rowheader" :aria-label="`Set ${index + 1}`">{{ index + 1 }}</strong>
+          <div role="cell">
+            <v-btn
+              class="exercise-set-editor__value"
+              block
+              variant="tonal"
+              :disabled="disabled"
+              :aria-label="`Set ${index + 1}, ${set.repetitions} reps`"
+              @click="openKeypad(index, 'repetitions')"
+            >
+              {{ set.repetitions }}
+            </v-btn>
+          </div>
+          <div role="cell">
+            <v-btn
+              class="exercise-set-editor__value"
+              block
+              variant="tonal"
+              :disabled="disabled"
+              :aria-label="`Set ${index + 1}, ${set.weight} ${effectiveUnit}`"
+              @click="openKeypad(index, 'weight')"
+            >
+              {{ set.weight }}
+            </v-btn>
+          </div>
+          <div v-if="canChangeSetCount" class="exercise-set-editor__actions" role="cell">
+            <v-btn
+              class="exercise-set-editor__remove"
+              icon="mdi-close"
+              variant="text"
+              :disabled="disabled"
+              :aria-label="`Remove set ${index + 1}`"
+              @click="removeSet(index)"
+            />
+          </div>
+        </div>
+      </div>
+      <v-btn
+        v-if="canChangeSetCount"
+        class="exercise-set-editor__add mt-3"
+        block
         color="secondary"
         variant="tonal"
         prepend-icon="mdi-plus"
@@ -102,53 +185,7 @@ function saveKeypadValue() {
       >
         Add set
       </v-btn>
-    </div>
-
-    <div v-if="modelValue.length" class="exercise-set-editor__list mt-3">
-      <div
-        v-for="(set, index) in modelValue"
-        :key="index"
-        class="exercise-set-editor__set"
-      >
-        <div class="exercise-set-editor__set-header">
-          <strong>Set {{ index + 1 }}</strong>
-          <v-btn
-            class="exercise-set-editor__remove"
-            icon="mdi-close"
-            variant="text"
-            :disabled="disabled"
-            :aria-label="`Remove set ${index + 1}`"
-            @click="removeSet(index)"
-          />
-        </div>
-        <v-row no-gutters>
-          <v-col cols="6" class="pr-2">
-            <v-btn
-              class="exercise-set-editor__value"
-              block
-              variant="tonal"
-              :disabled="disabled"
-              @click="openKeypad(index, 'repetitions')"
-            >
-              <span>Reps</span>
-              <strong>{{ set.repetitions }}</strong>
-            </v-btn>
-          </v-col>
-          <v-col cols="6" class="pl-2">
-            <v-btn
-              class="exercise-set-editor__value"
-              block
-              variant="tonal"
-              :disabled="disabled"
-              @click="openKeypad(index, 'weight')"
-            >
-              <span>{{ weightLabel }}</span>
-              <strong>{{ set.weight }} {{ effectiveUnit }}</strong>
-            </v-btn>
-          </v-col>
-        </v-row>
-      </div>
-    </div>
+    </template>
 
     <AppDialog
       v-model="keypadDialog"
@@ -172,18 +209,21 @@ function saveKeypadValue() {
 
 <style scoped>
 .exercise-set-editor { min-width: 0; }
-.exercise-set-editor__header { display: flex; min-height: 2.75rem; align-items: center; justify-content: space-between; gap: 1rem; }
+.exercise-set-editor__header { min-height: 2.75rem; }
 .exercise-set-editor__header h3 { font-size: .875rem; font-weight: 800; }
 .exercise-set-editor__header p { margin-top: .125rem; color: rgb(var(--v-theme-on-surface) / .58); font-size: .75rem; }
-.exercise-set-editor__add { min-height: 2.75rem; flex: 0 0 auto; }
-.exercise-set-editor__list { display: grid; gap: .75rem; }
-.exercise-set-editor__set { padding: .75rem; border: .0625rem solid rgb(var(--v-theme-on-surface) / .1); border-radius: 1rem; background: rgb(var(--v-theme-surface-variant) / .28); }
-.exercise-set-editor__set-header { display: flex; min-height: 2.75rem; align-items: center; justify-content: space-between; gap: .75rem; }
-.exercise-set-editor__set-header strong { font-size: .75rem; font-weight: 800; }
+.exercise-set-editor__add { min-height: 2.75rem; }
+.exercise-set-editor__list { display: grid; gap: .5rem; }
+.exercise-set-editor__table-header,
+.exercise-set-editor__set { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr) minmax(0, 1fr) 2.75rem; gap: .5rem; }
+.exercise-set-editor__list--locked .exercise-set-editor__table-header,
+.exercise-set-editor__list--locked .exercise-set-editor__set { grid-template-columns: 1.5rem minmax(0, 1fr) minmax(0, 1fr); }
+.exercise-set-editor__table-header { padding-inline: .25rem; color: rgb(var(--v-theme-on-surface) / .58); font-size: .6875rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.exercise-set-editor__set { min-height: 3.25rem; align-items: stretch; padding: .25rem; border: .0625rem solid rgb(var(--v-theme-on-surface) / .1); border-radius: .75rem; background: rgb(var(--v-theme-surface-variant) / .28); }
+.exercise-set-editor__set-number { align-self: center; color: rgb(var(--v-theme-on-surface) / .6); font-size: .75rem; text-align: center; }
+.exercise-set-editor__actions { display: flex; justify-content: center; }
 .exercise-set-editor__remove { min-width: 2.75rem; min-height: 2.75rem; }
-.exercise-set-editor__value { min-height: 4rem; align-items: stretch; flex-direction: column; gap: .125rem; }
-.exercise-set-editor__value span { color: rgb(var(--v-theme-on-surface) / .6); font-size: .6875rem; }
-.exercise-set-editor__value strong { font-size: 1.125rem; }
+.exercise-set-editor__value { width: 100%; min-width: 0; height: 100%; min-height: 2.75rem; font-size: 1rem; }
 .exercise-set-editor__keypad-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
 .exercise-set-editor__keypad-actions :deep(.v-btn) { min-height: 3.25rem; }
 </style>

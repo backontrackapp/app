@@ -2,6 +2,8 @@
 
 The tracker editor does not expose the former optional **What are you tracking?** description field. Existing stored descriptions remain intact when another tracker setting is edited.
 
+Number and duration trackers can define an optional target, goal direction, and per-day or weekly tracking window. Attaching one target tracker to a scheduled Tracking task keeps the familiar quantitative task card, Quick log, amount logger, duration timer, lock action, reminders, and schedule while the tracker remains the single source for its definition and values. A number tracker can also use **Health Connect steps** as its source; its synced steps and any manually added value are stored as tracker entries.
+
 Saved trackers support an emoji icon selected from the searchable virtual list above the color picker. The chosen icon is preserved through offline saves and appears on tracker cards, logs, task attachments, and journal contexts; tracker cards fall back to their category's default icon when no custom icon is selected, and existing Material icons remain supported.
 
 The tracker editor uses one archive/restore action in place of direct deletion. For an active or paused tracker, the action asks whether to archive it or delete it permanently. Archiving removes the tracker from logging, charts, and new attachment choices while preserving its definition, active or paused state, and logs. Archived trackers appear in the collapsible Archive section and can be opened to restore or permanently delete. Permanent deletion removes the tracker and all of its logs.

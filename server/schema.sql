@@ -92,6 +92,7 @@ CREATE TABLE flashcard_review_sets (
     front_seconds INTEGER NOT NULL DEFAULT 5,
     back_seconds INTEGER NOT NULL DEFAULT 5,
     back_speech_repeat_count INTEGER NOT NULL DEFAULT 1,
+    front_display TEXT NOT NULL DEFAULT 'front',
     back_display TEXT NOT NULL DEFAULT 'back',
     speech_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     back_speech_rate REAL NOT NULL DEFAULT 1.0,
@@ -142,6 +143,7 @@ CREATE TABLE flashcard_review_set_preferences (
     front_seconds INTEGER NOT NULL DEFAULT 5,
     back_seconds INTEGER NOT NULL DEFAULT 5,
     back_speech_repeat_count INTEGER NOT NULL DEFAULT 1,
+    front_display TEXT NOT NULL DEFAULT 'front',
     back_display TEXT NOT NULL DEFAULT 'back',
     speech_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     back_speech_rate REAL NOT NULL DEFAULT 1.0,
@@ -363,6 +365,7 @@ CREATE TABLE interval_sessions (
     task_date TEXT NOT NULL DEFAULT '',
     note TEXT NOT NULL DEFAULT '',
     flashcard_snapshot JSON NOT NULL DEFAULT '{}',
+    presentation_snapshot JSON NOT NULL DEFAULT '{}',
     client_id TEXT NOT NULL DEFAULT ''
 );
 
@@ -401,6 +404,7 @@ CREATE TABLE flashcard_review_sessions (
     front_seconds_snapshot INTEGER NOT NULL DEFAULT 5,
     back_seconds_snapshot INTEGER NOT NULL DEFAULT 5,
     back_speech_repeat_count_snapshot INTEGER NOT NULL DEFAULT 1,
+    front_display_snapshot TEXT NOT NULL DEFAULT 'front',
     back_display_snapshot TEXT NOT NULL DEFAULT 'back',
     speech_enabled_snapshot BOOLEAN NOT NULL DEFAULT FALSE,
     back_speech_rate_snapshot REAL NOT NULL DEFAULT 1.0,
@@ -421,6 +425,7 @@ CREATE TABLE flashcard_review_sessions (
     program_step TEXT NOT NULL DEFAULT '',
     program_step_completion TEXT NOT NULL DEFAULT '',
     task_date TEXT NOT NULL DEFAULT '',
+    presentation_snapshot JSON NOT NULL DEFAULT '{}',
     client_id TEXT NOT NULL DEFAULT ''
 );
 
@@ -463,6 +468,10 @@ CREATE TABLE tracking_trackers (
     kind TEXT NOT NULL DEFAULT 'yes_no',
     category TEXT NOT NULL DEFAULT 'other',
     unit TEXT NOT NULL DEFAULT '',
+    target_value NUMERIC NOT NULL DEFAULT 0,
+    target_operator TEXT NOT NULL DEFAULT 'gte',
+    tracking_window TEXT NOT NULL DEFAULT 'occurrence',
+    source TEXT NOT NULL DEFAULT 'manual',
     scale_min NUMERIC NOT NULL DEFAULT 0,
     scale_max NUMERIC NOT NULL DEFAULT 0,
     favorable_direction TEXT NOT NULL DEFAULT 'neutral',
@@ -487,7 +496,9 @@ CREATE TABLE tracking_entries (
     local_date TEXT NOT NULL DEFAULT '',
     timezone_offset INTEGER NOT NULL DEFAULT 0,
     value NUMERIC NOT NULL DEFAULT 0,
-    note TEXT NOT NULL DEFAULT ''
+    note TEXT NOT NULL DEFAULT '',
+    source_type TEXT NOT NULL DEFAULT '',
+    source_session TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX idx_tracking_entries_owner_date ON tracking_entries (owner, local_date);

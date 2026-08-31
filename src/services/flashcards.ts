@@ -6,6 +6,7 @@ import type {
   FlashcardReviewSession,
   FlashcardReviewSet,
   FlashcardReviewCardSides,
+  FlashcardReviewFaceValue,
   FlashcardReviewEjectBehavior,
   FlashcardReviewSettings,
   FlashcardReviewSide,
@@ -29,6 +30,8 @@ export const MIN_FLASHCARD_BACK_SPEECH_RATE = 0.25
 export const MAX_FLASHCARD_BACK_SPEECH_RATE = 1
 export const DEFAULT_FLASHCARD_BACK_SPEECH_RATE = 1
 export const DEFAULT_FLASHCARD_REVIEW_CARD_SIDES: FlashcardReviewCardSides = 'both'
+export const DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY: FlashcardReviewFaceValue = 'front'
+export const DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY: FlashcardReviewFaceValue = 'back'
 export const MIN_FLASHCARD_EJECT_EXCLUDE_AFTER = 1
 export const MAX_FLASHCARD_EJECT_EXCLUDE_AFTER = 20
 export const DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER = 3
@@ -91,6 +94,68 @@ export const FLASHCARD_REVIEW_CARD_SIDE_OPTIONS: Array<{
     hint: 'Show only the back of each card.',
   },
 ]
+
+export const FLASHCARD_REVIEW_FACE_VALUE_OPTIONS: Array<{
+  title: string
+  value: FlashcardReviewFaceValue
+  icon: string
+}> = [
+  { title: 'Front', value: 'front', icon: 'mdi-card-outline' },
+  { title: 'Back', value: 'back', icon: 'mdi-card-text-outline' },
+  { title: 'Transliteration', value: 'transliteration', icon: 'mdi-format-letter-matches' },
+  { title: 'Note', value: 'note', icon: 'mdi-note-text-outline' },
+  { title: 'Image', value: 'image', icon: 'mdi-image-outline' },
+]
+
+export function normalizeFlashcardReviewFaceValue(
+  value: unknown,
+  fallback: FlashcardReviewFaceValue,
+): FlashcardReviewFaceValue {
+  return FLASHCARD_REVIEW_FACE_VALUE_OPTIONS.some(option => option.value === value)
+    ? value as FlashcardReviewFaceValue
+    : fallback
+}
+
+export function flashcardReviewFaceValue(
+  settings: Pick<FlashcardReviewSettings, 'frontDisplay' | 'backDisplay'>,
+  side: FlashcardReviewSide,
+) {
+  return side === 'front'
+    ? normalizeFlashcardReviewFaceValue(settings.frontDisplay, DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY)
+    : normalizeFlashcardReviewFaceValue(settings.backDisplay, DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY)
+}
+
+export function flashcardReviewFaceTitle(value: FlashcardReviewFaceValue) {
+  return FLASHCARD_REVIEW_FACE_VALUE_OPTIONS.find(option => option.value === value)?.title || value
+}
+
+export function flashcardReviewFaceCanSpeak(value: FlashcardReviewFaceValue) {
+  return value !== 'image'
+}
+
+export function flashcardReviewFaceText(
+  card: Pick<FlashcardReviewQueueCard, 'front' | 'back' | 'transliteration' | 'note'>,
+  value: FlashcardReviewFaceValue,
+) {
+  if (value === 'front') return card.front
+  if (value === 'back') return card.back
+  if (value === 'transliteration') return card.transliteration || ''
+  if (value === 'note') return card.note || ''
+  return ''
+}
+
+export function flashcardReviewFaceSpeech(
+  card: Pick<FlashcardReviewQueueCard, 'front' | 'back' | 'ttsFront' | 'ttsBack' | 'transliteration' | 'note' | 'frontAudio' | 'backAudio'>,
+  value: FlashcardReviewFaceValue,
+) {
+  if (value === 'front') {
+    return { text: card.ttsFront?.trim() || card.front, audio: card.frontAudio || '' }
+  }
+  if (value === 'back') {
+    return { text: card.ttsBack?.trim() || card.back, audio: card.backAudio || '' }
+  }
+  return { text: flashcardReviewFaceText(card, value), audio: '' }
+}
 
 export const FLASHCARD_REVIEW_SESSION_MENU_ITEMS = [
   { action: 'add', title: 'Add card', icon: 'mdi-card-plus-outline', permission: 'add' },
@@ -232,6 +297,10 @@ export function flashcardReviewSettingsSignature(settings: FlashcardReviewSettin
     mode: settings.mode,
     cardSides: settings.cardSides,
     invertFaces: settings.cardSides === 'both' && settings.invertFaces === true,
+    frontDisplay: normalizeFlashcardReviewFaceValue(
+      settings.frontDisplay,
+      DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
+    ),
     indefinite: settings.indefinite,
     timeLimitSeconds: settings.mode === 'passive' ? settings.timeLimitSeconds || 0 : 0,
     maxCards: settings.maxCards,
@@ -240,7 +309,10 @@ export function flashcardReviewSettingsSignature(settings: FlashcardReviewSettin
     frontSeconds: settings.frontSeconds,
     backSeconds: settings.backSeconds,
     backSpeechRepeatCount: settings.backSpeechRepeatCount,
-    backDisplay: settings.backDisplay || 'back',
+    backDisplay: normalizeFlashcardReviewFaceValue(
+      settings.backDisplay,
+      DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
+    ),
     speechEnabled: settings.speechEnabled,
     backSpeechRate: normalizeFlashcardBackSpeechRate(settings.backSpeechRate),
     frontLanguage: settings.frontLanguage,
@@ -271,8 +343,12 @@ export function flashcardReviewSettingsAreValid(
     && (settings.timeLimitSeconds || 0) <= MAX_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS
     && (settings.timeLimitSeconds || 0) % 60 === 0
     && (!settings.speechEnabled || Boolean(
-      (settings.cardSides === 'back' || settings.frontLanguage)
-      && (settings.cardSides === 'front' || settings.backLanguage),
+      (settings.cardSides === 'back'
+        || !flashcardReviewFaceCanSpeak(flashcardReviewFaceValue(settings, 'front'))
+        || settings.frontLanguage)
+      && (settings.cardSides === 'front'
+        || !flashcardReviewFaceCanSpeak(flashcardReviewFaceValue(settings, 'back'))
+        || settings.backLanguage),
     ))
 }
 
@@ -664,7 +740,14 @@ export function createFlashcardReviewPreviewSession(
     backSpeechRepeatCount: reviewSet.mode === 'passive' && reviewSet.speechEnabled
       ? normalizeFlashcardBackSpeechRepeatCount(reviewSet.backSpeechRepeatCount)
       : DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
-    backDisplay: reviewSet.backDisplay || 'back',
+    frontDisplay: normalizeFlashcardReviewFaceValue(
+      reviewSet.frontDisplay,
+      DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
+    ),
+    backDisplay: normalizeFlashcardReviewFaceValue(
+      reviewSet.backDisplay,
+      DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
+    ),
     speechEnabled: reviewSet.speechEnabled,
     backSpeechRate: normalizeFlashcardBackSpeechRate(reviewSet.backSpeechRate),
     frontLanguage: reviewSet.frontLanguage,
@@ -709,7 +792,14 @@ export function createIntervalFlashcardReviewSnapshot(
     backSpeechRepeatCount: reviewSet.mode === 'passive' && reviewSet.speechEnabled
       ? normalizeFlashcardBackSpeechRepeatCount(reviewSet.backSpeechRepeatCount)
       : DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
-    backDisplay: reviewSet.backDisplay || 'back',
+    frontDisplay: normalizeFlashcardReviewFaceValue(
+      reviewSet.frontDisplay,
+      DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
+    ),
+    backDisplay: normalizeFlashcardReviewFaceValue(
+      reviewSet.backDisplay,
+      DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
+    ),
     speechEnabled: reviewSet.speechEnabled,
     backSpeechRate: normalizeFlashcardBackSpeechRate(reviewSet.backSpeechRate),
     frontLanguage: reviewSet.frontLanguage,

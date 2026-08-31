@@ -5,10 +5,12 @@ import { useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import IntervalPlanList from '@/components/IntervalPlanList.vue'
+import RecentSessionIdentity from '@/components/RecentSessionIdentity.vue'
 import StickyActionBanner from '@/components/StickyActionBanner.vue'
 import WeekNavigator from '@/components/WeekNavigator.vue'
 import { groupIntervalSessionsByDate, intervalRunProgressPercent } from '@/services/intervalHistory'
 import { formatIntervalDuration } from '@/services/intervals'
+import { exercisePresentationById } from '@/services/exercisePresentations'
 import { RECENT_SESSION_ACTIONS, type RecentSessionAction } from '@/services/recentSessionActions'
 import { useIntervalStore } from '@/stores/intervals'
 import type { IntervalSession } from '@/types/domain'
@@ -23,6 +25,9 @@ const deleteRecentRunDialog = ref(false)
 const recentRunWorking = ref(false)
 const intervalColors = computed(() =>
   new Map(store.templates.map((template) => [template.id, template.color])),
+)
+const intervalIcons = computed(() =>
+  new Map(store.templates.map((template) => [template.id, template.icon])),
 )
 const recentSessionsForWeek = computed(() =>
   store.sessions.filter((session) =>
@@ -47,11 +52,21 @@ function toggleRecentRunDay(dayKey: string) {
 }
 
 function recentRunColor(session: IntervalSession) {
+  if (session.presentation.color) return session.presentation.color
   if (session.status !== 'completed') return 'warning'
   if (session.source === 'quick') return 'secondary'
   return session.template
     ? intervalColors.value.get(session.template) || 'success'
     : 'success'
+}
+
+function recentRunExercise(session: IntervalSession) {
+  return exercisePresentationById(session.presentation.exercise)?.name
+}
+
+function recentRunIcon(session: IntervalSession) {
+  if (session.source === 'quick') return 'mdi-flash'
+  return session.template ? intervalIcons.value.get(session.template) || '' : ''
 }
 
 function openRecentRunActions(session: IntervalSession) {
@@ -173,14 +188,15 @@ onBeforeUnmount(() => {
                 @click="openRecentRunActions(session)"
               >
                 <template #prepend>
-                  <v-icon
-                    :icon="session.status === 'completed' ? 'mdi-check-circle-outline' : 'mdi-stop-circle-outline'"
-                    :color="recentRunColor(session)"
+                  <RecentSessionIdentity
+                    :presentation="session.presentation"
+                    :fallback-icon="recentRunIcon(session) || (session.status === 'completed' ? 'mdi-check-circle-outline' : 'mdi-stop-circle-outline')"
+                    :fallback-color="recentRunColor(session)"
                   />
                 </template>
                 <span class="text-body-1">{{ session.name }}</span>
                 <span class="recent-run-meta">
-                  {{ format(new Date(session.startedAt), 'h:mm a') }} · {{ session.source === 'quick' ? 'Quick' : 'Template' }}
+                  {{ format(new Date(session.startedAt), 'h:mm a') }} · {{ session.source === 'quick' ? 'Quick' : 'Template' }}<template v-if="recentRunExercise(session)"> · {{ recentRunExercise(session) }}</template>
                 </span>
                 <div class="recent-run-progress">
                   <v-progress-linear

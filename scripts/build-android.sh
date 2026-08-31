@@ -8,6 +8,12 @@ signing_properties="private/android-signing.properties"
 release_keystore="private/backontrack-release.jks"
 termux_aapt2="private/android-sdk/qemu/aapt2"
 
+source "$(dirname "${BASH_SOURCE[0]}")/native-build-identity.sh"
+gradle_properties=(
+  "-PbackontrackApplicationId=$BACKONTRACK_ANDROID_APPLICATION_ID"
+  "-PbackontrackAppName=$BACKONTRACK_APP_NAME"
+)
+
 case "$web_build_mode" in
   dev|prod)
     ;;
@@ -69,13 +75,16 @@ if [[ "$(uname -o 2>/dev/null || true)" == Android && -x "$termux_aapt2" ]]; the
   fi
 
   repository_root="$(pwd)"
+  printf -v gradle_command '%q ' \
+    ./gradlew "$gradle_task" "${gradle_properties[@]}" --no-daemon \
+    "-Pandroid.aapt2FromMavenOverride=$repository_root/$termux_aapt2"
   proot-distro login debian -- bash -lc \
-    "cd '$repository_root/android' && ./gradlew '$gradle_task' --no-daemon -Pandroid.aapt2FromMavenOverride='$repository_root/$termux_aapt2'"
+    "cd $(printf '%q' "$repository_root/android") && $gradle_command"
 else
   (
     cd android
-    ./gradlew "$gradle_task"
+    ./gradlew "$gradle_task" "${gradle_properties[@]}"
   )
 fi
 
-echo "Android build created: $artifact_path"
+echo "Android build created: $artifact_path ($BACKONTRACK_APP_NAME; $BACKONTRACK_ANDROID_APPLICATION_ID)"

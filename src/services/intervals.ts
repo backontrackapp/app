@@ -62,8 +62,12 @@ function intervalRootNodes(definition: IntervalDefinition): IntervalNode[] {
 }
 
 export function intervalStepDurationSeconds(step: IntervalStepNode) {
-  if (step.kind === 'confirmation') return 0
+  if (step.kind === 'confirmation' || intervalStepUsesStopwatch(step)) return 0
   return Number.isFinite(step.durationSeconds) ? Math.max(0, step.durationSeconds) : 0
+}
+
+export function intervalStepUsesStopwatch(step: IntervalStepNode) {
+  return step.timing === 'stopwatch'
 }
 
 export function intervalStepPlaysFlashcardReviewByDefault(kind: IntervalStepNode['kind']) {
@@ -71,6 +75,7 @@ export function intervalStepPlaysFlashcardReviewByDefault(kind: IntervalStepNode
 }
 
 export function intervalStepPlaysFlashcardReview(step: IntervalStepNode) {
+  if (intervalStepUsesStopwatch(step)) return false
   if (typeof step.flashcardReviewEnabled === 'boolean') return step.flashcardReviewEnabled
   return intervalStepPlaysFlashcardReviewByDefault(step.kind)
 }
@@ -203,7 +208,14 @@ export function createIntervalStep(
   kind: IntervalStepNode['kind'] = '',
   durationSeconds = 30,
 ): IntervalStepNode {
-  return { id: createIntervalId(), type: 'step', name, kind, durationSeconds }
+  return {
+    id: createIntervalId(),
+    type: 'step',
+    name,
+    kind,
+    durationSeconds,
+    timing: 'timer',
+  }
 }
 
 export function createIntervalGroup(name = '', repeatCount = 1): IntervalGroupNode {
@@ -348,6 +360,28 @@ export function intervalNodeStepCount(node: IntervalNode): number {
 export function intervalStepCount(definition: IntervalDefinition): number {
   return intervalRootNodes(definition)
     .reduce((sum, node) => safeAdd(sum, intervalNodeStepCount(node)), 0)
+}
+
+export function intervalNodeKindCount(
+  node: IntervalNode,
+  kind: IntervalStepNode['kind'],
+): number {
+  if (node.type === 'step') return node.kind === kind ? 1 : 0
+  const childCount = node.children.reduce(
+    (sum, child) => safeAdd(sum, intervalNodeKindCount(child, kind)),
+    0,
+  )
+  const total = safeMultiply(childCount, Math.max(0, Math.floor(node.repeatCount)))
+  const skippedStep = skippedLastRoundStep(node)
+  return skippedStep?.kind === kind ? Math.max(0, total - 1) : total
+}
+
+export function intervalStepKindCount(
+  definition: IntervalDefinition,
+  kind: IntervalStepNode['kind'],
+): number {
+  return intervalRootNodes(definition)
+    .reduce((sum, node) => safeAdd(sum, intervalNodeKindCount(node, kind)), 0)
 }
 
 export function intervalNodeDuration(node: IntervalNode): number {
@@ -703,6 +737,7 @@ export function validateIntervalDefinition(definition: IntervalDefinition): stri
         if (!node.kind) errors.push(`${path} needs a type.`)
         if (
           node.kind !== 'confirmation'
+          && !intervalStepUsesStopwatch(node)
           && (!Number.isFinite(node.durationSeconds) || node.durationSeconds <= 0)
         ) {
           errors.push(`${path} needs a positive duration.`)
@@ -728,6 +763,7 @@ export function createRuntimeState(definition: IntervalDefinition, now = new Dat
   return {
     stepIndex: 0,
     remainingMs: first ? intervalStepDurationSeconds(first.step) * 1000 : 0,
+    stepElapsedMs: 0,
     stepStartedAt: first && !waitsForConfirmation ? now.toISOString() : undefined,
     accumulatedMs: 0,
     flashcardReviewAccumulatedMs: 0,
@@ -766,7 +802,9 @@ export function rebaseIntervalRuntimeForDefinition(
   const previousDurationMs = previousStep
     ? intervalStepDurationSeconds(previousStep.step) * 1000
     : 0
-  const elapsedInStepMs = Math.max(0, previousDurationMs - runtime.remainingMs)
+  const elapsedInStepMs = previousStep && intervalStepUsesStopwatch(previousStep.step)
+    ? Math.max(0, runtime.stepElapsedMs || 0)
+    : Math.max(0, previousDurationMs - runtime.remainingMs)
   const nextDurationMs = nextStep ? intervalStepDurationSeconds(nextStep.step) * 1000 : 0
   const timestamp = now.toISOString()
 
@@ -774,6 +812,9 @@ export function rebaseIntervalRuntimeForDefinition(
     ...runtime,
     stepIndex: nextStepIndex,
     remainingMs: Math.max(0, nextDurationMs - elapsedInStepMs),
+    stepElapsedMs: nextStep && intervalStepUsesStopwatch(nextStep.step)
+      ? elapsedInStepMs
+      : 0,
     stepStartedAt: runtime.stepStartedAt && nextStep?.step.kind !== 'confirmation'
       ? timestamp
       : undefined,
@@ -810,6 +851,21 @@ export function reconcileIntervalRuntime(
   const reviewAccumulatedMs = Number.isFinite(runtime.flashcardReviewAccumulatedMs)
     ? Math.max(0, runtime.flashcardReviewAccumulatedMs!)
     : startingReviewElapsedMs
+  if (current && intervalStepUsesStopwatch(current.step)) {
+    return {
+      runtime: {
+        ...runtime,
+        remainingMs: 0,
+        stepElapsedMs: Math.max(0, runtime.stepElapsedMs || 0) + activeElapsed,
+        stepStartedAt: now.toISOString(),
+        accumulatedMs: runtime.accumulatedMs + activeElapsed,
+        flashcardReviewAccumulatedMs: reviewAccumulatedMs,
+        updatedAt: now.toISOString(),
+      },
+      completed: false,
+      transitions: 0,
+    }
+  }
   let remainingMs = runtime.remainingMs
   let stepIndex = runtime.stepIndex
   let transitions = 0
@@ -825,6 +881,7 @@ export function reconcileIntervalRuntime(
         runtime: {
           stepIndex,
           remainingMs: 0,
+          stepElapsedMs: 0,
           accumulatedMs: runtime.accumulatedMs + (activeElapsed - elapsedMs),
           flashcardReviewAccumulatedMs: safeAdd(
             reviewAccumulatedMs,
@@ -842,8 +899,28 @@ export function reconcileIntervalRuntime(
         runtime: {
           stepIndex,
           remainingMs: 0,
+          stepElapsedMs: 0,
           stepStartedAt: undefined,
           accumulatedMs: runtime.accumulatedMs + (activeElapsed - elapsedMs),
+          flashcardReviewAccumulatedMs: safeAdd(
+            reviewAccumulatedMs,
+            Math.max(0, endingReviewElapsedMs - startingReviewElapsedMs),
+          ),
+          updatedAt: now.toISOString(),
+        },
+        completed: false,
+        transitions,
+      }
+    }
+    if (intervalStepUsesStopwatch(next.step)) {
+      const endingReviewElapsedMs = intervalFlashcardReviewElapsedMs(definition, stepIndex, 0)
+      return {
+        runtime: {
+          stepIndex,
+          remainingMs: 0,
+          stepElapsedMs: elapsedMs,
+          stepStartedAt: now.toISOString(),
+          accumulatedMs: runtime.accumulatedMs + activeElapsed,
           flashcardReviewAccumulatedMs: safeAdd(
             reviewAccumulatedMs,
             Math.max(0, endingReviewElapsedMs - startingReviewElapsedMs),
@@ -861,6 +938,7 @@ export function reconcileIntervalRuntime(
     runtime: {
       stepIndex,
       remainingMs: Math.max(0, remainingMs - elapsedMs),
+      stepElapsedMs: 0,
       stepStartedAt: now.toISOString(),
       accumulatedMs: runtime.accumulatedMs + activeElapsed,
       flashcardReviewAccumulatedMs: safeAdd(

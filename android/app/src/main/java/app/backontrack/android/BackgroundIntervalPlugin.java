@@ -28,6 +28,7 @@ public class BackgroundIntervalPlugin extends Plugin {
         Integer stepIndex = call.getInt("stepIndex", 0);
         Double remainingMs = call.getDouble("remainingMs", 1d);
         Double elapsedMs = call.getDouble("elapsedMs", 0d);
+        Double stepElapsedMs = call.getDouble("stepElapsedMs", 0d);
         Boolean soundEnabled = call.getBoolean("soundEnabled", true);
         Boolean vibrationEnabled = call.getBoolean("vibrationEnabled", true);
         JSObject flashcardReview = call.getObject("flashcardReview");
@@ -56,6 +57,7 @@ public class BackgroundIntervalPlugin extends Plugin {
         intent.putExtra(BackgroundIntervalService.EXTRA_STEP_INDEX, stepIndex == null ? 0 : stepIndex);
         intent.putExtra(BackgroundIntervalService.EXTRA_REMAINING_MS, remainingMs == null ? 1L : Math.max(1L, remainingMs.longValue()));
         intent.putExtra(BackgroundIntervalService.EXTRA_ELAPSED_MS, elapsedMs == null ? 0L : Math.max(0L, elapsedMs.longValue()));
+        intent.putExtra(BackgroundIntervalService.EXTRA_STEP_ELAPSED_MS, stepElapsedMs == null ? 0L : Math.max(0L, stepElapsedMs.longValue()));
         intent.putExtra(BackgroundIntervalService.EXTRA_SOUND_ENABLED, soundEnabled == null || soundEnabled);
         intent.putExtra(BackgroundIntervalService.EXTRA_VIBRATION_ENABLED, vibrationEnabled == null || vibrationEnabled);
         intent.putExtra(
