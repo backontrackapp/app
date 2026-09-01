@@ -2,7 +2,7 @@
 import { Capacitor } from '@capacitor/core'
 import { App } from '@capacitor/app'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { addDays, format, isAfter, isBefore, parseISO, startOfDay, startOfWeek, subDays } from 'date-fns'
+import { addDays, format, isAfter, isBefore, isToday, parseISO, startOfDay, startOfWeek, subDays } from 'date-fns'
 import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
