@@ -8,6 +8,8 @@ For manual event, number, rating, and duration trackers, the optional unit or sc
 
 Every numeric tracker setting uses the shared tap-first number-pad field: rating scale bounds and optional task targets are shown as value buttons with a compact title above the value. Opening a field shows its current value as a muted placeholder; the value changes only after new keypad input is confirmed.
 
+Number and duration logs use that same shared number-pad button, so entering a logged value does not open the device keyboard.
+
 Saved trackers support an emoji icon selected from the searchable virtual list above the color picker. The chosen icon is preserved through offline saves and appears on tracker cards, logs, task attachments, and journal contexts; tracker cards use the standard tracker icon when no custom icon is selected, and existing Material icons remain supported.
 
 The tracker editor uses one archive/restore action in place of direct deletion. For an active or paused tracker, the action asks whether to archive it or delete it permanently. Archiving removes the tracker from logging, charts, and new attachment choices while preserving its definition, active or paused state, and logs. Archived trackers appear in the collapsible Archive section and can be opened to restore or permanently delete. Permanent deletion removes the tracker and all of its logs.

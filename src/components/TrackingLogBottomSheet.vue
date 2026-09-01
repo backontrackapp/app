@@ -4,6 +4,7 @@ import { format, isToday, isValid, parseISO } from 'date-fns'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import DateTimePickerField from '@/components/DateTimePickerField.vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
+import NumberPadField from '@/components/NumberPadField.vue'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useTrackingStore } from '@/stores/tracking'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
@@ -30,6 +31,7 @@ const occurredLocal = ref('')
 const note = ref('')
 const saving = ref(false)
 const error = ref('')
+const unrestrictedMinimum = Number.NEGATIVE_INFINITY
 const open = computed({
   get: () => props.modelValue,
   set: value => emit('update:modelValue', value),
@@ -132,24 +134,17 @@ async function remove() {
           :step="1"
           :aria-label="`${tracker.name} rating`"
         />
-        <v-number-input
+        <NumberPadField
           v-else-if="tracker.kind === 'number'"
           v-model="value"
-          :label="tracker.unit ? `Value (${tracker.unit})` : 'Value'"
-          :precision="null"
-          autocomplete="off"
-          variant="outlined"
-          hide-details
+          :title="tracker.unit ? `Value (${tracker.unit})` : 'Value'"
+          :min="unrestrictedMinimum"
         />
-        <v-number-input
+        <NumberPadField
           v-else-if="tracker.kind === 'duration'"
           v-model="value"
-          label="Minutes"
+          title="Minutes"
           :min="0"
-          :precision="null"
-          autocomplete="off"
-          variant="outlined"
-          hide-details
         />
         <v-textarea
           v-model="note"
