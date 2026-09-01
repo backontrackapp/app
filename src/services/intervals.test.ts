@@ -8,12 +8,10 @@ import {
   createRuntimeState,
   duplicateIntervalNode,
   duplicateIntervalTemplateDraft,
-  intervalDefinitionWithRepetitions,
   intervalDuration,
   intervalFlashcardReviewPlaybackElapsedMs,
   intervalFlashcardReviewPlaybackIsActive,
   intervalFlashcardReviewElapsedMs,
-  intervalGlobalRepetitionSettings,
   intervalRunProgress,
   intervalStepCount,
   intervalStepFlashcardReviewPlaybackIsActive,
@@ -58,10 +56,7 @@ describe('interval definitions', () => {
       name: 'Morning rounds',
       description: 'Start the day',
       color: '#C7F464',
-      definition: {
-        ...nestedDefinition(),
-        globalRepetition: { enabled: true, defaultCount: 3 },
-      },
+      definition: nestedDefinition(),
       cues: { soundEnabled: true, vibrationEnabled: false },
       sortOrder: 2,
     })
@@ -87,10 +82,7 @@ describe('interval definitions', () => {
       name: 'Morning rounds',
       description: 'Start the day',
       color: '#C7F464',
-      definition: {
-        ...nestedDefinition(),
-        globalRepetition: { enabled: false, defaultCount: 1 },
-      },
+      definition: nestedDefinition(),
       cues: { soundEnabled: true, vibrationEnabled: false },
       sortOrder: 2,
     })
@@ -108,69 +100,6 @@ describe('interval definitions', () => {
     expect(draft.definition).toEqual(template.definition)
     expect(draft.definition).not.toBe(template.definition)
     expect(draft.definition.children[1]).not.toBe(template.definition.children[1])
-  })
-
-  it('repeats the full definition and supports a per-run repetition count', () => {
-    const definition: IntervalDefinition = {
-      version: 1,
-      children: [
-        createIntervalStep('Work', 'work', 30),
-        createIntervalStep('Rest', 'rest', 10),
-      ],
-      globalRepetition: { enabled: true, defaultCount: 3 },
-    }
-
-    expect(intervalGlobalRepetitionSettings(definition)).toEqual({
-      enabled: true,
-      defaultCount: 3,
-    })
-    expect(intervalStepCount(definition)).toBe(6)
-    expect(intervalDuration(definition)).toBe(120)
-    expect(resolveIntervalStep(definition, 4)?.groups[0]).toEqual({
-      name: 'Repetitions',
-      iteration: 3,
-      total: 3,
-    })
-
-    const fiveRepetitions = intervalDefinitionWithRepetitions(definition, 5)
-    expect(intervalStepCount(fiveRepetitions)).toBe(10)
-    expect(intervalDuration(fiveRepetitions)).toBe(200)
-    expect(definition.globalRepetition?.defaultCount).toBe(3)
-  })
-
-  it('skips the final root step on the last global repetition', () => {
-    const work = createIntervalStep('Work', 'work', 30)
-    const rest = createIntervalStep('Rest', 'rest', 10)
-    rest.skipOnLastRound = true
-    const definition: IntervalDefinition = {
-      version: 1,
-      children: [work, rest],
-      globalRepetition: { enabled: true, defaultCount: 3 },
-    }
-
-    expect(intervalStepCount(definition)).toBe(5)
-    expect(intervalDuration(definition)).toBe(110)
-    expect(Array.from({ length: 5 }, (_, index) => resolveIntervalStep(definition, index)?.step.name))
-      .toEqual(['Work', 'Rest', 'Work', 'Rest', 'Work'])
-  })
-
-  it('allows one as the global repetition default and rejects values below it', () => {
-    const definition: IntervalDefinition = {
-      version: 1,
-      children: [createIntervalStep('Work', 'work', 30)],
-      globalRepetition: { enabled: true, defaultCount: 1 },
-    }
-
-    expect(intervalGlobalRepetitionSettings({ version: 1, children: [] })).toEqual({
-      enabled: false,
-      defaultCount: 1,
-    })
-    expect(validateIntervalDefinition(definition)).toEqual([])
-
-    definition.globalRepetition!.defaultCount = 0
-
-    expect(validateIntervalDefinition(definition))
-      .toContain('Default repetitions must be from 1 to 15.')
   })
 
   it('duplicates a reactive interval group with fresh IDs for every nested node', () => {
@@ -293,7 +222,6 @@ describe('interval definitions', () => {
     const definition: IntervalDefinition = {
       version: 1,
       children: [group],
-      globalRepetition: { enabled: true, defaultCount: 3 },
     }
 
     expect(moveIntervalNodeToGroup(
@@ -304,10 +232,10 @@ describe('interval definitions', () => {
     )).toBe(true)
 
     expect(rest.skipOnLastRound).toBe(true)
-    expect(intervalStepCount(definition)).toBe(8)
-    expect(intervalDuration(definition)).toBe(200)
-    expect(Array.from({ length: 8 }, (_, index) => resolveIntervalStep(definition, index)?.step.name))
-      .toEqual(['Work', 'Work', 'Rest', 'Work', 'Work', 'Rest', 'Work', 'Work'])
+    expect(intervalStepCount(definition)).toBe(3)
+    expect(intervalDuration(definition)).toBe(70)
+    expect(Array.from({ length: 3 }, (_, index) => resolveIntervalStep(definition, index)?.step.name))
+      .toEqual(['Work', 'Work', 'Rest'])
   })
 
   it('moves a complete group into another group', () => {
