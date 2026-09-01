@@ -1772,6 +1772,7 @@ async function leaveRunner() {
               :can-replay="canReplayCurrentSide"
               :transition-direction="reviewCardTransitionDirection"
               :progress="passiveProgress"
+              :progress-tick-count="currentSpeechSide === 'back' ? backSpeechRepeatCount : 1"
               :show-tag-actions="Boolean(store.tags)"
               :quick-tags="quickTags"
               :can-tag="canTagCurrentCard"

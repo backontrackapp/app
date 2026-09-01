@@ -50,6 +50,7 @@ import {
   intervalFlashcardSideOffsetMs,
   flashcardReviewSettingsAreValid,
   flashcardReviewSettingsSignature,
+  normalizeFlashcardBackSpeechRepeatCount,
   flashcardTagToggleUpdate,
   FLASHCARD_SETTINGS_APPLY_MENU_ITEMS,
   INTERVAL_FLASHCARD_QUICK_TAGS,
@@ -314,6 +315,12 @@ const flashcardReviewElapsedMs = computed(() => {
 const flashcardPhase = computed(() => session.value?.flashcardReview
   ? intervalFlashcardPhase(session.value.flashcardReview, flashcardReviewElapsedMs.value)
   : undefined)
+const flashcardProgressTickCount = computed(() => {
+  const review = session.value?.flashcardReview
+  return flashcardPhase.value?.side === 'back' && review?.speechEnabled
+    ? normalizeFlashcardBackSpeechRepeatCount(review.backSpeechRepeatCount)
+    : 1
+})
 const flashcardReviewSet = computed(() => flashcardStore.reviewSets
   .find(item => item.id === session.value?.flashcardReview?.reviewSet))
 const flashcardFrontDisplay = computed(() => {
@@ -2764,6 +2771,7 @@ async function runAgain() {
                 : session.flashcardReview.backLanguage"
               :spoken-word="spokenFlashcardWord"
               :progress="flashcardPhase.progress"
+              :progress-tick-count="flashcardProgressTickCount"
               progress-color="info"
               :progress-aria-label="flashcardReviewPlaybackEnabled
                 ? `${Math.round(flashcardPhase.progress)}% through the ${flashcardPhase.side}`
