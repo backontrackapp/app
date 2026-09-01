@@ -81,10 +81,12 @@ export function curatedReviewSettings(
   backLanguage: string,
   supportedLanguages: FlashcardSpeechLanguage[] = [],
 ): FlashcardReviewSettings {
+  const supportedFrontLanguage = closestSupportedTtsLanguage(frontLanguage, supportedLanguages)
+  const supportedBackLanguage = closestSupportedTtsLanguage(backLanguage, supportedLanguages)
   return {
     ...detail.settings,
-    frontLanguage: closestSupportedTtsLanguage(frontLanguage, supportedLanguages) || frontLanguage,
-    backLanguage: closestSupportedTtsLanguage(backLanguage, supportedLanguages) || backLanguage,
-    speechEnabled: detail.settings.speechEnabled && Boolean(frontLanguage && backLanguage),
+    frontLanguage: supportedFrontLanguage,
+    backLanguage: supportedBackLanguage,
+    speechEnabled: Boolean(supportedFrontLanguage && supportedBackLanguage),
   }
 }

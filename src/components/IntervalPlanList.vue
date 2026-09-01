@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
+import EmptyStateCard from '@/components/EmptyStateCard.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { formatIntervalDuration, intervalDuration, intervalStepCount } from '@/services/intervals'
 import { INTERVAL_TEMPLATE_ACTIONS, type IntervalTemplateAction } from '@/services/intervalTemplateActions'
@@ -109,12 +110,16 @@ function runTemplateAction(action: IntervalTemplateAction, template: IntervalTem
     </v-card>
   </div>
 
-  <v-card v-else-if="store.loaded && !archivedTemplates.length" class="surface-card pa-8 text-center">
-    <v-icon icon="mdi-timer-plus-outline" size="42" class="mb-3" />
-    <h2 class="text-h6 font-weight-black">Build your first interval</h2>
-    <p class="text-body-2 muted mt-2 mb-5">Combine timed steps and repeat groups for any kind of session.</p>
-    <v-btn color="secondary" to="/intervals/new">Create interval</v-btn>
-  </v-card>
+  <EmptyStateCard
+    v-else-if="store.loaded && !archivedTemplates.length"
+    icon="mdi-timer-plus-outline"
+    title="Build your first interval"
+    subtitle="Combine timed steps and repeat groups for any kind of session."
+  >
+    <template #button>
+      <v-btn color="secondary" to="/intervals/new">Create an interval</v-btn>
+    </template>
+  </EmptyStateCard>
 
   <section v-if="archivedTemplates.length" class="mt-4">
     <v-btn block variant="text" class="archive-heading" :aria-expanded="archiveExpanded" aria-controls="archived-intervals" @click="archiveExpanded = !archiveExpanded">

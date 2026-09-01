@@ -6,6 +6,7 @@ import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import ContentIcon from '@/components/ContentIcon.vue'
 import DateSwipeFeedback from '@/components/DateSwipeFeedback.vue'
+import EmptyStateCard from '@/components/EmptyStateCard.vue'
 import TrackingLogBottomSheet from '@/components/TrackingLogBottomSheet.vue'
 import TrackingRatingValue from '@/components/TrackingRatingValue.vue'
 import TrackingTrackerCard from '@/components/TrackingTrackerCard.vue'
@@ -14,7 +15,7 @@ import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
 import { dateSwipe as vDateSwipe } from '@/directives/dateSwipe'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { getScreenTimeStatus, isNativeHealthConnectSupported, readScreenTimeForDates } from '@/services/healthConnect'
-import { formatTrackingValue, TRACKING_PRESETS, trackerDraftFromPreset } from '@/services/tracking'
+import { formatTrackingValue } from '@/services/tracking'
 import { useTrackingStore } from '@/stores/tracking'
 import { useTaskStore } from '@/stores/tasks'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
@@ -35,7 +36,6 @@ const archiveExpanded = ref(false)
 const sheetOpen = ref(false)
 const sheetTracker = ref<TrackingTracker>()
 const editingEntry = ref<TrackingEntry>()
-const addingPreset = ref('')
 const error = ref('')
 const weeklyChartError = ref('')
 const weeklyChartLoading = ref(true)
@@ -73,6 +73,7 @@ const visibleTrackers = computed(() => sortedTrackers.value.filter(tracker => !t
 const archivedTrackers = computed(() => sortedTrackers.value.filter(tracker => tracker.archived))
 const outcomes = computed(() => visibleTrackers.value.filter((tracker) => tracker.role === 'outcome'))
 const factors = computed(() => visibleTrackers.value.filter((tracker) => tracker.role === 'factor'))
+const hasWeeklyChartSeries = computed(() => store.trackers.length > 0 || screenTimeEnabled.value)
 const requestedTask = computed(() => {
   const id = typeof route.query.task === 'string' ? route.query.task : ''
   return taskStore.tasks.find(task => task.id === id && task.type === 'tracking')
@@ -193,20 +194,6 @@ async function handleLogSaved() {
   }
 }
 
-async function addPreset(presetId: string) {
-  const preset = TRACKING_PRESETS.find((item) => item.id === presetId)
-  if (!preset) return
-  addingPreset.value = presetId
-  error.value = ''
-  try {
-    await store.saveTracker(trackerDraftFromPreset(preset, store.trackers.length))
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : 'Could not add this tracker.'
-  } finally {
-    addingPreset.value = ''
-  }
-}
-
 function applyRequestedDate() {
   const requestedDate = typeof route.query.date === 'string' ? route.query.date : ''
   if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) return
@@ -312,7 +299,7 @@ async function loadVisibleWeekEntries() {
     />
 
     <v-sheet
-      v-if="weeklyChartLoading || store.trackers.length || screenTimeEnabled"
+      v-if="hasWeeklyChartSeries"
       v-date-swipe="trackingWeekSwipe"
       class="weekly-chart-card surface-card pa-5 mb-5"
       rounded="xl"
@@ -378,7 +365,12 @@ async function loadVisibleWeekEntries() {
             @actions="openTrackerActions"
           />
         </div>
-        <p v-else class="tracker-section-empty muted py-4 text-center">No feelings tracked yet.</p>
+        <EmptyStateCard
+          v-else
+          icon="mdi-emoticon-outline"
+          title="No feelings tracked yet"
+          subtitle="Create a tracker to log how you feel."
+        />
       </section>
 
       <section>
@@ -409,7 +401,12 @@ async function loadVisibleWeekEntries() {
             @actions="openTrackerActions"
           />
         </div>
-        <p v-else class="tracker-section-empty muted py-4 text-center">No things tracked yet.</p>
+        <EmptyStateCard
+          v-else
+          icon="mdi-chart-timeline-variant"
+          title="No things tracked yet"
+          subtitle="Create a tracker to log the things you do."
+        />
       </section>
 
       <section v-if="archivedTrackers.length" class="mt-4">
@@ -470,31 +467,29 @@ async function loadVisibleWeekEntries() {
             </template>
           </v-list>
         </v-card>
-        <v-card v-else class="tracking-log-empty surface-card pa-7 text-center">
-          <v-icon icon="mdi-text-box-outline" size="34" color="medium-emphasis" />
-          <h3 class="text-body-1 font-weight-black mt-3">No logs yet</h3>
-          <p class="text-body-2 muted mt-1">Tap a tracker to add an entry for this day.</p>
-        </v-card>
+        <EmptyStateCard
+          v-else
+          class="tracking-log-empty"
+          icon="mdi-text-box-outline"
+          icon-color="medium-emphasis"
+          title="No logs yet"
+          subtitle="Tap a tracker to add an entry for this day."
+        />
       </section>
     </div>
 
     <template v-else-if="store.loaded">
-      <div class="section-heading"><h2>Start with a tracker</h2></div>
-      <div class="preset-grid">
-        <v-card v-for="preset in TRACKING_PRESETS" :key="preset.id" class="preset-card surface-card pa-4">
-          <div class="preset-card__content">
-            <div class="preset-card__icon" :style="{ color: preset.color }">
-              <v-icon :icon="preset.icon" size="26" />
-            </div>
-            <div class="min-width-0">
-              <strong class="d-block">{{ preset.name }}</strong>
-              <span>{{ preset.description }}</span>
-            </div>
-          </div>
-          <v-btn block size="large" variant="tonal" :loading="addingPreset === preset.id" @click="addPreset(preset.id)">Add</v-btn>
-        </v-card>
-      </div>
-      <v-btn block size="large" class="mt-4" color="secondary" prepend-icon="mdi-tune-variant" to="/tracking/new">Create a custom tracker</v-btn>
+      <EmptyStateCard
+        icon="mdi-chart-box-outline"
+        title="No trackers yet"
+        subtitle="Create a tracker to start logging the things you do and how you feel."
+      >
+        <template #button>
+          <v-btn color="secondary" prepend-icon="mdi-tune-variant" to="/tracking/new">
+            Create a tracker
+          </v-btn>
+        </template>
+      </EmptyStateCard>
     </template>
 
     <ActionBottomSheet
@@ -526,7 +521,7 @@ async function loadVisibleWeekEntries() {
         />
         <v-divider class="my-1" />
         <v-list-item
-          prepend-icon="mdi-notebook-plus-outline"
+          prepend-icon="mdi-notebook-edit-outline"
           title="Write reflection"
           rounded="lg"
           @click="writeTrackerReflection"
@@ -573,7 +568,6 @@ async function loadVisibleWeekEntries() {
 .archive-heading :deep(.v-btn__content) { width: 100%; justify-content: flex-start; gap: .5rem; }
 .archive-heading__count { margin-left: auto; color: rgb(var(--v-theme-on-surface) / .54); font-size: .7rem; }
 .archived-tracker { display: flex; min-width: 0; align-items: center; gap: .75rem; cursor: pointer; }
-.tracker-section-empty { font-size: .8rem; }
 .tracking-log-section { margin-bottom: .5rem; }
 .tracking-log { overflow: hidden; }
 .tracking-log__entry { min-height: 4.5rem; }
@@ -587,13 +581,6 @@ async function loadVisibleWeekEntries() {
 .tracking-log__note { display: -webkit-box; overflow: hidden; color: rgb(var(--v-theme-on-surface) / .5); font-size: .7rem; line-height: 1.35; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .tracking-log__rating { align-self: center; }
 .tracking-log__value { color: rgb(var(--v-theme-on-surface)); font-size: .75rem; white-space: nowrap; }
-.tracking-log-empty p { font-size: .75rem; }
-.preset-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); }
-.preset-card { display: grid; min-height: 150px; grid-template-rows: 1fr auto; align-items: start; gap: 1rem; }
-.preset-card__content { display: flex; align-items: flex-start; gap: .8rem; }
-.preset-card__icon { display: grid; width: 38px; height: 38px; flex: 0 0 38px; place-items: center; border-radius: 12px; background: currentColor; }
-.preset-card__icon :deep(.v-icon) { color: rgb(var(--v-theme-background)); }
-.preset-card span { display: block; margin-top: .25rem; color: rgb(var(--v-theme-on-surface) / .58); font-size: .72rem; line-height: 1.45; }
 .min-width-0 { min-width: 0; }
 
 @media (min-width: 37.5rem) {

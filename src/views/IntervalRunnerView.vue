@@ -14,7 +14,6 @@ import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsF
 import AppForm from '@/components/AppForm.vue'
 import IntervalSettingsFields from '@/components/IntervalSettingsFields.vue'
 import IntervalTypeIcon from '@/components/IntervalTypeIcon.vue'
-import LabeledSlider from '@/components/LabeledSlider.vue'
 import RunnerStartScreen from '@/components/RunnerStartScreen.vue'
 import RunnerSessionActions from '@/components/RunnerSessionActions.vue'
 import ReviewSetCard from '@/components/ReviewSetCard.vue'
@@ -70,11 +69,9 @@ import {
   cloneIntervalTemplateDraft,
   createRuntimeState,
   formatIntervalDuration,
-  intervalDefinitionWithRepetitions,
   intervalDuration,
   intervalFlashcardReviewPlaybackElapsedMs,
   intervalFlashcardReviewPlaybackIsActive,
-  intervalGlobalRepetitionSettings,
   intervalRunProgress,
   intervalStepPlaysFlashcardReview,
   reconcileIntervalRuntime,
@@ -82,8 +79,6 @@ import {
   resolveIntervalStep,
   intervalStepDurationSeconds,
   intervalStepUsesStopwatch,
-  MAX_GLOBAL_REPETITIONS,
-  MIN_GLOBAL_REPETITIONS,
   validateIntervalDefinition,
 } from '@/services/intervals'
 import { exercisePresentationById } from '@/services/exercisePresentations'
@@ -143,19 +138,6 @@ const noteDraft = ref('')
 const noteField = ref<{ focus: () => void }>()
 const noteSaving = ref(false)
 const noteError = ref('')
-const repetitionDialog = ref(false)
-const selectedRepetitions = ref(MIN_GLOBAL_REPETITIONS)
-const repetitionDefinition = ref<IntervalDefinition>()
-const pendingRepetitionStart = ref<
-  | {
-      kind: 'template'
-      taskId?: string
-      programStepId?: string
-      programStepCompletionId?: string
-    }
-  | { kind: 'run-again' }
->()
-const repetitionError = ref('')
 const attributionSheet = ref(false)
 const replaceActiveSessionDialog = ref(false)
 const replacingActiveSession = ref(false)
@@ -167,7 +149,6 @@ const pendingActiveSessionStart = ref<
       taskId?: string
       programStepId?: string
       programStepCompletionId?: string
-      repetitions?: number
     }
 >()
 const flashcardContextSheet = ref(false)
@@ -263,7 +244,6 @@ const intervalSettingsDraft = reactive({
   definition: {
     version: 1 as const,
     children: [],
-    globalRepetition: { enabled: false, defaultCount: MIN_GLOBAL_REPETITIONS },
   } as IntervalDefinition,
   cues: { soundEnabled: true, vibrationEnabled: true },
 })
@@ -657,12 +637,6 @@ const attributedTaskName = computed(() => {
   return programStep ? `${task?.name || 'Program'} · ${programStep.name}` : task?.name
 })
 const noteChanged = computed(() => noteDraft.value.trim() !== (session.value?.note || ''))
-const selectedRepetitionDuration = computed(() => repetitionDefinition.value
-  ? intervalDuration(intervalDefinitionWithRepetitions(
-      repetitionDefinition.value,
-      selectedRepetitions.value,
-    ))
-  : 0)
 
 watch([
   () => session.value?.status,
@@ -1331,7 +1305,6 @@ async function startTemplate(
   taskId?: string,
   programStepId?: string,
   programStepCompletionId?: string,
-  repetitions?: number,
   replaceActive = false,
 ) {
   const item = previewSession.value
@@ -1343,32 +1316,14 @@ async function startTemplate(
       taskId,
       programStepId,
       programStepCompletionId,
-      repetitions,
     }
     attributionSheet.value = false
-    repetitionDialog.value = false
     replaceActiveSessionDialog.value = true
-    return
-  }
-  const repetitionSettings = intervalGlobalRepetitionSettings(item.definition)
-  if (repetitionSettings.enabled && repetitions === undefined) {
-    selectedRepetitions.value = repetitionSettings.defaultCount
-    repetitionDefinition.value = item.definition
-    pendingRepetitionStart.value = {
-      kind: 'template',
-      taskId,
-      programStepId,
-      programStepCompletionId,
-    }
-    repetitionError.value = ''
-    attributionSheet.value = false
-    repetitionDialog.value = true
     return
   }
 
   starting.value = true
   error.value = ''
-  repetitionError.value = ''
   try {
     const attributedProgress = taskId
       ? eligibleTaskProgress.value.find((progress) =>
@@ -1382,14 +1337,11 @@ async function startTemplate(
     if (attributedProgress?.status === 'missed') {
       await taskStore.setStatus(attributedProgress, 'pending')
     }
-    const definition = repetitionSettings.enabled
-      ? intervalDefinitionWithRepetitions(item.definition, repetitions ?? repetitionSettings.defaultCount)
-      : item.definition
     await prepareIntervalCues(item.cues)
     const started = await store.startSession({
       name: item.name,
       source: 'template',
-      definition,
+      definition: item.definition,
       cues: item.cues,
       template: item.template,
       task: taskId,
@@ -1404,15 +1356,11 @@ async function startTemplate(
       || started.programStep !== programStepId
       || started.programStepCompletion !== programStepCompletionId
     ) {
-      repetitionDialog.value = false
-      repetitionDefinition.value = undefined
-      pendingRepetitionStart.value = undefined
       pendingActiveSessionStart.value = {
         kind: 'template',
         taskId,
         programStepId,
         programStepCompletionId,
-        repetitions,
       }
       activeSessionName.value = started.name
       replaceActiveSessionDialog.value = true
@@ -1420,9 +1368,6 @@ async function startTemplate(
     }
     playCurrentStepCue(started)
     attributionSheet.value = false
-    repetitionDialog.value = false
-    repetitionDefinition.value = undefined
-    pendingRepetitionStart.value = undefined
     await router.replace({
       name: 'interval-runner',
       params: { sessionId: started.id },
@@ -1442,35 +1387,10 @@ async function startTemplate(
       }
     }
   } catch (cause) {
-    const message = cause instanceof Error ? cause.message : 'Could not start the interval.'
-    if (repetitionDialog.value) repetitionError.value = message
-    else error.value = message
+    error.value = cause instanceof Error ? cause.message : 'Could not start the interval.'
   } finally {
     starting.value = false
   }
-}
-
-async function confirmRepetitionStart() {
-  const pending = pendingRepetitionStart.value
-  if (!pending) return
-  if (pending.kind === 'run-again') {
-    await runAgain(selectedRepetitions.value)
-    return
-  }
-  await startTemplate(
-    pending.taskId,
-    pending.programStepId,
-    pending.programStepCompletionId,
-    selectedRepetitions.value,
-  )
-}
-
-function cancelRepetitionStart() {
-  if (starting.value) return
-  repetitionDialog.value = false
-  repetitionDefinition.value = undefined
-  pendingRepetitionStart.value = undefined
-  repetitionError.value = ''
 }
 
 async function replaceActiveSession() {
@@ -1489,7 +1409,6 @@ async function replaceActiveSession() {
         pending.taskId,
         pending.programStepId,
         pending.programStepCompletionId,
-        pending.repetitions,
         true,
       )
     } else {
@@ -1732,7 +1651,6 @@ async function showIntervalFlashcardSide(
   if (
     !item
     || !review
-    || review.cardSides !== 'both'
     || flashcardPhase.value?.side === side
     || isTemplatePreview.value
     || syncing.value
@@ -1967,7 +1885,6 @@ function beginIntervalFlashcardSwipe(event: PointerEvent) {
     || (event.pointerType === 'mouse' && event.button !== 0)
     || startedFromTagControl
     || !review
-    || (review.cards.length < 2 && review.cardSides !== 'both')
     || isTemplatePreview.value
     || syncing.value
     || openingFlashcardContext.value
@@ -2303,8 +2220,8 @@ async function openFlashcardSettings() {
   await pauseForFlashcardModal()
   Object.assign(flashcardSettingsDraft, {
     mode: 'passive',
-    cardSides: review.cardSides,
-    invertFaces: review.invertFaces === true,
+    cardSides: 'both',
+    invertFaces: false,
     indefinite: true,
     maxCards: review.maxCards || review.cards.length,
     ejectBehavior: review.ejectBehavior || 'remove',
@@ -2357,8 +2274,8 @@ async function saveFlashcardSettings(target: FlashcardSettingsApplyTarget = 'ses
     if (target === 'review-set' || target === 'both') {
       const settings = {
         ...context.reviewSet,
-        cardSides: flashcardSettingsDraft.cardSides,
-        invertFaces: flashcardSettingsDraft.invertFaces === true,
+        cardSides: 'both',
+        invertFaces: false,
         maxCards: flashcardSettingsDraft.maxCards,
         ejectBehavior: flashcardSettingsDraft.ejectBehavior,
         ejectExcludeAfter: flashcardSettingsDraft.ejectExcludeAfter,
@@ -2439,25 +2356,12 @@ async function endEarly() {
   wakeLock = undefined
 }
 
-async function runAgain(repetitions?: number) {
+async function runAgain() {
   const item = session.value
   if (!item || starting.value) return
-  const repetitionSettings = intervalGlobalRepetitionSettings(item.definition)
-  if (repetitionSettings.enabled && repetitions === undefined) {
-    selectedRepetitions.value = repetitionSettings.defaultCount
-    repetitionDefinition.value = item.definition
-    pendingRepetitionStart.value = { kind: 'run-again' }
-    repetitionError.value = ''
-    repetitionDialog.value = true
-    return
-  }
 
   starting.value = true
-  repetitionError.value = ''
   try {
-    const definition = repetitionSettings.enabled
-      ? intervalDefinitionWithRepetitions(item.definition, repetitions ?? repetitionSettings.defaultCount)
-      : item.definition
     await prepareIntervalCues(item.cues)
     const flashcardReview = item.flashcardReview
       ? {
@@ -2470,16 +2374,13 @@ async function runAgain(repetitions?: number) {
     const nextSession = await store.startSession({
       name: item.name,
       source: item.source,
-      definition,
+      definition: item.definition,
       cues: item.cues,
       template: item.template,
       flashcardReview,
       presentation: item.presentation,
     })
     playCurrentStepCue(nextSession)
-    repetitionDialog.value = false
-    repetitionDefinition.value = undefined
-    pendingRepetitionStart.value = undefined
     await router.replace({
       name: 'interval-runner',
       params: { sessionId: nextSession.id },
@@ -2489,9 +2390,7 @@ async function runAgain(repetitions?: number) {
     await syncNativeTimer(nextSession)
     wakeLock = await requestIntervalWakeLock()
   } catch (cause) {
-    const message = cause instanceof Error ? cause.message : 'Could not start the interval again.'
-    if (repetitionDialog.value) repetitionError.value = message
-    else error.value = message
+    error.value = cause instanceof Error ? cause.message : 'Could not start the interval again.'
   } finally {
     starting.value = false
   }
@@ -2849,8 +2748,6 @@ async function runAgain(repetitions?: number) {
               dense
               :card="displayedIntervalFlashcard || flashcardPhase.card"
               :side="flashcardPhase.side"
-              :card-sides="session.flashcardReview.cardSides"
-              :invert-faces="session.flashcardReview.invertFaces"
               :front-display="flashcardFrontDisplay"
               :back-display="flashcardBackDisplay"
               :disabled="flashcardContextDisabled"
@@ -3115,42 +3012,6 @@ async function runAgain(repetitions?: number) {
         <div class="note-dialog-actions mt-5">
           <v-btn variant="text" :disabled="noteSaving" @click="noteDialog = false">Cancel</v-btn>
           <v-btn class="mobile-large-action" color="secondary" size="large" :loading="noteSaving" :disabled="!noteChanged" @click="saveSessionNote">Save note</v-btn>
-        </div>
-      </v-card>
-    </AppDialog>
-
-    <AppDialog
-      :model-value="repetitionDialog"
-      max-width="440"
-      :persistent="starting"
-      @update:model-value="!$event && cancelRepetitionStart()"
-    >
-      <v-card class="pa-5">
-        <div class="note-dialog-heading">
-          <div class="note-dialog-icon">
-            <v-icon icon="mdi-repeat" size="24" />
-          </div>
-          <div class="min-width-0">
-            <h2 class="text-h6 font-weight-black">Choose repetitions</h2>
-            <p class="text-body-2 muted mt-1">Repeat the entire interval sequence.</p>
-          </div>
-        </div>
-        <v-alert v-if="repetitionError" type="error" variant="tonal" class="mt-4">{{ repetitionError }}</v-alert>
-        <LabeledSlider
-          v-model="selectedRepetitions"
-          title="Repetitions"
-          :min="MIN_GLOBAL_REPETITIONS"
-          :max="MAX_GLOBAL_REPETITIONS"
-          :step="1"
-          aria-label="Repetitions for this interval run"
-          class="mt-6"
-        />
-        <p class="repetition-summary mt-4">
-          {{ selectedRepetitions }} repetitions · {{ formatIntervalDuration(selectedRepetitionDuration) }} total
-        </p>
-        <div class="note-dialog-actions mt-5">
-          <v-btn variant="text" :disabled="starting" @click="cancelRepetitionStart">Cancel</v-btn>
-          <v-btn class="mobile-large-action" color="secondary" size="large" prepend-icon="mdi-play" :loading="starting" @click="confirmRepetitionStart">Start</v-btn>
         </div>
       </v-card>
     </AppDialog>
@@ -3483,12 +3344,6 @@ async function runAgain(repetitions?: number) {
   .flashcard-settings-actions__primary,
   .interval-settings-actions__cancel,
   .interval-settings-actions__primary { max-width: 10rem; }
-}
-.repetition-summary {
-  color: rgb(var(--v-theme-on-surface) / .62);
-  font-size: .75rem;
-  font-weight: 750;
-  text-align: center;
 }
 @media (orientation: portrait) {
   .runner-page {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import EmptyStateCard from '@/components/EmptyStateCard.vue'
 import { useFlashcardStore } from '@/stores/flashcards'
 import type { FlashcardTag } from '@/types/domain'
 
@@ -117,16 +118,18 @@ async function removeTag() {
       </div>
     </v-card>
 
-    <v-card v-else-if="store.loaded" class="surface-card pa-8 text-center">
-      <v-icon icon="mdi-tag-outline" size="44" color="secondary" />
-      <h2 class="text-h6 font-weight-black mt-3">No tags yet</h2>
-      <p class="text-body-2 muted mt-2 mb-5">
-        Create tags while adding a flashcard or configuring a Review set.
-      </p>
-      <v-btn color="secondary" :to="{ name: 'flashcard-new' }" prepend-icon="mdi-card-plus-outline">
-        Add a card
-      </v-btn>
-    </v-card>
+    <EmptyStateCard
+      v-else-if="store.loaded"
+      icon="mdi-tag-outline"
+      title="No tags yet"
+      subtitle="Create tags while adding a flashcard or configuring a Review set."
+    >
+      <template #button>
+        <v-btn color="secondary" :to="{ name: 'flashcard-new' }" prepend-icon="mdi-card-plus-outline">
+          Add a card
+        </v-btn>
+      </template>
+    </EmptyStateCard>
 
     <ConfirmDialog
       v-model="deleteTagDialog"

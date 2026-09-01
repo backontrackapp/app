@@ -1609,6 +1609,9 @@ export const useTaskStore = defineStore('tasks', () => {
   }
 
   async function setStatus(progress: TaskProgress, status: Occurrence['status']) {
+    if (status === 'carried' && (progress.task.type === 'program' || progress.programStep)) {
+      throw new Error('Programs can only be marked missed or shifted.')
+    }
     const progressDate = parseISO(progress.scheduledDate)
     const statusUpdate = updateOccurrenceOptimistically(progress, {
       status,
@@ -2142,6 +2145,11 @@ export const useTaskStore = defineStore('tasks', () => {
     action: 'missed' | 'carried' | 'shift',
   ) {
     if (!progressItems.length) return
+    if (action === 'carried' && progressItems.some(item => (
+      item.task.type === 'program' || item.programStep
+    ))) {
+      throw new Error('Programs can only be marked missed or shifted.')
+    }
     const previousOccurrences = occurrences.value.map(item => ({
       ...item,
       completionState: { ...(item.completionState || {}) },

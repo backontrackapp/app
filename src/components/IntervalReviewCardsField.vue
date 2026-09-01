@@ -104,7 +104,7 @@ const selectedReviewTiming = computed(() => {
         prepend-icon="mdi-plus"
         :to="{ name: 'flashcard-review-set-new' }"
       >
-        Create Review set
+        Create a review set
       </v-btn>
     </div>
   </v-card>

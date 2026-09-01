@@ -930,6 +930,10 @@ final class SyncService
             fn (mixed $id): string => $this->recordId($id),
             $existingIds,
         )));
+        $reviewSetTagIds = $this->stringArray($payload['review_set_tags'] ?? []);
+        foreach ($reviewSetTagIds as $tagId) {
+            $this->ownedRecord('flashcard_tags', $this->recordId($tagId), $account);
+        }
         $maximumCards = $curated ? 500 : 100;
         if (count($cardRows) + count($existingIds) < 1
             || count($cardRows) + count($existingIds) > $maximumCards) {
@@ -987,7 +991,7 @@ final class SyncService
             $sort->execute(['owner' => $account]);
             $reviewSetPayload = [
                 'name' => $name,
-                'tags' => [],
+                'tags' => $reviewSetTagIds,
                 'assigned_cards' => array_values(array_unique([...$existingIds, ...$createdCardIds])),
                 'excluded_cards' => [],
                 'mode' => 'manual',
@@ -1132,6 +1136,9 @@ final class SyncService
             }
             if ($action === 'shift' && ($stepId === '' || (string) $task['type'] !== 'program')) {
                 throw new ApiException(422, 'Only program steps can shift a program.');
+            }
+            if ($action === 'carried' && (string) $task['type'] === 'program') {
+                throw new ApiException(422, 'Programs can only be marked missed or shifted.');
             }
 
             $findOccurrence->execute([
@@ -1303,7 +1310,16 @@ final class SyncService
             }
             throw new ApiException(409, 'A conflicting record already exists.', [], $exception);
         }
-        $this->saveFieldClocks($account, $resource, $recordId, $fieldClocks);
+        $acceptedClocks = array_intersect_key($fieldClocks, $values);
+        if (isset($fieldClocks['*'])) {
+            $acceptedClocks['*'] = $fieldClocks['*'];
+        }
+        $this->saveFieldClocks(
+            $account,
+            $resource,
+            $recordId,
+            $acceptedClocks,
+        );
         if ($resource === 'flashcard_review_events') {
             $this->recordFlashcardReviewStats($values, $account);
         } elseif ($resource === 'flashcard_review_sets') {
@@ -1690,6 +1706,7 @@ final class SyncService
                 }
             }
         }
+        $this->removeLegacyFlexibleRepeats($values);
         return $values;
     }
 
@@ -3070,7 +3087,17 @@ final class SyncService
         if (isset($record['client_id'])) {
             $record['client_id'] = (string) $record['client_id'];
         }
+        $this->removeLegacyFlexibleRepeats($record);
         return $record;
+    }
+
+    private function removeLegacyFlexibleRepeats(array &$values): void
+    {
+        foreach (['definition', 'definition_snapshot'] as $field) {
+            if (isset($values[$field]) && is_array($values[$field])) {
+                unset($values[$field]['globalRepetition']);
+            }
+        }
     }
 
     private function databaseValues(array $config, array $values): array

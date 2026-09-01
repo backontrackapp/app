@@ -4,7 +4,6 @@ import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import IntervalReviewCardsField from '@/components/IntervalReviewCardsField.vue'
 import IntervalNodeEditor from '@/components/IntervalNodeEditor.vue'
-import LabeledSlider from '@/components/LabeledSlider.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import {
   createIntervalGroup,
@@ -12,10 +11,7 @@ import {
   duplicateIntervalNode,
   formatIntervalDuration,
   intervalDuration,
-  intervalGlobalRepetitionSettings,
   intervalStepCount,
-  MAX_GLOBAL_REPETITIONS,
-  MIN_GLOBAL_REPETITIONS,
   moveIntervalNodeToGroup,
 } from '@/services/intervals'
 import type {
@@ -44,24 +40,6 @@ const sequenceDropTypes = ['interval-step', 'interval-group']
 
 const totalDuration = computed(() => intervalDuration(definition.value))
 const totalSteps = computed(() => intervalStepCount(definition.value))
-const globalRepetitionEnabled = computed({
-  get: () => intervalGlobalRepetitionSettings(definition.value).enabled,
-  set: (enabled: boolean) => {
-    definition.value.globalRepetition = {
-      ...intervalGlobalRepetitionSettings(definition.value),
-      enabled,
-    }
-  },
-})
-const globalRepetitionDefault = computed({
-  get: () => intervalGlobalRepetitionSettings(definition.value).defaultCount,
-  set: (defaultCount: number) => {
-    definition.value.globalRepetition = {
-      enabled: globalRepetitionEnabled.value,
-      defaultCount,
-    }
-  },
-})
 
 interface NodeLocation {
   nodes: IntervalNode[]
@@ -255,38 +233,8 @@ function confirmNodeDelete() {
           <div><strong>Vibration</strong><p>Vibrate on supported devices</p></div>
           <v-switch v-model="cues.vibrationEnabled" color="secondary" hide-details="auto" inset />
         </div>
-        <v-divider class="my-3" />
-        <div class="setting-row">
-          <div><strong>Flexible repeats</strong><p>Choose how many times to repeat the sequence whenever you start the timer</p></div>
-          <v-switch
-            v-model="globalRepetitionEnabled"
-            color="secondary"
-            hide-details="auto"
-            inset
-            aria-label="Enable flexible repeats"
-          />
-        </div>
-        <v-expand-transition>
-          <div v-if="globalRepetitionEnabled" class="global-repetition-default">
-            <LabeledSlider
-              v-model="globalRepetitionDefault"
-              title="Default repetitions"
-              :min="MIN_GLOBAL_REPETITIONS"
-              :max="MAX_GLOBAL_REPETITIONS"
-              :step="1"
-              class="mt-4"
-              aria-label="Default repetitions for flexible repeats"
-            />
-          </div>
-        </v-expand-transition>
       </v-card>
 
-      <v-card class="surface-card pa-5">
-        <div class="summary-grid">
-          <div><span>Duration</span><strong>{{ formatIntervalDuration(totalDuration) }}</strong></div>
-          <div><span>Intervals</span><strong>{{ totalSteps }}</strong></div>
-        </div>
-      </v-card>
     </div>
 
     <div class="section-heading">
@@ -329,6 +277,13 @@ function confirmNodeDelete() {
         />
       </template>
     </div>
+
+    <v-card class="surface-card pa-5">
+      <div class="summary-grid">
+        <div><span>Duration</span><strong>{{ formatIntervalDuration(totalDuration) }}</strong></div>
+        <div><span>Intervals</span><strong>{{ totalSteps }}</strong></div>
+      </div>
+    </v-card>
 
     <ActionBottomSheet
       v-model="nodeActionsDrawer"
@@ -399,7 +354,7 @@ function confirmNodeDelete() {
 .interval-settings-fields,
 .interval-settings-fields__cards,
 .sequence-tree { display: grid; gap: 1rem; }
-.section-heading { margin-top: 1.5rem; }
+.section-heading { margin-top: .5rem; }
 .sequence-empty { display: grid; justify-items: center; gap: 1rem; padding: 2rem 1.25rem; border: .0625rem dashed rgb(var(--v-theme-on-surface) / .22); border-radius: 1.25rem; background: rgb(var(--v-theme-surface-variant) / .28); text-align: center; }
 .sequence-empty__icon { display: grid; width: 3.375rem; height: 3.375rem; place-items: center; border-radius: 1rem; background: rgb(var(--v-theme-secondary) / .14); color: rgb(var(--v-theme-secondary)); }
 .sequence-empty p { max-width: 28rem; margin-top: .25rem; color: rgb(var(--v-theme-on-surface) / .58); font-size: .75rem; }
@@ -412,8 +367,6 @@ function confirmNodeDelete() {
 .setting-row { display: grid; min-height: 4rem; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 1rem; }
 .setting-row > div { min-width: 0; }
 .setting-row p { margin-top: .15rem; color: rgb(var(--v-theme-on-surface) / .5); font-size: .7rem; }
-.global-repetition-default { border-top: .0625rem solid rgb(var(--v-theme-on-surface) / .08); }
-
 @media (max-width: 32rem) {
   .sequence-empty__actions { grid-template-columns: 1fr; }
 }

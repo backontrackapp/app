@@ -16,6 +16,7 @@ const props = withDefaults(defineProps<{
   dialogTitle?: string
   clearable?: boolean
   disabled?: boolean
+  fullscreen?: boolean
 }>(), {
   modelValue: '',
   label: 'Icon',
@@ -23,6 +24,7 @@ const props = withDefaults(defineProps<{
   dialogTitle: 'Choose an emoji',
   clearable: true,
   disabled: false,
+  fullscreen: true,
 })
 
 const emit = defineEmits<{
@@ -144,11 +146,16 @@ watch(() => props.modelValue, (value) => {
 
   <AppDialog
     v-model="dialogOpen"
-    max-width="42rem"
+    :fullscreen="fullscreen"
+    :max-width="fullscreen ? undefined : '42rem'"
     :aria-labelledby="dialogTitleId"
     @after-enter="focusSearch"
   >
-    <v-card class="emoji-selector__dialog surface-card" rounded="xl">
+    <v-card
+      class="emoji-selector__dialog surface-card"
+      :class="{ 'emoji-selector__dialog--fullscreen': fullscreen }"
+      :rounded="fullscreen ? '0' : 'xl'"
+    >
       <v-card-title class="emoji-selector__header">
         <span :id="dialogTitleId">{{ dialogTitle }}</span>
         <div class="emoji-selector__header-actions">
@@ -206,10 +213,11 @@ watch(() => props.modelValue, (value) => {
         v-else
         ref="virtualList"
         class="emoji-selector__list"
+        :class="{ 'emoji-selector__list--fullscreen': fullscreen }"
         :items="filteredOptions"
         item-key="hexcode"
         item-height="64"
-        height="min(28rem, 54dvh)"
+        :height="fullscreen ? '100%' : 'min(28rem, 54dvh)'"
         role="listbox"
         aria-label="Emoji"
       >
@@ -310,6 +318,15 @@ watch(() => props.modelValue, (value) => {
   overscroll-behavior: contain;
 }
 
+.emoji-selector__dialog--fullscreen {
+  display: flex;
+  height: 100%;
+  max-height: none;
+  overflow: hidden;
+  padding: max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem)) max(env(safe-area-inset-right, 0rem), 0rem) max(env(safe-area-inset-bottom, 0rem), var(--safe-area-inset-bottom, 0rem)) max(env(safe-area-inset-left, 0rem), 0rem);
+  flex-direction: column;
+}
+
 .emoji-selector__header {
   display: flex;
   min-height: 4rem;
@@ -317,6 +334,10 @@ watch(() => props.modelValue, (value) => {
   justify-content: space-between;
   padding: .75rem 1rem .75rem 1.25rem;
   font-weight: 900;
+}
+
+.emoji-selector__dialog--fullscreen .emoji-selector__header {
+  flex: 0 0 auto;
 }
 
 .emoji-selector__header-actions {
@@ -333,6 +354,11 @@ watch(() => props.modelValue, (value) => {
 .emoji-selector__list {
   border-top: .0625rem solid rgb(var(--v-theme-on-surface) / .08);
   background: rgb(var(--v-theme-surface));
+}
+
+.emoji-selector__list--fullscreen {
+  min-height: 0;
+  flex: 1 1 auto;
 }
 
 .emoji-selector__option {

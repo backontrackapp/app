@@ -12,7 +12,6 @@ import { contentRetirementActions, type ContentRetirementActionId } from '@/serv
 import {
   cloneIntervalTemplateDraft,
   duplicateIntervalTemplateDraft,
-  MIN_GLOBAL_REPETITIONS,
   validateIntervalDefinition,
 } from '@/services/intervals'
 import { useFlashcardStore } from '@/stores/flashcards'
@@ -49,7 +48,6 @@ const draft = reactive<IntervalTemplateDraft>({
   definition: {
     version: 1,
     children: [],
-    globalRepetition: { enabled: false, defaultCount: MIN_GLOBAL_REPETITIONS },
   },
   cues: { soundEnabled: true, vibrationEnabled: true },
   sortOrder: 0,

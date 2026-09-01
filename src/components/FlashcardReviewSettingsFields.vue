@@ -5,7 +5,6 @@ import TimerWheelPicker from '@/components/TimerWheelPicker.vue'
 import {
   DEFAULT_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
   DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
-  FLASHCARD_REVIEW_CARD_SIDE_OPTIONS,
   FLASHCARD_REVIEW_FACE_VALUE_OPTIONS,
   FLASHCARD_REVIEW_SORT_OPTIONS,
   MAX_FLASHCARD_BACK_SPEECH_REPEATS,
@@ -21,7 +20,6 @@ import {
   flashcardEjectExcludes,
   flashcardEjectLoadsNext,
   flashcardReviewFaceCanSpeak,
-  flashcardReviewFaceTitle,
   flashcardReviewFaceValue,
   normalizeFlashcardBackSpeechRate,
 } from '@/services/flashcards'
@@ -126,17 +124,6 @@ const customMaxCardsVisible = computed(() => (
   cardLimit.value.maximum > CUSTOM_MAX_CARDS_THRESHOLD
   && Number(settings.value.maxCards) >= CUSTOM_MAX_CARDS_THRESHOLD
 ))
-const selectedCardSidesHint = computed(() => (
-  settings.value.cardSides === 'both'
-    ? `Show the ${flashcardReviewFaceTitle(
-      settings.value.invertFaces ? backDisplay.value : frontDisplay.value,
-    ).toLocaleLowerCase()} first, then the ${flashcardReviewFaceTitle(
-      settings.value.invertFaces ? frontDisplay.value : backDisplay.value,
-    ).toLocaleLowerCase()}.`
-    : `Show only the ${flashcardReviewFaceTitle(
-      settings.value.cardSides === 'front' ? frontDisplay.value : backDisplay.value,
-    ).toLocaleLowerCase()} of each card.`
-))
 const timeLimitEnabled = computed({
   get: () => (settings.value.timeLimitSeconds || 0) > 0,
   set: (enabled: boolean) => {
@@ -166,14 +153,8 @@ const speechLanguages = computed(() => speechLanguageOptions([
   settings.value.frontLanguage,
   settings.value.backLanguage,
 ]))
-const frontSpeechEnabled = computed(() => (
-  settings.value.cardSides !== 'back'
-  && flashcardReviewFaceCanSpeak(frontDisplay.value)
-))
-const backSpeechEnabled = computed(() => (
-  settings.value.cardSides !== 'front'
-  && flashcardReviewFaceCanSpeak(backDisplay.value)
-))
+const frontSpeechEnabled = computed(() => flashcardReviewFaceCanSpeak(frontDisplay.value))
+const backSpeechEnabled = computed(() => flashcardReviewFaceCanSpeak(backDisplay.value))
 const backSpeechRate = computed({
   get: () => normalizeFlashcardBackSpeechRate(settings.value.backSpeechRate),
   set: (value: number) => {
@@ -192,6 +173,11 @@ watch(() => settings.value.ejectExcludeAfter, (value) => {
     || value < MIN_FLASHCARD_EJECT_EXCLUDE_AFTER
     || value > MAX_FLASHCARD_EJECT_EXCLUDE_AFTER
   ) settings.value.ejectExcludeAfter = DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER
+}, { immediate: true })
+
+watch(() => [settings.value.cardSides, settings.value.invertFaces], () => {
+  settings.value.cardSides = 'both'
+  settings.value.invertFaces = false
 }, { immediate: true })
 
 function updateMode(mode: 'manual' | 'passive') {
@@ -213,9 +199,6 @@ function updateSpeechEnabled(enabled: boolean | null) {
   }
 }
 
-function faceValueTitle(value: FlashcardReviewFaceValue) {
-  return flashcardReviewFaceTitle(value)
-}
 </script>
 
 <template>
@@ -236,17 +219,11 @@ function faceValueTitle(value: FlashcardReviewFaceValue) {
         </v-btn-toggle>
         <p class="mode-hint mt-3" aria-live="polite">
           <v-icon icon="mdi-information-outline" size="18" />
-          <span v-if="settings.mode === 'manual' && settings.cardSides === 'both'">
-            Reveal the {{ faceValueTitle(settings.invertFaces ? frontDisplay : backDisplay).toLocaleLowerCase() }} when you're ready, then mark the card as a success or error.
-          </span>
-          <span v-else-if="settings.mode === 'manual'">
-            Grade each card immediately after viewing its selected face.
-          </span>
-          <span v-else-if="settings.cardSides === 'both'">
-            Front and back advance automatically using the durations below; cards count as viewed, not graded.
+          <span v-if="settings.mode === 'manual'">
+            Reveal the back value when you're ready, then mark the card as a success or error.
           </span>
           <span v-else>
-            The selected face advances automatically using its duration below; cards count as viewed, not graded.
+            Front and back advance automatically using the durations below; cards count as viewed, not graded.
           </span>
         </p>
         <v-expand-transition>
@@ -336,52 +313,10 @@ function faceValueTitle(value: FlashcardReviewFaceValue) {
         Choose the card field shown on each review face. Image shows the card image directly.
       </p>
 
-      <v-divider class="my-5" />
-      <label class="field-label">Faces to show <span class="required-mark">*</span></label>
-      <v-btn-toggle
-        v-model="settings.cardSides"
-        mandatory
-        color="secondary"
-        variant="tonal"
-        class="faces-toggle mt-2"
-      >
-        <v-btn
-          v-for="option in FLASHCARD_REVIEW_CARD_SIDE_OPTIONS"
-          :key="option.value"
-          :value="option.value"
-          :prepend-icon="option.icon"
-        >
-          {{ option.title }}
-        </v-btn>
-      </v-btn-toggle>
-      <p class="mode-hint mt-3" aria-live="polite">
-        <v-icon icon="mdi-information-outline" size="18" />
-        {{ selectedCardSidesHint }}
-      </p>
-
-      <v-expand-transition>
-        <div v-if="settings.cardSides === 'both'">
-          <div class="setting-row mt-5">
-            <div>
-              <strong>Invert front and back</strong>
-              <p>Start each card on the back, then show the front</p>
-            </div>
-            <v-switch
-              v-model="settings.invertFaces"
-              color="secondary"
-              hide-details="auto"
-              inset
-              aria-label="Invert front and back faces"
-            />
-          </div>
-        </div>
-      </v-expand-transition>
-
       <v-expand-transition>
         <div v-if="settings.mode === 'passive'">
           <div class="passive-settings mt-5">
             <LabeledSlider
-              v-if="settings.cardSides !== 'back'"
               v-model="settings.frontSeconds"
               title="Front duration"
               :min="1"
@@ -393,7 +328,6 @@ function faceValueTitle(value: FlashcardReviewFaceValue) {
               aria-label="Front duration in seconds"
             />
             <LabeledSlider
-              v-if="settings.cardSides !== 'front'"
               v-model="settings.backSeconds"
               title="Back duration"
               :min="1"
@@ -416,10 +350,8 @@ function faceValueTitle(value: FlashcardReviewFaceValue) {
           <p v-if="speechLoading">Checking speech synthesis on this device…</p>
           <p v-else-if="speechSupport.available">
             {{ !frontSpeechEnabled && !backSpeechEnabled
-              ? 'The selected image value has no text to read aloud'
-              : settings.cardSides === 'both'
-                ? 'Speak the selected front and back values whenever each face appears'
-                : `Speak the selected ${settings.cardSides} value of each card` }}
+              ? 'The selected values have no text to read aloud'
+              : 'Speak the selected front and back values whenever each face appears' }}
           </p>
           <p v-else>Speech synthesis is not available on this device</p>
         </div>
@@ -581,7 +513,7 @@ function faceValueTitle(value: FlashcardReviewFaceValue) {
           >
             <template #label>
               <span class="eject-behavior-option py-2">
-                <strong>Exclude after {{ ejectExcludeAfter }} {{ ejectExcludeAfter === 1 ? 'ejection' : 'ejections' }}.</strong>
+                <strong>Exclude card</strong>
                 <small>Count card ejections, then prevent the card from appearing in future sessions.</small>
               </span>
             </template>
@@ -607,7 +539,7 @@ function faceValueTitle(value: FlashcardReviewFaceValue) {
           >
             <template #label>
               <span class="eject-behavior-option py-2">
-                <strong>Inject a new card.</strong>
+                <strong>Inject a new card</strong>
                 <small>Keep the active list filled from the rest of the Review set.</small>
               </span>
             </template>
@@ -654,8 +586,6 @@ function faceValueTitle(value: FlashcardReviewFaceValue) {
 .required-mark { color: rgb(var(--v-theme-error)); }
 .mode-toggle { display: grid; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
 .mode-toggle :deep(.v-btn) { width: 100%; min-height: 3rem; }
-.faces-toggle { display: grid; width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
-.faces-toggle :deep(.v-btn) { width: 100%; min-height: 3rem; }
 .sort-direction-toggle { display: grid; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
 .sort-direction-toggle :deep(.v-btn) { width: 100%; }
 .eject-behavior-options :deep(.v-selection-control) { min-height: 3rem; }

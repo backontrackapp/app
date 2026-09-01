@@ -630,7 +630,7 @@ onBeforeUnmount(() => {
   box-shadow: 0 .1rem .35rem rgba(0, 0, 0, .32);
 }
 
-.task-title { font-size: .98rem; font-weight: 850; line-height: 1.25; }
+.task-title { display: -webkit-box; overflow: hidden; font-size: .98rem; font-weight: 850; line-height: 1.25; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .task-subtitle { max-width: 28rem; color: rgb(var(--v-theme-on-surface) / .5); font-size: .75rem; }
 .schedule-status,
 .period-pill {

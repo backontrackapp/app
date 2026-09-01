@@ -5,6 +5,7 @@ import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import ContentIcon from '@/components/ContentIcon.vue'
+import EmptyStateCard from '@/components/EmptyStateCard.vue'
 import { nextScheduledDates } from '@/services/schedule'
 import { taskDisplayIcon, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import { taskGoalTracker } from '@/services/taskTrackers'
@@ -204,22 +205,22 @@ async function confirmStatusChange() {
             </v-card>
           </div>
 
-          <v-card v-else-if="!loading" class="surface-card pa-8 text-center">
-            <v-icon :icon="filter === 'active' ? 'mdi-clipboard-plus-outline' : 'mdi-pause-circle-outline'" size="42" class="mb-3" />
-            <h2 class="text-h6 font-weight-black">
-              {{ filter === 'active' ? 'Build your first routine' : 'Nothing paused' }}
-            </h2>
-            <p class="text-body-2 muted mt-2 mb-5">
-              {{ filter === 'active' ? 'Choose a task style and make it yours.' : 'Paused tasks will wait here without losing history.' }}
-            </p>
-            <v-btn
-              v-if="filter === 'active'"
-              color="secondary"
-              to="/tasks/new"
-            >
-              Create task
-            </v-btn>
-          </v-card>
+          <EmptyStateCard
+            v-else-if="!loading"
+            :icon="filter === 'active' ? 'mdi-clipboard-plus-outline' : 'mdi-pause-circle-outline'"
+            :title="filter === 'active' ? 'Build your first routine' : 'Nothing paused'"
+            :subtitle="filter === 'active' ? 'Choose a task style and make it yours.' : 'Paused tasks will wait here without losing history.'"
+          >
+            <template #button>
+              <v-btn
+                v-if="filter === 'active'"
+                color="secondary"
+                to="/tasks/new"
+              >
+                Create task
+              </v-btn>
+            </template>
+          </EmptyStateCard>
         </div>
       </transition>
     </div>

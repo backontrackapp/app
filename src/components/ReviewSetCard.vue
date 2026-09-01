@@ -6,7 +6,6 @@ import { flashcardReviewFaceValue } from '@/services/flashcards'
 import { REVIEW_SET_CARD_SWIPE_HINT } from '@/services/swipeHints'
 import type {
   FlashcardReviewCardQuickTag,
-  FlashcardReviewCardSides,
   FlashcardReviewFaceValue,
   FlashcardReviewMode,
   FlashcardReviewQueueCard,
@@ -20,8 +19,6 @@ type ReviewCardBufferPhase = 'idle' | 'preparing' | 'moving'
 interface ReviewCardBuffer {
   card: FlashcardReviewQueueCard
   side: FlashcardReviewSide
-  cardSides: FlashcardReviewCardSides
-  invertFaces: boolean
   frontDisplay: FlashcardReviewFaceValue
   backDisplay: FlashcardReviewFaceValue
   revealed: boolean
@@ -34,8 +31,6 @@ const props = withDefaults(defineProps<{
   card: FlashcardReviewQueueCard
   side: FlashcardReviewSide
   mode?: FlashcardReviewMode
-  cardSides?: FlashcardReviewCardSides
-  invertFaces?: boolean
   frontDisplay?: FlashcardReviewFaceValue
   backDisplay?: FlashcardReviewFaceValue
   dense?: boolean
@@ -61,8 +56,6 @@ const props = withDefaults(defineProps<{
   ejectDisabled?: boolean
 }>(), {
   mode: 'passive',
-  cardSides: 'both',
-  invertFaces: false,
   frontDisplay: 'front',
   backDisplay: 'back',
   dense: false,
@@ -119,8 +112,6 @@ function snapshotBuffer(): ReviewCardBuffer {
   return {
     card: { ...props.card, tags: [...props.card.tags] },
     side: props.side,
-    cardSides: props.cardSides,
-    invertFaces: props.invertFaces,
     frontDisplay: props.frontDisplay,
     backDisplay: props.backDisplay,
     revealed: props.revealed,
@@ -280,11 +271,9 @@ function bufferFaceValue(buffer: ReviewCardBuffer) {
 
 const standaloneAriaLabel = computed(() => {
   if (props.speechEnabled) return `Replay ${displayedBuffer.value.side} speech`
-  if (
-    props.mode === 'manual'
-    && displayedBuffer.value.cardSides === 'both'
-    && !displayedBuffer.value.revealed
-  ) return displayedBuffer.value.side === 'back' ? 'Show front' : 'Show answer'
+  if (props.mode === 'manual' && !displayedBuffer.value.revealed) {
+    return 'Show answer'
+  }
   return `${displayedBuffer.value.side} shown`
 })
 
@@ -520,11 +509,7 @@ defineExpose({ refitContent })
           <span v-if="speechEnabled" class="review-card__hint">
             <v-icon icon="mdi-volume-high" size="1.125rem" /> Tap to replay
           </span>
-          <span
-            v-else-if="displayedBuffer.cardSides === 'both'"
-            class="review-card__hint"
-            :class="{ 'text-disabled': displayedBuffer.revealed }"
-          >
+          <span v-else class="review-card__hint" :class="{ 'text-disabled': displayedBuffer.revealed }">
             <v-icon icon="mdi-gesture-tap" size="1.125rem" /> Tap to reveal
           </span>
         </button>

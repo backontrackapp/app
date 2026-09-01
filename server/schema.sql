@@ -466,7 +466,6 @@ CREATE TABLE tracking_trackers (
     description TEXT NOT NULL DEFAULT '',
     role TEXT NOT NULL DEFAULT 'factor',
     kind TEXT NOT NULL DEFAULT 'yes_no',
-    category TEXT NOT NULL DEFAULT 'other',
     unit TEXT NOT NULL DEFAULT '',
     target_value NUMERIC NOT NULL DEFAULT 0,
     target_operator TEXT NOT NULL DEFAULT 'gte',

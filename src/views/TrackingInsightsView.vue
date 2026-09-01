@@ -5,6 +5,7 @@ import { format, parseISO, subDays, subMonths } from 'date-fns'
 import { api } from '@/lib/api'
 import ContentIcon from '@/components/ContentIcon.vue'
 import DatePickerField from '@/components/DatePickerField.vue'
+import EmptyStateCard from '@/components/EmptyStateCard.vue'
 import TrackingChartSkeleton from '@/components/TrackingChartSkeleton.vue'
 import TrackingRelationshipChart from '@/components/TrackingRelationshipChart.vue'
 import TrackingTimelineChart from '@/components/TrackingTimelineChart.vue'
@@ -12,7 +13,6 @@ import {
   buildTrackingInsight,
   dateRangeKeys,
   defaultTrackingInsightRangePreset,
-  trackingCategoryIcon,
   trackingDailyValuesForRange,
   type TrackingInsightResult,
 } from '@/services/tracking'
@@ -117,7 +117,7 @@ const factorSources = computed<TrackingFactorSource[]>(() => [
     id: `tracker:${tracker.id}`,
     source: 'tracker' as const,
     name: tracker.name,
-    icon: tracker.icon || trackingCategoryIcon(tracker.category),
+    icon: tracker.icon || 'mdi-checkbox-marked-circle-outline',
     role: 'factor' as const,
     favorableDirection: 'neutral' as const,
     unit: tracker.unit,
@@ -164,7 +164,7 @@ const outcomeSources = computed<TrackingAnalysisSource[]>(() =>
     id: tracker.id,
     source: 'tracker',
     name: tracker.name,
-    icon: tracker.icon || trackingCategoryIcon(tracker.category),
+    icon: tracker.icon || 'mdi-checkbox-marked-circle-outline',
     role: tracker.role,
     favorableDirection: tracker.favorableDirection,
     unit: tracker.unit,
@@ -413,6 +413,7 @@ function trackerDailyValues(trackerId: string, start: string, end: string) {
             v-model="factorId"
             label="Factor"
             :items="factorItems"
+            :disabled="!factorSources.length"
             no-data-text="Create a factor, task, interval, or Review set first"
           >
             <template #item="{ props: itemProps, item }">
@@ -443,6 +444,7 @@ function trackerDailyValues(trackerId: string, start: string, end: string) {
             v-model="outcomeId"
             label="Outcome"
             :items="outcomeItems"
+            :disabled="!outcomeSources.length"
             no-data-text="Create an outcome tracker first"
           >
             <template #item="{ props: itemProps, item }">
@@ -496,13 +498,18 @@ function trackerDailyValues(trackerId: string, start: string, end: string) {
       </div>
     </v-card>
 
-    <v-card v-if="initialized && (!factorSources.length || !outcomeSources.length)" class="surface-card empty-state pa-7 text-center">
-      <v-icon icon="mdi-chart-timeline-variant-shimmer" size="42" color="secondary" />
-      <h2 class="mt-3">More tracking data is needed</h2>
-      <p v-if="!outcomeSources.length">Create an outcome tracker, such as Mood or Energy, before exploring insights.</p>
-      <p v-else>Create a factor tracker, task, interval, or Review set to compare with an outcome.</p>
-      <v-btn class="mt-4" color="secondary" to="/tracking/new" prepend-icon="mdi-plus">Create tracker</v-btn>
-    </v-card>
+    <EmptyStateCard
+      v-if="initialized && (!factorSources.length || !outcomeSources.length)"
+      icon="mdi-chart-timeline-variant-shimmer"
+      title="More tracking data is needed"
+      :subtitle="!outcomeSources.length
+        ? 'Create an outcome tracker, such as Mood or Energy, before exploring insights.'
+        : 'Create a factor tracker, task, interval, or Review set to compare with an outcome.'"
+    >
+      <template #button>
+        <v-btn color="secondary" to="/tracking/new" prepend-icon="mdi-plus">Create tracker</v-btn>
+      </template>
+    </EmptyStateCard>
 
     <section v-else-if="!initialized || loading" class="insight-results" aria-busy="true">
       <v-card class="chart-card surface-card pa-5 mb-4">
@@ -574,10 +581,12 @@ function trackerDailyValues(trackerId: string, start: string, end: string) {
       </v-card>
     </section>
 
-    <v-card v-else-if="!loading && factorSources.length && outcomeSources.length" class="surface-card chart-empty pa-8 text-center">
-      <v-icon icon="mdi-chart-box-outline" size="40" />
-      <p>Select a factor, outcome, and valid date range to see insights.</p>
-    </v-card>
+    <EmptyStateCard
+      v-else-if="!loading && factorSources.length && outcomeSources.length"
+      icon="mdi-chart-box-outline"
+      icon-color="medium-emphasis"
+      subtitle="Select a factor, outcome, and valid date range to see insights."
+    />
   </main>
 </template>
 
@@ -585,11 +594,9 @@ function trackerDailyValues(trackerId: string, start: string, end: string) {
 .insights-page { max-width: 56.25rem; }
 .filter-card { display: grid; gap: 1rem; }
 .filter-card h2,
-.chart-card h2,
-.empty-state h2 { font-size: 1rem; font-weight: 900; }
-.filter-card > div:first-child p,
-.chart-heading p,
-.empty-state p { margin-top: .25rem; color: rgb(var(--v-theme-on-surface) / .58); font-size: .75rem; line-height: 1.45; }
+.chart-card h2 { font-size: 1rem; font-weight: 900; }
+.filter-card > div:first-child p { margin-top: .2rem; color: rgb(var(--v-theme-on-surface) / .56); font-size: .78rem; line-height: 1.45; }
+.chart-heading p { margin-top: .25rem; color: rgb(var(--v-theme-on-surface) / .58); font-size: .75rem; line-height: 1.45; }
 .insight-source-icon { display: grid; width: 2rem; height: 2rem; flex: 0 0 auto; place-items: center; border-radius: .65rem; color: #191c19; }
 .insight-source-selection { display: flex; min-width: 0; align-items: center; gap: .5rem; }
 .insight-source-selection__icon { display: grid; width: 1.5rem; height: 1.5rem; flex: 0 0 auto; place-items: center; border-radius: .5rem; color: #191c19; }

@@ -136,9 +136,8 @@ export async function syncBackgroundInterval(session: IntervalSession) {
                 frontAudio: resolveFlashcardAudioPlaybackUrl(card.frontAudio || ''),
                 backAudio: resolveFlashcardAudioPlaybackUrl(card.backAudio || ''),
               })),
-              cardSides: session.flashcardReview.cardSides,
-              invertFaces: session.flashcardReview.cardSides === 'both'
-                && session.flashcardReview.invertFaces === true,
+              cardSides: 'both',
+              invertFaces: false,
               frontSeconds: session.flashcardReview.frontSeconds,
               backSeconds: session.flashcardReview.backSeconds,
               backSpeechRepeatCount: session.flashcardReview.backSpeechRepeatCount,

@@ -3013,6 +3013,8 @@ final class Api
                 'created_at' => $now,
                 'updated_at' => $now,
             ];
+            $values['card_sides'] = 'both';
+            $values['invert_faces'] = false;
             $this->validateFlashcardSpeechSettings($values);
         }
         $this->validateRelations($collection['name'], $values, (string) $user['id']);
@@ -3127,6 +3129,10 @@ final class Api
             $this->rejectFields($body, ['image_url', 'image_file', 'created_at']);
         }
         $values = $this->validateRecordInput($collection, $body, false);
+        if ($collection['name'] === 'flashcard_review_sets') {
+            $values['card_sides'] = 'both';
+            $values['invert_faces'] = false;
+        }
         $oldFlashcardImage = null;
         if ($collection['name'] === 'flashcards' && array_key_exists('image_url', $values)) {
             $values['image_url'] = $this->validateFlashcardImageUrl($values['image_url']);
@@ -3247,7 +3253,7 @@ final class Api
             if (
                 (bool) ($values['speech_enabled'] ?? false)
                 && $sideIsShown
-                && $faceValue !== 'image'
+                && !in_array($faceValue, ['image', 'empty'], true)
                 && $language === ''
             ) {
                 throw new ApiException(422, 'Select a language for every text face.', [
@@ -5146,6 +5152,8 @@ final class Api
         foreach ($fields as $field) {
             $settings[$field] = $this->validateField($field, $body[$field], $reviewSetFields[$field]);
         }
+        $settings['card_sides'] = 'both';
+        $settings['invert_faces'] = false;
         if ($settings['mode'] !== 'passive') {
             $settings['indefinite'] = false;
             $settings['time_limit_seconds'] = 0;
@@ -6276,15 +6284,6 @@ final class Api
         $nodes = isset($definition['children']) && is_array($definition['children'])
             ? $definition['children']
             : [];
-        $repetition = $definition['globalRepetition'] ?? null;
-        if (is_array($repetition) && ($repetition['enabled'] ?? false) === true) {
-            $repeatCount = min(15, max(1, (int) round((float) ($repetition['defaultCount'] ?? 1))));
-            $nodes = [[
-                'type' => 'group',
-                'repeatCount' => $repeatCount,
-                'children' => $nodes,
-            ]];
-        }
         $this->appendExpandedIntervalSteps($nodes, $steps);
 
         $stepIndex = max(0, (int) ($runtime['stepIndex'] ?? 0));
@@ -7149,6 +7148,7 @@ final class Api
                 $collection['config']['fields'][$field],
             );
         }
+        $this->removeLegacyFlexibleRepeats($validated);
 
         return $validated;
     }
@@ -8197,6 +8197,8 @@ final class Api
             }
             $settings[$field] = $this->validateField($field, $body[$field], $fields[$field]);
         }
+        $settings['card_sides'] = 'both';
+        $settings['invert_faces'] = false;
         $settings['excluded_cards'] = $this->validateField(
             'excluded_cards',
             $body['excluded_cards'] ?? [],
@@ -8231,6 +8233,8 @@ final class Api
                 default => (string) ($source[$field] ?? ''),
             };
         }
+        $settings['card_sides'] = 'both';
+        $settings['invert_faces'] = false;
         $excludedCards = $this->decodeJsonColumn($source['excluded_cards'] ?? '[]');
         $settings['excluded_cards'] = is_array($excludedCards)
             ? array_values(array_filter($excludedCards, 'is_string'))
@@ -8682,8 +8686,18 @@ final class Api
                 default => $record[$field],
             };
         }
+        $this->removeLegacyFlexibleRepeats($record);
 
         return $record;
+    }
+
+    private function removeLegacyFlexibleRepeats(array &$values): void
+    {
+        foreach (['definition', 'definition_snapshot'] as $field) {
+            if (isset($values[$field]) && is_array($values[$field])) {
+                unset($values[$field]['globalRepetition']);
+            }
+        }
     }
 
     private function databaseValues(array $collection, array $values): array

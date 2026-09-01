@@ -105,6 +105,7 @@ export const FLASHCARD_REVIEW_FACE_VALUE_OPTIONS: Array<{
   { title: 'Transliteration', value: 'transliteration', icon: 'mdi-format-letter-matches' },
   { title: 'Note', value: 'note', icon: 'mdi-note-text-outline' },
   { title: 'Image', value: 'image', icon: 'mdi-image-outline' },
+  { title: 'Empty', value: 'empty', icon: 'mdi-card-off-outline' },
 ]
 
 export function normalizeFlashcardReviewFaceValue(
@@ -130,7 +131,7 @@ export function flashcardReviewFaceTitle(value: FlashcardReviewFaceValue) {
 }
 
 export function flashcardReviewFaceCanSpeak(value: FlashcardReviewFaceValue) {
-  return value !== 'image'
+  return value !== 'image' && value !== 'empty'
 }
 
 export function flashcardReviewFaceText(
@@ -295,8 +296,8 @@ export function updateFlashcardReviewExclusions(
 export function flashcardReviewSettingsSignature(settings: FlashcardReviewSettings) {
   return JSON.stringify({
     mode: settings.mode,
-    cardSides: settings.cardSides,
-    invertFaces: settings.cardSides === 'both' && settings.invertFaces === true,
+    cardSides: DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
+    invertFaces: false,
     frontDisplay: normalizeFlashcardReviewFaceValue(
       settings.frontDisplay,
       DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
@@ -343,11 +344,9 @@ export function flashcardReviewSettingsAreValid(
     && (settings.timeLimitSeconds || 0) <= MAX_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS
     && (settings.timeLimitSeconds || 0) % 60 === 0
     && (!settings.speechEnabled || Boolean(
-      (settings.cardSides === 'back'
-        || !flashcardReviewFaceCanSpeak(flashcardReviewFaceValue(settings, 'front'))
+      (!flashcardReviewFaceCanSpeak(flashcardReviewFaceValue(settings, 'front'))
         || settings.frontLanguage)
-      && (settings.cardSides === 'front'
-        || !flashcardReviewFaceCanSpeak(flashcardReviewFaceValue(settings, 'back'))
+      && (!flashcardReviewFaceCanSpeak(flashcardReviewFaceValue(settings, 'back'))
         || settings.backLanguage),
     ))
 }
@@ -369,7 +368,8 @@ export const FLASHCARD_BULK_MENU_ITEMS = [
     icon: 'mdi-clipboard-arrow-up-outline',
     divider: true,
   },
-  { action: 'delete', title: 'Delete cards', icon: 'mdi-delete-outline', color: 'error', divider: true },
+  { action: 'remove_from_review_set', title: 'Remove cards from set', icon: 'mdi-playlist-remove', divider: true },
+  { action: 'delete', title: 'Delete cards', icon: 'mdi-delete-outline', color: 'error' },
 ] as const satisfies ReadonlyArray<{
   action: FlashcardBulkAction
   title: string
@@ -724,8 +724,8 @@ export function createFlashcardReviewPreviewSession(
     status: 'paused',
     name: reviewSet.name,
     mode: reviewSet.mode,
-    cardSides: reviewSet.cardSides,
-    invertFaces: reviewSet.cardSides === 'both' && reviewSet.invertFaces === true,
+    cardSides: DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
+    invertFaces: false,
     indefinite: reviewSet.mode === 'passive' && reviewSet.indefinite,
     timeLimitSeconds: reviewSet.mode === 'passive' ? reviewSet.timeLimitSeconds || 0 : 0,
     maxCards: reviewSet.maxCards,
@@ -785,8 +785,8 @@ export function createIntervalFlashcardReviewSnapshot(
     ejectBehavior: reviewSet.ejectBehavior || 'remove',
     ejectExcludeAfter: normalizeFlashcardEjectExcludeAfter(reviewSet.ejectExcludeAfter),
     maxCards: reviewSet.maxCards,
-    cardSides: reviewSet.cardSides,
-    invertFaces: reviewSet.cardSides === 'both' && reviewSet.invertFaces === true,
+    cardSides: DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
+    invertFaces: false,
     frontSeconds: effectiveSeconds.front,
     backSeconds: effectiveSeconds.back,
     backSpeechRepeatCount: reviewSet.mode === 'passive' && reviewSet.speechEnabled
@@ -841,17 +841,16 @@ export function flashcardBackDurationMs(backSeconds: number, repeatCount: number
 }
 
 export function flashcardReviewShowsSide(
-  cardSides: FlashcardReviewCardSides,
-  side: FlashcardReviewSide,
+  _cardSides: FlashcardReviewCardSides,
+  _side: FlashcardReviewSide,
 ) {
-  return cardSides === 'both' || cardSides === side
+  return true
 }
 
 export function firstFlashcardReviewSide(
-  cardSides: FlashcardReviewCardSides,
-  invertFaces = false,
+  _cardSides: FlashcardReviewCardSides,
+  _invertFaces = false,
 ): FlashcardReviewSide {
-  if (cardSides === 'back' || (cardSides === 'both' && invertFaces)) return 'back'
   return 'front'
 }
 

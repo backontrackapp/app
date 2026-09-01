@@ -11,6 +11,7 @@ import ContentIcon from '@/components/ContentIcon.vue'
 import AppDialog from '@/components/AppDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import DateSwipeFeedback from '@/components/DateSwipeFeedback.vue'
+import EmptyStateCard from '@/components/EmptyStateCard.vue'
 import NumberPad from '@/components/NumberPad.vue'
 import StickyActionBanner from '@/components/StickyActionBanner.vue'
 import TaskCard from '@/components/TaskCard.vue'
@@ -565,7 +566,10 @@ const progressByVisibilityKey = computed(() => new Map(
   selectedProgress.value.map(progress => [visibilityKey(progress), progress]),
 ))
 const reviewItems = computed(() => store.reviewProgressForDate(selectedDate.value))
-const reviewProgramItems = computed(() => reviewItems.value.filter(item => Boolean(item.programStep)))
+const reviewProgramItems = computed(() => reviewItems.value.filter(item => (
+  item.task.type === 'program' && Boolean(item.programStep)
+)))
+const reviewCarryItems = computed(() => reviewItems.value.filter(item => item.task.type !== 'program'))
 const reviewBulkPresentation = computed(() => ({
   missed: {
     title: 'Mark all open work missed?',
@@ -961,13 +965,16 @@ async function runForProgress(progress: TaskProgress, action: () => Promise<void
 }
 
 async function resolveReview(item: TaskProgress, status: 'missed' | 'carried') {
+  if (status === 'carried' && item.task.type === 'program') return
   const update = runForProgress(item, () => store.setStatus(item, status))
   if (!reviewItems.value.length) reviewSheet.value = false
   await update
 }
 
 function requestBulkReview(action: 'missed' | 'carried' | 'shift') {
-  const items = action === 'shift' ? reviewProgramItems.value : reviewItems.value
+  const items = action === 'shift'
+    ? reviewProgramItems.value
+    : action === 'carried' ? reviewCarryItems.value : reviewItems.value
   if (reviewItems.value.length <= 3 || !items.length) return
   reviewBulkAction.value = action
   reviewBulkItems.value = [...items]
@@ -1770,18 +1777,22 @@ async function saveTaskLogEntry() {
       </v-col>
     </v-row>
 
-    <v-card v-if="!selectedProgress.length && !loading" class="surface-card empty-card pa-8 text-center">
-      <div class="empty-icon mx-auto mb-4"><v-icon icon="mdi-arm-flex-outline" size="32" /></div>
-      <h2 class="text-h6 font-weight-black">No tasks scheduled</h2>
-      <p class="text-body-2 muted mt-2 mb-5">
-        {{ store.tasks.length
+    <EmptyStateCard
+      v-if="!selectedProgress.length && !loading"
+      class="empty-card"
+      icon="mdi-clipboard-search-outline"
+      icon-color="secondary"
+      title="No tasks scheduled"
+      :subtitle="store.tasks.length
           ? 'Nothing is planned for this day. Your other tasks are available below.'
-          : 'Build your first routine and it will show up here.' }}
-      </p>
-      <v-btn color="secondary" prepend-icon="mdi-plus" to="/tasks/new">
-        {{ store.tasks.length ? 'New' : 'Create a task' }}
-      </v-btn>
-    </v-card>
+          : 'Build your first routine and it will show up here.'"
+    >
+      <template #button>
+        <v-btn color="secondary" prepend-icon="mdi-plus" to="/tasks/new">
+          {{ store.tasks.length ? 'New' : 'Create a task' }}
+        </v-btn>
+      </template>
+    </EmptyStateCard>
 
     <section v-if="notScheduledProgress.length" class="not-scheduled-section mt-6">
       <v-btn
@@ -2260,7 +2271,7 @@ async function saveTaskLogEntry() {
               Mark all missed
             </v-btn>
           </v-col>
-          <v-col cols="12">
+          <v-col v-if="reviewCarryItems.length" cols="12">
             <v-btn
               block
               size="large"
@@ -2313,6 +2324,7 @@ async function saveTaskLogEntry() {
             Mark missed
           </v-btn>
           <v-btn
+            v-if="item.task.type !== 'program'"
             size="large"
             variant="tonal"
             prepend-icon="mdi-arrow-right-bold"
@@ -2322,7 +2334,7 @@ async function saveTaskLogEntry() {
             Carry forward
           </v-btn>
           <v-btn
-            v-if="item.programStep"
+            v-if="item.task.type === 'program' && item.programStep"
             size="large"
             variant="tonal"
             prepend-icon="mdi-calendar-arrow-right"
@@ -2449,7 +2461,6 @@ async function saveTaskLogEntry() {
 .today-page--with-review-banner {
   padding-bottom: calc(7rem + var(--page-safe-area-bottom));
 }
-.empty-icon { display: grid; width: 4rem; height: 4rem; place-items: center; border-radius: 1.25rem; background: #c7f464; color: #17200f; }
 .not-scheduled-section__heading { min-height: 2.75rem; }
 .not-scheduled-section__heading :deep(.v-btn__content) { width: 100%; justify-content: flex-start; gap: .5rem; }
 .not-scheduled-section__heading h3 { font-size: .75rem; font-weight: 900; letter-spacing: .04em; }

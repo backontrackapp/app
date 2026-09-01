@@ -78,14 +78,16 @@ const healthConnected = computed(() => (
 ))
 
 const connectionTitle = computed(() => {
-  if (!isAndroidApp) return 'Android app required'
+  if (!isAndroidApp) return 'Android or iOS app required'
   if (healthStatus.value.availability === 'update_required') return 'Health Connect needs an update'
   if (healthStatus.value.availability === 'unavailable') return 'Health Connect unavailable'
   return healthStatus.value.authorized ? 'Connected' : 'Permission required'
 })
 
 const connectionCopy = computed(() => {
-  if (!isAndroidApp) return 'Open this page in the BackOnTrack Android app to connect your step data.'
+  if (!isAndroidApp) {
+    return 'Open this page in the BackOnTrack Android or iOS app. Health Connect is currently available on Android only.'
+  }
   if (healthStatus.value.availability === 'update_required') {
     return 'Install or update Health Connect before BackOnTrack can read your steps.'
   }
@@ -302,67 +304,6 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
     <v-card class="surface-card pa-5 pa-sm-6">
       <div class="settings-section-heading">
         <div>
-          <h2>Steps</h2>
-          <p>Used by step-counter tasks to update progress automatically.</p>
-        </div>
-        <v-icon icon="mdi-shoe-print" />
-      </div>
-
-      <v-expand-transition>
-        <div v-if="!loading">
-            <v-select
-            v-model="stepSource"
-            class="mt-5"
-            label="Steps source"
-            :items="stepSources"
-            hide-details
-            >
-            <template v-if="healthConnected" #append-inner>
-                <v-icon
-                icon="mdi-check-circle-outline"
-                color="success"
-                title="Connected"
-                />
-            </template>
-            </v-select>
-
-            <v-alert
-            v-if="!healthConnected"
-            :type="connectionColor"
-            variant="tonal"
-            :icon="connectionIcon"
-            class="mt-4"
-            >
-            <strong>{{ connectionTitle }}</strong>
-            <p class="mt-1">{{ connectionCopy }}</p>
-            </v-alert>
-
-            <div v-if="isAndroidApp" class="settings-actions mt-4">
-            <v-btn
-                v-if="healthStatus.availability === 'available' && !healthStatus.authorized"
-                color="secondary"
-                prepend-icon="mdi-link-variant"
-                :loading="connecting"
-                @click="connectHealthConnect"
-            >
-                Connect Health Connect
-            </v-btn>
-            <v-btn
-                v-else
-                variant="outlined"
-                prepend-icon="mdi-open-in-new"
-                @click="openHealthConnectSettings"
-            >
-                Open Health Connect
-            </v-btn>
-            </div>
-        </div>
-      </v-expand-transition>
-    </v-card>
-
-    <v-card class="surface-card pa-5 pa-sm-6">
-      <div class="settings-section-heading">
-        <div>
           <h2>Exercise</h2>
           <p>Choose the default weight unit for workout sets.</p>
         </div>
@@ -391,38 +332,110 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
     <v-card class="surface-card pa-5 pa-sm-6">
       <div class="settings-section-heading">
         <div>
-          <h2>Screen time</h2>
-          <p>Used as a daily factor in tracking insights.</p>
+          <h2>3rd party</h2>
+          <p>Connect external services that help track your progress and insights.</p>
         </div>
-        <v-icon icon="mdi-cellphone-clock" />
+        <v-icon icon="mdi-connection" />
       </div>
 
-      <v-alert
-        :type="screenTimeAuthorized ? 'success' : 'info'"
-        variant="tonal"
-        :icon="screenTimeAuthorized ? 'mdi-check-circle-outline' : 'mdi-chart-timeline-variant'"
-        class="mt-5"
-      >
-        <strong>{{ screenTimeAuthorized ? 'Usage access allowed' : 'Usage access required' }}</strong>
-        <p class="mt-1">
-          {{ screenTimeAuthorized
-            ? 'BackOnTrack can read daily screen-interactive time for insights.'
-            : 'Allow BackOnTrack to read device usage before comparing screen time with outcomes.' }}
-        </p>
-      </v-alert>
+      <section class="settings-integration-section mt-5" aria-labelledby="steps-heading">
+        <div class="settings-integration-heading">
+          <div>
+            <h3 id="steps-heading">Steps</h3>
+            <p>Used by step-counter tasks to update progress automatically.</p>
+          </div>
+        </div>
 
-      <v-btn
-        v-if="isAndroidApp"
-        block
-        class="mt-4"
-        :variant="screenTimeAuthorized ? 'outlined' : 'flat'"
-        :color="screenTimeAuthorized ? undefined : 'secondary'"
-        prepend-icon="mdi-open-in-new"
-        :loading="screenTimeConnecting"
-        @click="connectScreenTime"
-      >
-        Open usage access
-      </v-btn>
+        <v-expand-transition>
+          <div v-if="!loading">
+            <v-select
+              v-model="stepSource"
+              class="mt-4"
+              label="Steps source"
+              :items="stepSources"
+              hide-details
+            >
+              <template v-if="healthConnected" #append-inner>
+                <v-icon
+                  icon="mdi-check-circle-outline"
+                  color="success"
+                  title="Connected"
+                />
+              </template>
+            </v-select>
+
+            <v-alert
+              v-if="!healthConnected"
+              :type="connectionColor"
+              variant="tonal"
+              :icon="connectionIcon"
+              class="mt-4"
+            >
+              <strong>{{ connectionTitle }}</strong>
+              <p class="mt-1">{{ connectionCopy }}</p>
+            </v-alert>
+
+            <div v-if="isAndroidApp" class="settings-actions mt-4">
+              <v-btn
+                v-if="healthStatus.availability === 'available' && !healthStatus.authorized"
+                color="secondary"
+                prepend-icon="mdi-link-variant"
+                :loading="connecting"
+                @click="connectHealthConnect"
+            >
+                Connect Health Connect
+              </v-btn>
+              <v-btn
+                v-else
+                variant="outlined"
+                prepend-icon="mdi-open-in-new"
+                @click="openHealthConnectSettings"
+            >
+                Open Health Connect
+              </v-btn>
+            </div>
+          </div>
+        </v-expand-transition>
+      </section>
+
+      <v-divider class="my-5" />
+
+      <section class="settings-integration-section" aria-labelledby="screen-time-heading">
+        <div class="settings-integration-heading">
+          <div>
+            <h3 id="screen-time-heading">Screen time</h3>
+            <p>Used as a daily factor in tracking insights.</p>
+          </div>
+          <v-icon icon="mdi-cellphone-clock" />
+        </div>
+
+        <v-alert
+          :type="screenTimeAuthorized ? 'success' : 'info'"
+          variant="tonal"
+          :icon="screenTimeAuthorized ? 'mdi-check-circle-outline' : 'mdi-chart-timeline-variant'"
+          class="mt-4"
+        >
+          <strong>{{ screenTimeAuthorized ? 'Usage access allowed' : 'Usage access required' }}</strong>
+          <p class="mt-1">
+            {{ screenTimeAuthorized
+              ? 'BackOnTrack can read daily screen-interactive time for insights.'
+              : 'Allow BackOnTrack to read device usage before comparing screen time with outcomes.' }}
+          </p>
+        </v-alert>
+
+        <v-btn
+          v-if="isAndroidApp"
+          block
+          class="mt-4"
+          :variant="screenTimeAuthorized ? 'outlined' : 'flat'"
+          :color="screenTimeAuthorized ? undefined : 'secondary'"
+          prepend-icon="mdi-open-in-new"
+          :loading="screenTimeConnecting"
+          @click="connectScreenTime"
+        >
+          Open usage access
+        </v-btn>
+      </section>
     </v-card>
 
     <v-card class="surface-card pa-5 pa-sm-6">
@@ -590,6 +603,29 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
 }
 
 .settings-section-heading > .v-icon {
+  color: rgb(var(--v-theme-secondary));
+}
+
+.settings-integration-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 1rem;
+}
+
+.settings-integration-heading h3 {
+  font-size: .875rem;
+  font-weight: 900;
+}
+
+.settings-integration-heading p {
+  margin-top: .2rem;
+  color: rgb(var(--v-theme-on-surface) / .56);
+  font-size: .78rem;
+  line-height: 1.45;
+}
+
+.settings-integration-heading > .v-icon {
   color: rgb(var(--v-theme-secondary));
 }
 

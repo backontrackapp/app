@@ -4,6 +4,7 @@ import { format, isSameWeek, startOfWeek } from 'date-fns'
 import { useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import EmptyStateCard from '@/components/EmptyStateCard.vue'
 import RecentSessionIdentity from '@/components/RecentSessionIdentity.vue'
 import WeekNavigator from '@/components/WeekNavigator.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
@@ -399,7 +400,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
         <v-icon icon="mdi-cards-playing-outline" size="40" color="secondary" />
         <h3 class="text-h6 font-weight-black mt-3">Build your first Review set</h3>
         <p class="text-body-2 muted mt-2 mb-5">Assign cards to a set, then choose how they should move.</p>
-        <v-btn color="secondary" :to="{ name: 'flashcard-review-set-new' }">Create Review set</v-btn>
+        <v-btn color="secondary" :to="{ name: 'flashcard-review-set-new' }">Create a review set</v-btn>
       </v-card>
 
       <section v-if="archivedReviewSets.length" class="mt-4">
@@ -487,7 +488,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
       </div>
     </section>
 
-    <section>
+    <section v-if="ownedReviewSets.length">
       <div class="section-heading">
         <h2>Recent reviews</h2>
       </div>
@@ -572,15 +573,13 @@ async function reorderReviewSets(result: LongPressDragResult) {
             </v-expand-transition>
           </section>
         </v-card>
-        <v-card
+        <EmptyStateCard
           v-else-if="store.loaded && intervalStore.loaded"
           :key="`empty-${recentWeekStart.toISOString()}`"
-          class="surface-card pa-7 text-center"
-        >
-          <p class="text-body-2 muted">
-            {{ recentWeekIsCurrent ? 'Finished reviews will appear here.' : 'No finished reviews this week.' }}
-          </p>
-        </v-card>
+          icon="mdi-history"
+          title="No recent reviews"
+          :subtitle="recentWeekIsCurrent ? 'Finished reviews will appear here.' : 'No finished reviews this week.'"
+        />
       </transition>
     </section>
 

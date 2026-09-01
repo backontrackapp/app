@@ -279,9 +279,7 @@ const firstReviewSide = computed(() => firstFlashcardReviewSide(
   session.value?.cardSides || 'both',
   session.value?.invertFaces,
 ))
-const manualShowingBack = computed(() => session.value?.cardSides === 'back'
-  || (session.value?.cardSides === 'both'
-    && (revealed.value ? firstReviewSide.value === 'front' : firstReviewSide.value === 'back')))
+const manualShowingBack = computed(() => revealed.value)
 const backSpeechRepeatCount = computed(() => session.value?.mode === 'passive'
   && session.value.speechEnabled
   ? normalizeFlashcardBackSpeechRepeatCount(session.value.backSpeechRepeatCount)
@@ -576,7 +574,7 @@ function passiveStorageKey(id: string) {
 }
 
 function restorePassiveState(value: FlashcardReviewSession) {
-  passiveSide.value = firstFlashcardReviewSide(value.cardSides, value.invertFaces)
+  passiveSide.value = 'front'
   passiveRemainingMs.value = passiveDurationMs.value
   if (value.mode !== 'passive') return
   try {
@@ -676,7 +674,7 @@ function updateProgressFrame() {
 
 async function advancePassive() {
   if (!session.value || session.value.mode !== 'passive' || passiveAdvancing) return
-  if (session.value.cardSides === 'both' && passiveSide.value === firstReviewSide.value) {
+  if (passiveSide.value === firstReviewSide.value) {
     passiveSide.value = otherFlashcardReviewSide(passiveSide.value)
     passiveRemainingMs.value = passiveDurationMs.value
     savePassiveState()
@@ -1107,8 +1105,7 @@ function handleManualCardTap() {
   }
   if (replayCurrentSide()) return
   if (
-    session.value?.cardSides === 'both'
-    && !revealed.value
+    !revealed.value
     && session.value.status === 'running'
     && !busy.value
   ) revealed.value = true
@@ -1118,7 +1115,6 @@ function beginReviewCardSwipe(event: PointerEvent) {
   if (
     !session.value
     || !['running', 'paused'].includes(session.value.status)
-    || (!canNavigateCards.value && session.value.cardSides !== 'both')
     || busy.value
     || (event.pointerType === 'mouse' && event.button !== 0)
   ) return
@@ -1204,7 +1200,6 @@ async function showReviewCardSide(
   const value = session.value
   if (
     !value
-    || value.cardSides !== 'both'
     || currentSpeechSide.value === side
     || !['running', 'paused'].includes(value.status)
     || busy.value
@@ -1366,8 +1361,8 @@ function applyBackgroundProgressSnapshot(
 function copySessionSettings(value: FlashcardReviewSession) {
   Object.assign(sessionSettingsDraft, {
     mode: value.mode,
-    cardSides: value.cardSides,
-    invertFaces: value.invertFaces === true,
+    cardSides: 'both',
+    invertFaces: false,
     indefinite: value.indefinite,
     timeLimitSeconds: value.timeLimitSeconds || 0,
     maxCards: value.maxCards,
@@ -1765,8 +1760,6 @@ async function leaveRunner() {
               :card="displayedCard || currentCard"
               :side="currentSpeechSide"
               :mode="session.mode"
-              :card-sides="session.cardSides"
-              :invert-faces="session.invertFaces"
               :front-display="currentFrontDisplay"
               :back-display="currentBackDisplay"
               :disabled="busy"
@@ -1802,14 +1795,14 @@ async function leaveRunner() {
 
             <div v-if="session.mode === 'manual'" class="grading-actions">
               <v-btn
-                v-if="session.cardSides === 'both' && !revealed"
+                v-if="!revealed"
                 size="large"
                 color="secondary"
                 prepend-icon="mdi-eye-outline"
                 :disabled="busy || session.status === 'paused'"
                 @click="revealed = true"
               >
-                {{ session.invertFaces ? 'Show front' : 'Show answer' }}
+                Show answer
               </v-btn>
               <template v-else>
                 <v-btn

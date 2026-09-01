@@ -14,51 +14,10 @@ import type {
 
 const safeAdd = (left: number, right: number) => Math.min(Number.MAX_SAFE_INTEGER, left + right)
 const safeMultiply = (left: number, right: number) => Math.min(Number.MAX_SAFE_INTEGER, left * right)
-const GLOBAL_REPETITION_GROUP_ID = 'interval-global-repetition'
-export const MIN_GLOBAL_REPETITIONS = 1
-export const MAX_GLOBAL_REPETITIONS = 15
 export const INTERVAL_FLASHCARD_REVIEW_EDGE_PAUSE_MS = 4_000
 
-function clampGlobalRepetitions(value: number) {
-  return Math.min(
-    MAX_GLOBAL_REPETITIONS,
-    Math.max(MIN_GLOBAL_REPETITIONS, Math.round(Number(value) || MIN_GLOBAL_REPETITIONS)),
-  )
-}
-
-export function intervalGlobalRepetitionSettings(definition: IntervalDefinition) {
-  return {
-    enabled: definition.globalRepetition?.enabled === true,
-    defaultCount: clampGlobalRepetitions(
-      definition.globalRepetition?.defaultCount ?? MIN_GLOBAL_REPETITIONS,
-    ),
-  }
-}
-
-export function intervalDefinitionWithRepetitions(
-  definition: IntervalDefinition,
-  repetitions: number,
-): IntervalDefinition {
-  const settings = intervalGlobalRepetitionSettings(definition)
-  return {
-    ...definition,
-    globalRepetition: {
-      enabled: settings.enabled,
-      defaultCount: clampGlobalRepetitions(repetitions),
-    },
-  }
-}
-
 function intervalRootNodes(definition: IntervalDefinition): IntervalNode[] {
-  const settings = intervalGlobalRepetitionSettings(definition)
-  if (!settings.enabled) return definition.children
-  return [{
-    id: GLOBAL_REPETITION_GROUP_ID,
-    type: 'group',
-    name: 'Repetitions',
-    repeatCount: settings.defaultCount,
-    children: definition.children,
-  }]
+  return definition.children
 }
 
 export function intervalStepDurationSeconds(step: IntervalStepNode) {
@@ -320,7 +279,6 @@ export function cloneIntervalTemplateDraft(template: IntervalTemplate): Interval
     definition: {
       version: template.definition.version,
       children: template.definition.children.map(cloneIntervalNode),
-      globalRepetition: intervalGlobalRepetitionSettings(template.definition),
     },
     cues: { ...template.cues },
     sortOrder: template.sortOrder,
@@ -714,19 +672,6 @@ export function intervalRunProgress(
 export function validateIntervalDefinition(definition: IntervalDefinition): string[] {
   const errors: string[] = []
   let steps = 0
-
-  if (
-    definition.globalRepetition?.enabled
-    && (
-      !Number.isInteger(definition.globalRepetition.defaultCount)
-      || definition.globalRepetition.defaultCount < MIN_GLOBAL_REPETITIONS
-      || definition.globalRepetition.defaultCount > MAX_GLOBAL_REPETITIONS
-    )
-  ) {
-    errors.push(
-      `Default repetitions must be from ${MIN_GLOBAL_REPETITIONS} to ${MAX_GLOBAL_REPETITIONS}.`,
-    )
-  }
 
   function visit(nodes: IntervalNode[], location: string) {
     nodes.forEach((node, index) => {

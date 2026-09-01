@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import AppDialog from '@/components/AppDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import EmptyStateCard from '@/components/EmptyStateCard.vue'
 import FlashcardCardsTable from '@/components/FlashcardCardsTable.vue'
 import FlashcardTagCombobox from '@/components/FlashcardTagCombobox.vue'
 import TagSelectionChip from '@/components/TagSelectionChip.vue'
@@ -55,10 +56,16 @@ const props = withDefaults(defineProps<{
   selectable?: boolean
   interactive?: boolean
   canAdd?: boolean
+  canAssign?: boolean
+  assignDisabled?: boolean
+  assignLabel?: string
+  assignAriaLabel?: string
   addLabel?: string
   addAriaLabel?: string
   emptyTitle?: string
   emptyDescription?: string
+  emptyTile?: boolean
+  emptyFlat?: boolean
   firstCardLabel?: string
   showSearchFilter?: boolean
   showUnassignedFilter?: boolean
@@ -75,10 +82,16 @@ const props = withDefaults(defineProps<{
   selectable: false,
   interactive: true,
   canAdd: true,
+  canAssign: false,
+  assignDisabled: false,
+  assignLabel: 'Assign',
+  assignAriaLabel: 'Assign cards to a Review set',
   addLabel: 'Add',
   addAriaLabel: 'Add a new flashcard',
   emptyTitle: 'Your card library is empty',
   emptyDescription: 'Add a prompt and answer, then keep entering cards without closing the form.',
+  emptyTile: false,
+  emptyFlat: false,
   firstCardLabel: 'Add your first card',
   showSearchFilter: true,
   showUnassignedFilter: false,
@@ -88,8 +101,11 @@ const props = withDefaults(defineProps<{
   defaultReviewSetName: '',
 })
 
+const selectedCardIds = defineModel<string[]>('selectedCardIds', { default: () => [] })
+
 const emit = defineEmits<{
   'add-card': []
+  'assign-cards': []
   'open-card': [card: Flashcard, cards: Flashcard[]]
   'update:filteredCount': [count: number]
 }>()
@@ -100,7 +116,6 @@ const searchQuery = ref<string | null>('')
 const showUnassignedCards = ref(false)
 const filterMenuOpen = ref(false)
 const filterMenuTarget = ref<HTMLElement>()
-const selectedCardIds = ref<string[]>([])
 const bulkError = ref('')
 const bulkNotice = ref('')
 const bulkNoticeOpen = ref(false)
@@ -136,7 +151,9 @@ const filteredCards = computed(() => props.cards.filter(card => (
 )))
 const availableBulkMenuItems = computed(() => {
   const actions = props.libraryActions
-    ? FLASHCARD_BULK_MENU_ITEMS.map(item => item.action)
+    ? FLASHCARD_BULK_MENU_ITEMS
+      .filter(item => item.action !== 'remove_from_review_set')
+      .map(item => item.action)
     : props.bulkActions || []
   const bulkItems = FLASHCARD_BULK_MENU_ITEMS
     .filter(item => actions.includes(item.action))
@@ -146,10 +163,13 @@ const availableBulkMenuItems = computed(() => {
   return [...(props.selectionActions || []), ...bulkItems]
 })
 const hasBulkActions = computed(() => availableBulkMenuItems.value.length > 0)
-const hasActions = computed(() => props.libraryActions || props.showImport || hasBulkActions.value || props.canAdd)
+const hasActions = computed(() => (
+  props.libraryActions || props.showImport || hasBulkActions.value || props.canAssign || props.canAdd
+))
 const actionCount = computed(() => (
   Number(props.libraryActions || props.showImport)
   + Number(hasBulkActions.value)
+  + Number(props.canAssign)
   + Number(props.canAdd)
 ))
 const importRoute = computed(() => ({
@@ -296,6 +316,7 @@ function chooseBulkAction(action: FlashcardBulkAction | FlashcardSelectionAction
   }
   if (action === 'clear_tags') clearTagsDialog.value = true
   else if (action === 'export_clipboard') void exportSelectedCards()
+  else if (action === 'remove_from_review_set') void runBulkAction(action)
   else if (action === 'delete') deleteCardsDialog.value = true
 }
 
@@ -510,6 +531,19 @@ async function assignSelectedCardsToReviewSet() {
           </span>
         </v-btn>
         <v-btn
+          v-if="canAssign"
+          class="card-filter-action"
+          variant="tonal"
+          :disabled="assignDisabled"
+          :aria-label="assignAriaLabel"
+          @click="emit('assign-cards')"
+        >
+          <span class="card-filter-action__content">
+            <v-icon icon="mdi-card-plus-outline" />
+            <span class="card-filter-action__label">{{ assignLabel }}</span>
+          </span>
+        </v-btn>
+        <v-btn
           v-if="canAdd"
           class="card-filter-action"
           variant="flat"
@@ -555,19 +589,22 @@ async function assignSelectedCardsToReviewSet() {
       </template>
     </FlashcardCardsTable>
 
-    <v-card v-else class="pa-8 text-center" :class="{ 'surface-card': tableSurface }">
-      <v-icon icon="mdi-cards-outline" size="44" color="secondary" />
-      <h3 class="text-h6 font-weight-black mt-3">
-        {{ cards.length ? 'No cards match your search' : emptyTitle }}
-      </h3>
-      <p class="text-body-2 muted mt-2 mb-5">
-        {{ cards.length ? 'Clear the search or try another term.' : emptyDescription }}
-      </p>
-      <v-btn v-if="!cards.length && canAdd" color="secondary" @click="emit('add-card')">
-        {{ firstCardLabel }}
-      </v-btn>
-      <v-btn v-else-if="cards.length" variant="tonal" @click="clearFilters">Clear filters</v-btn>
-    </v-card>
+    <EmptyStateCard
+      v-else
+      :class="{ 'surface-card': tableSurface && !emptyFlat }"
+      icon="mdi-cards-outline"
+      :title="cards.length ? 'No cards match your search' : emptyTitle"
+      :subtitle="cards.length ? 'Clear the search or try another term.' : emptyDescription"
+      :tile="emptyTile"
+      :flat="emptyFlat"
+    >
+      <template #button>
+        <v-btn v-if="!cards.length && canAdd" color="secondary" @click="emit('add-card')">
+          {{ firstCardLabel }}
+        </v-btn>
+        <v-btn v-else-if="cards.length" variant="tonal" @click="clearFilters">Clear filters</v-btn>
+      </template>
+    </EmptyStateCard>
 
     <template v-if="hasBulkActions">
       <ActionBottomSheet

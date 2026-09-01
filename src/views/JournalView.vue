@@ -6,6 +6,7 @@ import { Intersect, Ripple } from 'vuetify/directives'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ContentIcon from '@/components/ContentIcon.vue'
+import EmptyStateCard from '@/components/EmptyStateCard.vue'
 import {
   filterJournalEntries,
   groupJournalEntriesByMonth,
@@ -169,10 +170,10 @@ onMounted(async () => {
           size="large"
           class="new-reflection-action mobile-large-action"
           color="secondary"
-          prepend-icon="mdi-notebook-plus-outline"
+          prepend-icon="mdi-notebook-edit-outline"
           :to="{ name: 'journal-new', query: newEntryQuery() }"
         >
-          New reflection
+          Write a reflection
         </v-btn>
       </div>
     </div>
@@ -363,17 +364,15 @@ onMounted(async () => {
         </span>
       </div>
 
-      <v-card v-else-if="showEmptyState" class="surface-card pa-8 mt-5 text-center">
-        <v-icon icon="mdi-notebook-outline" size="42" color="secondary" class="mb-3" />
-        <h2 class="text-h6 font-weight-black">
-          {{ hasActiveFilter ? 'No matching reflections' : 'No reflections yet' }}
-        </h2>
-        <p class="text-body-2 muted mt-2">
-          {{ hasActiveFilter
-            ? 'Clear or change the filters to see more of your journal.'
-            : 'Capture what happened, what you noticed, or what you want to remember.' }}
-        </p>
-      </v-card>
+      <EmptyStateCard
+        v-else-if="showEmptyState"
+        class="mt-5"
+        icon="mdi-notebook-outline"
+        :title="hasActiveFilter ? 'No matching reflections' : 'No reflections yet'"
+        :subtitle="hasActiveFilter
+          ? 'Clear or change the filters to see more of your journal.'
+          : 'Capture what happened, what you noticed, or what you want to remember.'"
+      />
     </div>
 
     <ActionBottomSheet
@@ -420,8 +419,8 @@ onMounted(async () => {
 .journal-entry:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .1875rem; }
 .journal-entry__title,
 .journal-entry__body { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; }
-.journal-entry__title { -webkit-line-clamp: 2; }
-.journal-entry__body { color: rgb(var(--v-theme-on-surface) / .66); font-size: .8rem; line-height: 1.55; white-space: pre-line; -webkit-line-clamp: 3; }
+.journal-entry__title { -webkit-line-clamp: 1; }
+.journal-entry__body { color: rgb(var(--v-theme-on-surface) / .66); font-size: .8rem; line-height: 1.55; white-space: pre-line; -webkit-line-clamp: 2; }
 .min-width-0 { min-width: 0; }
 @media (min-width: 60rem) {
   .journal-action-bar { bottom: 0; left: 14rem; }

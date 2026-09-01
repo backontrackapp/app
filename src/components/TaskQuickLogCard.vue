@@ -187,7 +187,7 @@ const cardInk = computed(() => {
   line-height: 1.2;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
 }
 
 .task-quick-log--complete .task-quick-log__content strong {

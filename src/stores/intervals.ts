@@ -33,6 +33,13 @@ import type {
 
 const RECOVERY_KEY = 'backontrack-active-interval'
 
+function withoutLegacyFlexibleRepeats(definition: IntervalDefinition): IntervalDefinition {
+  const { globalRepetition: _globalRepetition, ...normalized } = definition as IntervalDefinition & {
+    globalRepetition?: unknown
+  }
+  return normalized
+}
+
 function mapTemplate(record: Record<string, any>): IntervalTemplate {
   return {
     id: record.id,
@@ -41,7 +48,7 @@ function mapTemplate(record: Record<string, any>): IntervalTemplate {
     icon: record.icon || '',
     color: record.color || '#C7F464',
     flashcardReviewSet: record.flashcard_review_set || undefined,
-    definition: record.definition,
+    definition: withoutLegacyFlexibleRepeats(record.definition),
     cues: {
       soundEnabled: record.sound_enabled !== false,
       vibrationEnabled: record.vibration_enabled !== false,
@@ -60,8 +67,8 @@ function mapSession(record: Record<string, any>): IntervalSession {
     && flashcardSnapshot.cards.length
       ? {
           ...flashcardSnapshot,
-          cardSides: flashcardSnapshot.cardSides || 'both',
-          invertFaces: flashcardSnapshot.invertFaces === true,
+          cardSides: 'both',
+          invertFaces: false,
           sortDirection: flashcardSnapshot.sortDirection || 'asc',
           ejectExcludeAfter: Number(
             flashcardSnapshot.ejectExcludeAfter || DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
@@ -118,7 +125,7 @@ function mapSession(record: Record<string, any>): IntervalSession {
     source: record.source,
     status: record.status,
     name: record.snapshot_name,
-    definition: record.definition_snapshot,
+    definition: withoutLegacyFlexibleRepeats(record.definition_snapshot),
     cues: {
       soundEnabled: record.cue_snapshot?.soundEnabled !== false,
       vibrationEnabled: record.cue_snapshot?.vibrationEnabled !== false,
@@ -221,7 +228,7 @@ export const useIntervalStore = defineStore('intervals', () => {
       icon: draft.icon || '',
       color: draft.color,
       flashcard_review_set: draft.flashcardReviewSet || '',
-      definition: draft.definition,
+      definition: withoutLegacyFlexibleRepeats(draft.definition),
       sound_enabled: draft.cues.soundEnabled,
       vibration_enabled: draft.cues.vibrationEnabled,
       sound: 'beep',
@@ -388,7 +395,8 @@ export const useIntervalStore = defineStore('intervals', () => {
       return existing
     }
     const startedAt = new Date()
-    const runtime = createRuntimeState(input.definition, startedAt)
+    const definition = withoutLegacyFlexibleRepeats(input.definition)
+    const runtime = createRuntimeState(definition, startedAt)
     const cues: IntervalCueSettings = {
       ...input.cues,
       typeSounds: normalizeIntervalTypeSounds(
@@ -413,10 +421,10 @@ export const useIntervalStore = defineStore('intervals', () => {
       source: input.source,
       status: 'running',
       snapshot_name: input.name,
-      definition_snapshot: input.definition,
+      definition_snapshot: definition,
       cue_snapshot: cues,
       started_at: startedAt.toISOString(),
-      planned_seconds: intervalDuration(input.definition),
+      planned_seconds: intervalDuration(definition),
       elapsed_seconds: 0,
       runtime_state: runtime,
       presentation_snapshot: presentation,
@@ -442,8 +450,11 @@ export const useIntervalStore = defineStore('intervals', () => {
     },
   ) {
     const payload: Record<string, unknown> = {}
+    const definition = changes.definition
+      ? withoutLegacyFlexibleRepeats(changes.definition)
+      : undefined
     if (changes.status) payload.status = changes.status
-    if (changes.definition) payload.definition_snapshot = changes.definition
+    if (definition) payload.definition_snapshot = definition
     if (changes.cues) payload.cue_snapshot = changes.cues
     if (changes.runtime) payload.runtime_state = changes.runtime
     if (changes.plannedSeconds !== undefined) payload.planned_seconds = changes.plannedSeconds
@@ -457,7 +468,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     const session = sessions.value[index]!
     const previous = { ...session }
     if (changes.status !== undefined) session.status = changes.status
-    if (changes.definition !== undefined) session.definition = changes.definition
+    if (definition) session.definition = definition
     if (changes.cues !== undefined) session.cues = changes.cues
     if (changes.runtime !== undefined) session.runtime = changes.runtime
     if (changes.plannedSeconds !== undefined) session.plannedSeconds = changes.plannedSeconds

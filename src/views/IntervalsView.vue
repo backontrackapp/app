@@ -4,6 +4,7 @@ import { format, isSameWeek, startOfWeek } from 'date-fns'
 import { useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import EmptyStateCard from '@/components/EmptyStateCard.vue'
 import IntervalPlanList from '@/components/IntervalPlanList.vue'
 import RecentSessionIdentity from '@/components/RecentSessionIdentity.vue'
 import StickyActionBanner from '@/components/StickyActionBanner.vue'
@@ -143,16 +144,17 @@ onBeforeUnmount(() => {
       </div>
     </transition>
 
-    <div class="section-heading">
-      <h2>Recent runs</h2>
-    </div>
-    <WeekNavigator v-model="recentWeekStart" class="mb-3" />
-    <transition name="interval-content" mode="out-in">
-      <v-card
-        v-if="recentSessionsForWeek.length"
-        :key="recentWeekStart.toISOString()"
-        class="surface-card pa-2"
-      >
+    <section v-if="store.templates.length">
+      <div class="section-heading">
+        <h2>Recent runs</h2>
+      </div>
+      <WeekNavigator v-model="recentWeekStart" class="mb-3" />
+      <transition name="interval-content" mode="out-in">
+        <v-card
+          v-if="recentSessionsForWeek.length"
+          :key="recentWeekStart.toISOString()"
+          class="surface-card pa-2"
+        >
         <section
           v-for="(group, groupIndex) in recentSessionGroups"
           :key="group.key"
@@ -218,17 +220,16 @@ onBeforeUnmount(() => {
             </v-list>
           </v-expand-transition>
         </section>
-      </v-card>
-      <v-card
-        v-else-if="store.loaded"
-        :key="`empty-${recentWeekStart.toISOString()}`"
-        class="surface-card pa-7 text-center"
-      >
-        <p class="text-body-2 muted">
-          {{ recentWeekIsCurrent ? 'Finished sessions will appear here.' : 'No finished sessions this week.' }}
-        </p>
-      </v-card>
-    </transition>
+        </v-card>
+        <EmptyStateCard
+          v-else-if="store.loaded"
+          :key="`empty-${recentWeekStart.toISOString()}`"
+          icon="mdi-history"
+          title="No recent sessions"
+          :subtitle="recentWeekIsCurrent ? 'Finished sessions will appear here.' : 'No finished sessions this week.'"
+        />
+      </transition>
+    </section>
 
     <ActionBottomSheet
       v-model="recentRunActionsOpen"

@@ -103,6 +103,29 @@ class BackOnTrackLocalDatabase extends Dexie {
         }
       })
     })
+    this.version(3).stores({
+      resources: '&key,[accountId+resource],accountId',
+      outbox: '&operationId,[accountId+status],[accountId+status+nextAttemptAt+sequence],accountId,[accountId+resource+recordId]',
+      metadata: '&accountId',
+      issues: '&id,[accountId+resolved],accountId',
+      media: null,
+      aliases: '&key,accountId',
+    }).upgrade(async transaction => {
+      await transaction.table('resources')
+        .toCollection()
+        .filter((resource: LocalSyncResource) => resource.resource === 'tracking_trackers')
+        .modify((resource: LocalSyncResource) => {
+          if (resource.data) delete resource.data.category
+          delete resource.fieldClocks.category
+        })
+      await transaction.table('outbox')
+        .toCollection()
+        .filter((operation: SyncOperation) => operation.resource === 'tracking_trackers')
+        .modify((operation: SyncOperation) => {
+          delete operation.payload.category
+          delete operation.fieldClocks.category
+        })
+    })
   }
 }
 

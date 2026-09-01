@@ -130,10 +130,10 @@ function saveKeypadValue() {
         aria-label="Exercise sets"
       >
         <div class="exercise-set-editor__table-header" role="row">
-          <span v-if="canChangeSetCount" aria-hidden="true" />
+          <span aria-hidden="true" />
           <span role="columnheader">Reps</span>
           <span role="columnheader">{{ weightLabel }}</span>
-          <span aria-hidden="true" />
+          <span v-if="canChangeSetCount" aria-hidden="true" />
         </div>
         <div v-for="(set, index) in modelValue" :key="index" class="exercise-set-editor__set" role="row">
           <strong class="exercise-set-editor__set-number" role="rowheader" :aria-label="`Set ${index + 1}`">{{ index + 1 }}</strong>

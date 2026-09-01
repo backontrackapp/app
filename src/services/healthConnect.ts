@@ -73,7 +73,7 @@ export async function getScreenTimeStatus() {
 export async function requestHealthConnectPermission() {
   if (!isNativeHealthConnectSupported()) {
     throw new HealthConnectError(
-      'Health Connect is available only in the Android app.',
+      'Health Connect requires the BackOnTrack Android or iOS app. It is currently available on Android only.',
       'HEALTH_CONNECT_UNAVAILABLE',
     )
   }
@@ -93,7 +93,7 @@ export async function openScreenTimeSettings() {
 export async function readHealthConnectSteps(date: Date): Promise<number> {
   if (!isNativeHealthConnectSupported()) {
     throw new HealthConnectError(
-      'Open BackOnTrack on a supported Android device to load steps from Health Connect.',
+      'Open BackOnTrack on a supported Android or iOS device. Health Connect is currently available on Android only.',
       'HEALTH_CONNECT_UNAVAILABLE',
     )
   }
@@ -139,7 +139,7 @@ export async function readHealthConnectStepsForDates(dateKeys: string[]): Promis
 export async function readScreenTimeForDates(dateKeys: string[]): Promise<Record<string, number>> {
   if (!isNativeHealthConnectSupported()) {
     throw new HealthConnectError(
-      'Open BackOnTrack on a supported Android device to load screen time.',
+      'Open BackOnTrack on a supported Android or iOS device. Screen-time access is currently available on Android only.',
       'HEALTH_CONNECT_UNAVAILABLE',
     )
   }

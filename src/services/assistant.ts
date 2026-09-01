@@ -111,8 +111,8 @@ function reviewSetDraft(reviewSet: FlashcardReviewSet): FlashcardReviewSetDraft 
     assignedCards: [...(reviewSet.assignedCards || [])],
     excludedCards: [...(reviewSet.excludedCards || [])],
     mode: reviewSet.mode,
-    cardSides: reviewSet.cardSides,
-    invertFaces: reviewSet.invertFaces === true,
+    cardSides: 'both',
+    invertFaces: false,
     indefinite: reviewSet.indefinite,
     timeLimitSeconds: reviewSet.timeLimitSeconds || 0,
     maxCards: reviewSet.maxCards,
@@ -147,8 +147,6 @@ function reviewSetChanges(
   }
   add('Name', current.name, draft.name)
   add('Mode', current.mode, draft.mode)
-  add('Faces', current.cardSides, draft.cardSides)
-  add('Invert faces', current.invertFaces === true, draft.invertFaces === true)
   add('Run indefinitely', current.indefinite, draft.indefinite)
   add('Time limit', `${(current.timeLimitSeconds || 0) / 60} min`, `${(draft.timeLimitSeconds || 0) / 60} min`)
   add('Max cards', current.maxCards, draft.maxCards)
@@ -228,8 +226,6 @@ export function assistantReadToolResult(
             card_count: set.matchingCardCount,
             settings: {
               mode: set.mode,
-              card_sides: set.cardSides,
-              invert_faces: set.invertFaces === true,
               run_indefinitely: set.indefinite,
               time_limit_minutes: (set.timeLimitSeconds || 0) / 60,
               max_cards: set.maxCards,
@@ -434,10 +430,6 @@ export function assistantWritePlan(
       draft.name = name
     }
     draft.mode = nullableChoice(call.arguments.mode, ['manual', 'passive'], 'review mode') ?? draft.mode
-    draft.cardSides = nullableChoice(call.arguments.card_sides, ['both', 'front', 'back'], 'card faces')
-      ?? draft.cardSides
-    draft.invertFaces = nullableBoolean(call.arguments.invert_faces, 'Invert faces')
-      ?? draft.invertFaces
     draft.indefinite = nullableBoolean(call.arguments.run_indefinitely, 'Run indefinitely')
       ?? draft.indefinite
     const timeLimitMinutes = nullableInteger(
@@ -467,12 +459,12 @@ export function assistantWritePlan(
     ) ?? draft.backSpeechRepeatCount
     draft.frontDisplay = nullableChoice(
       call.arguments.front_display,
-      ['front', 'back', 'transliteration', 'note', 'image'] as const,
+      ['front', 'back', 'transliteration', 'note', 'image', 'empty'] as const,
       'Front value',
     ) ?? draft.frontDisplay
     draft.backDisplay = nullableChoice(
       call.arguments.back_display,
-      ['front', 'back', 'transliteration', 'note', 'image'] as const,
+      ['front', 'back', 'transliteration', 'note', 'image', 'empty'] as const,
       'Back value',
     ) ?? draft.backDisplay
     draft.speechEnabled = nullableBoolean(call.arguments.speech_enabled, 'Read aloud')

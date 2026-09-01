@@ -196,57 +196,56 @@ function selectKind(kind: IntervalStepKind | null) {
             </template>
           </v-select>
           <v-text-field v-if="node.kind === 'custom'" v-model="node.name" label="Interval name" />
-          <fieldset v-if="node.kind !== 'confirmation'" class="duration-wheel">
-            <legend>Duration</legend>
-            <TimerWheelPicker
-              v-if="!usesStopwatch"
-              v-model="durationSeconds"
-              :active="isExpanded"
-            />
-            <p v-else class="duration-wheel__hint">Time is recorded until you mark this step completed.</p>
-          </fieldset>
-          <div
-            v-if="node.kind !== 'confirmation'"
-            class="timing-toggle"
-            role="group"
-            aria-label="Step timing"
-          >
-            <v-btn
-              prepend-icon="mdi-timer-outline"
-              :color="timingMode === 'timer' ? 'secondary' : undefined"
-              :variant="timingMode === 'timer' ? 'flat' : 'tonal'"
-              :aria-pressed="timingMode === 'timer'"
-              @click="timingMode = 'timer'"
-            >
-              Timer
-            </v-btn>
-            <v-btn
-              prepend-icon="mdi-timer-stopwatch-outline"
-              :color="timingMode === 'stopwatch' ? 'secondary' : undefined"
-              :variant="timingMode === 'stopwatch' ? 'flat' : 'tonal'"
-              :aria-pressed="timingMode === 'stopwatch'"
-              @click="timingMode = 'stopwatch'"
-            >
-              Stopwatch
-            </v-btn>
-          </div>
-          <div>
-            <v-checkbox
-              v-if="reviewSetSpeechEnabled && !usesStopwatch"
-              v-model="flashcardReviewEnabled"
-              label="Play Review set during this step"
-              color="secondary"
-              density="comfortable"
-              hide-details="auto"
-            />
-            <v-checkbox
-              v-if="canSkipOnLastRound"
-              v-model="node.skipOnLastRound"
-              label="Skip this step on the final round"
-              color="secondary"
-              density="comfortable"
-              hide-details
-            />
+          <div v-if="node.kind !== 'confirmation'" class="step-timing-fields">
+            <fieldset class="duration-wheel">
+              <legend>Duration</legend>
+              <div class="duration-wheel__content">
+                <div class="timing-toggle" role="group" aria-label="Step timing">
+                  <v-btn
+                    prepend-icon="mdi-timer-outline"
+                    :color="timingMode === 'timer' ? 'secondary' : undefined"
+                    :variant="timingMode === 'timer' ? 'flat' : 'tonal'"
+                    :aria-pressed="timingMode === 'timer'"
+                    @click="timingMode = 'timer'"
+                  >
+                    Timer
+                  </v-btn>
+                  <v-btn
+                    prepend-icon="mdi-timer"
+                    :color="timingMode === 'stopwatch' ? 'secondary' : undefined"
+                    :variant="timingMode === 'stopwatch' ? 'flat' : 'tonal'"
+                    :aria-pressed="timingMode === 'stopwatch'"
+                    @click="timingMode = 'stopwatch'"
+                  >
+                    Stopwatch
+                  </v-btn>
+                </div>
+                <TimerWheelPicker
+                  v-if="!usesStopwatch"
+                  v-model="durationSeconds"
+                  :active="isExpanded"
+                />
+                <p v-else class="duration-wheel__hint">Time is recorded until you mark this step completed.</p>
+              </div>
+            </fieldset>
+            <div>
+              <v-checkbox
+                v-if="reviewSetSpeechEnabled && !usesStopwatch"
+                v-model="flashcardReviewEnabled"
+                label="Play Review set during this step"
+                color="secondary"
+                density="comfortable"
+                hide-details="auto"
+              />
+              <v-checkbox
+                v-if="canSkipOnLastRound"
+                v-model="node.skipOnLastRound"
+                label="Skip this step on the final round"
+                color="secondary"
+                density="comfortable"
+                hide-details
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -339,10 +338,12 @@ function selectKind(kind: IntervalStepKind | null) {
 .node-fields, .nested-nodes { display: grid; gap: 1rem; }
 .nested-nodes { border-left: 3px solid rgb(var(--v-theme-secondary) / .62); }
 .nested-nodes--empty { min-height: 3.5rem; align-items: center; }
+.step-timing-fields,
+.duration-wheel__content { display: grid; gap: .5rem; }
 .duration-wheel { min-width: 0; margin: 0; padding: 0; border: 0; }
 .duration-wheel > legend { margin-bottom: .5rem; color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; font-weight: 800; }
-.duration-wheel__hint { min-height: 3rem; padding: .75rem 1rem; border-radius: .75rem; background: rgb(var(--v-theme-surface-variant) / .48); color: rgb(var(--v-theme-on-surface) / .62); font-size: .78rem; }
-.timing-toggle { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .125rem; }
+.duration-wheel__hint { border-radius: .75rem; background: rgb(var(--v-theme-surface-variant) / .48); color: rgb(var(--v-theme-on-surface) / .62); font-size: .78rem; }
+.timing-toggle { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
 .timing-toggle :deep(.v-btn) { min-width: 0; }
 .type-select-option { display: flex; min-width: 0; align-items: center; gap: .625rem; }
 .group-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }

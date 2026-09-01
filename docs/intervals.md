@@ -4,6 +4,8 @@ Saved intervals support an optional emoji and selectable color as visual anchors
 
 The interval editor does not expose the former optional template description field. Existing stored descriptions remain intact when another interval setting is edited.
 
+An empty interval-plan list uses the shared empty-state card with a direct **Create interval** action. Recent-run history uses the same component when the selected week has no finished sessions.
+
 Interval steps use their selected preset type as the step name. The editable **Interval name** field is shown only for the **Custom** type; selecting any preset replaces the stored name with that preset's label.
 
 Each non-confirmation step can run as a **Timer** or **Stopwatch**. Timer is the default and counts down from its selected duration. Stopwatch does not need a duration: it counts the time spent on the current step until **Completed** is selected. Stopwatch time is included in the recorded session elapsed time, while the progress rings hold their current position.

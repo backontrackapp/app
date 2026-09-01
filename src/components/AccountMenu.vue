@@ -181,7 +181,7 @@ onBeforeUnmount(unbindListeners)
               <v-img v-if="showAvatar" :src="accountAvatar" alt="" cover @error="avatarFailed = true" />
               <span v-else>{{ accountInitials }}</span>
             </v-avatar>
-            <div class="min-width-0">
+            <div class="account-menu__identity-content">
               <strong class="d-block text-truncate">{{ accountName }}</strong>
               <span v-if="accountEmail" class="d-block text-caption muted text-truncate">{{ accountEmail }}</span>
               <AppVersionLabel class="account-menu__version" />
@@ -270,6 +270,8 @@ onBeforeUnmount(unbindListeners)
 
 .account-menu__identity > div {
   flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .account-menu__identity > .v-avatar {

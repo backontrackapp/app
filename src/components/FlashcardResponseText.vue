@@ -388,6 +388,10 @@ onBeforeUnmount(() => {
   white-space: normal;
 }
 
+.flashcard-response-text--full {
+  justify-content: center;
+}
+
 .flashcard-response-text--compact {
   max-height: min(8rem, 30dvh);
   justify-content: center;

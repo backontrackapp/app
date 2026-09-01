@@ -9,7 +9,7 @@ use PDOException;
 
 final class Database
 {
-    public const EXPECTED_SCHEMA_VERSION = '202608310007';
+    public const EXPECTED_SCHEMA_VERSION = '202609010002';
 
     public readonly PDO $pdo;
 
@@ -122,7 +122,7 @@ final class Database
                 'program_step_completion', 'presentation_snapshot',
             ],
             'tracking_trackers' => [
-                'id', 'owner', 'name', 'description', 'role', 'kind', 'category',
+                'id', 'owner', 'name', 'description', 'role', 'kind',
                 'unit', 'target_value', 'target_operator', 'tracking_window', 'source',
                 'scale_min', 'scale_max', 'favorable_direction',
                 'daily_aggregation', 'active', 'archived', 'sort_order', 'color', 'icon',

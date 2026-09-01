@@ -245,15 +245,9 @@ export interface IntervalGroupNode {
 
 export type IntervalNode = IntervalStepNode | IntervalGroupNode
 
-export interface IntervalGlobalRepetitionSettings {
-  enabled: boolean
-  defaultCount: number
-}
-
 export interface IntervalDefinition {
   version: 1
   children: IntervalNode[]
-  globalRepetition?: IntervalGlobalRepetitionSettings
 }
 
 export interface IntervalCueSettings {
@@ -369,7 +363,7 @@ export interface QuickIntervalSettings extends QuickIntervalDraft {
 export type FlashcardReviewMode = 'manual' | 'passive'
 export type FlashcardReviewSide = 'front' | 'back'
 export type FlashcardReviewCardSides = 'both' | FlashcardReviewSide
-export type FlashcardReviewFaceValue = 'front' | 'back' | 'transliteration' | 'note' | 'image'
+export type FlashcardReviewFaceValue = 'front' | 'back' | 'transliteration' | 'note' | 'image' | 'empty'
 /** @deprecated Use FlashcardReviewFaceValue. */
 export type FlashcardBackDisplay = FlashcardReviewFaceValue
 export type FlashcardReviewSort = 'difficult' | 'easiest' | 'never_reviewed' | 'least_recent' | 'recently_added' | 'random'
@@ -415,6 +409,7 @@ export type FlashcardBulkAction =
   | 'remove_tags'
   | 'clear_tags'
   | 'export_clipboard'
+  | 'remove_from_review_set'
   | 'delete'
 export type FlashcardBulkRecordAction = Exclude<
   FlashcardBulkAction,
@@ -865,7 +860,6 @@ export interface PhoneSpeechResult extends PhoneSpeechPartialResult {
 
 export type TrackerRole = 'factor' | 'outcome'
 export type TrackerKind = 'yes_no' | 'event' | 'number' | 'rating' | 'duration'
-export type TrackerCategory = 'mindfulness' | 'medication' | 'nutrition' | 'mood' | 'symptom' | 'sleep' | 'activity' | 'other'
 export type TrackerSource = 'manual' | 'health_connect_steps'
 export type DailyAggregation = 'last' | 'average' | 'sum' | 'count'
 export type FavorableDirection = 'higher' | 'lower' | 'neutral'
@@ -876,7 +870,6 @@ export interface TrackingTracker {
   description: string
   role: TrackerRole
   kind: TrackerKind
-  category: TrackerCategory
   unit: string
   targetValue: number
   targetOperator: TargetOperator

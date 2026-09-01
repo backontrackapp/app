@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { addDays, format } from 'date-fns'
 import ContentIcon from '@/components/ContentIcon.vue'
 import { useResponsiveChartWidth } from '@/services/responsiveChart'
-import { formatNumber, formatTrackingValue, trackingCategoryIcon, trackingDailyValuesForRange } from '@/services/tracking'
+import { formatNumber, formatTrackingValue, trackingDailyValuesForRange } from '@/services/tracking'
 import { readInactiveTrackingChartTrackerIds, storeInactiveTrackingChartTrackerIds } from '@/services/trackingChartPreferences'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
 
@@ -22,7 +22,6 @@ const screenTimeTracker: TrackingTracker = {
   description: '',
   role: 'factor',
   kind: 'duration',
-  category: 'other',
   unit: '',
   scaleMin: 0,
   scaleMax: 0,
@@ -164,7 +163,7 @@ const legendOptions = computed(() => availableSeries.value.map(({ tracker }) => 
   value: tracker.id,
   title: tracker.name,
   color: tracker.color,
-  icon: tracker.icon || trackingCategoryIcon(tracker.category),
+  icon: tracker.icon || 'mdi-checkbox-marked-circle-outline',
   line: isLineTracker(tracker),
 })))
 const ariaLabel = computed(() => {

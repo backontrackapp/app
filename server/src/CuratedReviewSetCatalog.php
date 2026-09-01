@@ -315,12 +315,12 @@ final class CuratedReviewSetCatalog
             'backSpeechRepeatCount' => max(1, min(5, $integer('back_speech_repeat_count', 1))),
             'frontDisplay' => in_array(
                 $row['front_display'] ?? '',
-                ['front', 'back', 'transliteration', 'note', 'image'],
+                ['front', 'back', 'transliteration', 'note', 'image', 'empty'],
                 true,
             ) ? $row['front_display'] : 'front',
             'backDisplay' => in_array(
                 $row['back_display'] ?? '',
-                ['front', 'back', 'transliteration', 'note', 'image'],
+                ['front', 'back', 'transliteration', 'note', 'image', 'empty'],
                 true,
             ) ? $row['back_display'] : 'back',
             'speechEnabled' => $boolean('speech_enabled', false),

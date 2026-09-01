@@ -2,7 +2,6 @@ import { eachDayOfInterval, format, parseISO } from 'date-fns'
 import type {
   DailyAggregation,
   FavorableDirection,
-  TrackerCategory,
   TrackerKind,
   TrackerRole,
   TrackingDailyValue,
@@ -20,7 +19,6 @@ export interface TrackingPreset {
   description: string
   role: TrackerRole
   kind: TrackerKind
-  category: TrackerCategory
   unit: string
   scaleMin: number
   scaleMax: number
@@ -74,21 +72,6 @@ export interface TrackingInsightOptions {
 
 export type TrackingInsightRangePreset = '7' | '14' | '1-month' | '3-months' | '6-months'
 
-export const TRACKING_CATEGORY_ICONS: Record<TrackerCategory, string> = {
-  mindfulness: 'mdi-meditation',
-  medication: 'mdi-pill',
-  nutrition: 'mdi-food-apple-outline',
-  mood: 'mdi-emoticon-outline',
-  symptom: 'mdi-bandage',
-  sleep: 'mdi-sleep',
-  activity: 'mdi-run',
-  other: 'mdi-chart-box-outline',
-}
-
-export function trackingCategoryIcon(category: TrackerCategory) {
-  return TRACKING_CATEGORY_ICONS[category] || TRACKING_CATEGORY_ICONS.other
-}
-
 const TRACKING_INSIGHT_RANGE_PRESETS: Array<{ maximumDataPoints: number; preset: TrackingInsightRangePreset }> = [
   { maximumDataPoints: 7, preset: '7' },
   { maximumDataPoints: 14, preset: '14' },
@@ -102,15 +85,15 @@ export function defaultTrackingInsightRangePreset(dataPointCount: number): Track
 }
 
 export const TRACKING_PRESETS: TrackingPreset[] = [
-  { id: 'meditation', name: 'Meditation', description: 'Record each meditation session.', role: 'factor', kind: 'event', category: 'mindfulness', unit: 'sessions', scaleMin: 0, scaleMax: 0, favorableDirection: 'neutral', color: '#66D9C8', icon: 'mdi-meditation' },
-  { id: 'medication', name: 'Medication taken', description: 'Record whether you took a medication. This is a log, not medical advice.', role: 'factor', kind: 'yes_no', category: 'medication', unit: '', scaleMin: 0, scaleMax: 1, favorableDirection: 'neutral', color: '#8FB8FF', icon: 'mdi-pill' },
-  { id: 'reduced-sugar', name: 'Reduced sugar', description: 'Record whether you intentionally reduced added sugar.', role: 'factor', kind: 'yes_no', category: 'nutrition', unit: '', scaleMin: 0, scaleMax: 1, favorableDirection: 'neutral', color: '#FFB86B', icon: 'mdi-cube-outline' },
-  { id: 'reduced-sodium', name: 'Reduced sodium', description: 'Record whether you intentionally reduced sodium.', role: 'factor', kind: 'yes_no', category: 'nutrition', unit: '', scaleMin: 0, scaleMax: 1, favorableDirection: 'neutral', color: '#F0D264', icon: 'mdi-shaker-outline' },
-  { id: 'mood', name: 'Mood', description: 'Rate your overall mood.', role: 'outcome', kind: 'rating', category: 'mood', unit: '/ 10', scaleMin: 1, scaleMax: 10, favorableDirection: 'higher', color: '#D4A5FF', icon: 'mdi-emoticon-outline' },
-  { id: 'anxiety', name: 'Anxiety', description: 'Rate how anxious you feel.', role: 'outcome', kind: 'rating', category: 'mood', unit: '/ 10', scaleMin: 1, scaleMax: 10, favorableDirection: 'lower', color: '#FF8FA3', icon: 'mdi-head-heart-outline' },
-  { id: 'energy', name: 'Energy', description: 'Rate your energy level.', role: 'outcome', kind: 'rating', category: 'mood', unit: '/ 10', scaleMin: 1, scaleMax: 10, favorableDirection: 'higher', color: '#C7F464', icon: 'mdi-lightning-bolt-outline' },
-  { id: 'sleep', name: 'Sleep quality', description: 'Rate the quality of your sleep.', role: 'outcome', kind: 'rating', category: 'sleep', unit: '/ 10', scaleMin: 1, scaleMax: 10, favorableDirection: 'higher', color: '#7E9CFF', icon: 'mdi-sleep' },
-  { id: 'pain', name: 'Pain', description: 'Rate your pain level.', role: 'outcome', kind: 'rating', category: 'symptom', unit: '/ 10', scaleMin: 0, scaleMax: 10, favorableDirection: 'lower', color: '#FF7A7A', icon: 'mdi-bandage' },
+  { id: 'meditation', name: 'Meditation', description: 'Record each meditation session.', role: 'factor', kind: 'event', unit: 'sessions', scaleMin: 0, scaleMax: 0, favorableDirection: 'neutral', color: '#66D9C8', icon: 'mdi-meditation' },
+  { id: 'medication', name: 'Medication taken', description: 'Record whether you took a medication. This is a log, not medical advice.', role: 'factor', kind: 'yes_no', unit: '', scaleMin: 0, scaleMax: 1, favorableDirection: 'neutral', color: '#8FB8FF', icon: 'mdi-pill' },
+  { id: 'reduced-sugar', name: 'Reduced sugar', description: 'Record whether you intentionally reduced added sugar.', role: 'factor', kind: 'yes_no', unit: '', scaleMin: 0, scaleMax: 1, favorableDirection: 'neutral', color: '#FFB86B', icon: 'mdi-cube-outline' },
+  { id: 'reduced-sodium', name: 'Reduced sodium', description: 'Record whether you intentionally reduced sodium.', role: 'factor', kind: 'yes_no', unit: '', scaleMin: 0, scaleMax: 1, favorableDirection: 'neutral', color: '#F0D264', icon: 'mdi-shaker-outline' },
+  { id: 'mood', name: 'Mood', description: 'Rate your overall mood.', role: 'outcome', kind: 'rating', unit: '/ 10', scaleMin: 1, scaleMax: 10, favorableDirection: 'higher', color: '#D4A5FF', icon: 'mdi-emoticon-outline' },
+  { id: 'anxiety', name: 'Anxiety', description: 'Rate how anxious you feel.', role: 'outcome', kind: 'rating', unit: '/ 10', scaleMin: 1, scaleMax: 10, favorableDirection: 'lower', color: '#FF8FA3', icon: 'mdi-head-heart-outline' },
+  { id: 'energy', name: 'Energy', description: 'Rate your energy level.', role: 'outcome', kind: 'rating', unit: '/ 10', scaleMin: 1, scaleMax: 10, favorableDirection: 'higher', color: '#C7F464', icon: 'mdi-lightning-bolt-outline' },
+  { id: 'sleep', name: 'Sleep quality', description: 'Rate the quality of your sleep.', role: 'outcome', kind: 'rating', unit: '/ 10', scaleMin: 1, scaleMax: 10, favorableDirection: 'higher', color: '#7E9CFF', icon: 'mdi-sleep' },
+  { id: 'pain', name: 'Pain', description: 'Rate your pain level.', role: 'outcome', kind: 'rating', unit: '/ 10', scaleMin: 0, scaleMax: 10, favorableDirection: 'lower', color: '#FF7A7A', icon: 'mdi-bandage' },
 ]
 
 export function defaultAggregation(kind: TrackerKind): DailyAggregation {
@@ -129,7 +112,6 @@ export function trackerDraftFromPreset(
     description: preset.description,
     role: preset.role,
     kind: preset.kind,
-    category: preset.category,
     unit: preset.unit,
     targetValue: 0,
     targetOperator: 'gte',

@@ -6,10 +6,12 @@ const props = withDefaults(defineProps<{
   decimal?: boolean
   allowNegative?: boolean
   maxLength?: number
+  placeholder?: string
 }>(), {
   decimal: true,
   allowNegative: false,
   maxLength: 10,
+  placeholder: '',
 })
 
 const emit = defineEmits<{
@@ -55,7 +57,10 @@ function toggleSign() {
         aria-label="Change amount sign"
         @click="toggleSign"
       />
-      <output aria-live="polite">{{ modelValue || '0' }}</output>
+      <output
+        aria-live="polite"
+        :class="{ 'number-pad__placeholder': !modelValue && placeholder }"
+      >{{ modelValue || placeholder || '0' }}</output>
     </div>
     <div class="number-pad__keys">
       <v-btn
@@ -78,6 +83,7 @@ function toggleSign() {
 .number-pad { display: grid; gap: 1rem; }
 .number-pad__display { display: flex; min-height: 4.5rem; align-items: center; justify-content: space-between; padding: .75rem 1rem; border: .0625rem solid rgb(var(--v-theme-on-surface) / .16); border-radius: 1rem; background: rgb(var(--v-theme-surface-variant)); font-size: 2rem; font-weight: 900; line-height: 1; }
 .number-pad__display output { margin-left: auto; }
+.number-pad__placeholder { color: rgb(var(--v-theme-on-surface) / .48); }
 .number-pad__keys { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; }
 .number-pad__keys :deep(.v-btn) { min-width: 0; height: 3.375rem; font-size: 1.05rem; font-weight: 850; }
 </style>

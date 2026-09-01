@@ -11,7 +11,7 @@ const props = withDefaults(defineProps<{
   disabled?: boolean
 }>(), {
   label: 'Tags',
-  hint: 'Select existing tags or type a new one',
+  hint: 'Select existing tags or type a new one.',
   disabled: false,
 })
 

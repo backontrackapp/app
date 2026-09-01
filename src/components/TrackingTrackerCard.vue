@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import { Ripple } from 'vuetify/directives'
 import ContentIcon from '@/components/ContentIcon.vue'
-import { trackingCategoryIcon } from '@/services/tracking'
 import type { TrackingTracker } from '@/types/domain'
 
 const props = withDefaults(defineProps<{
@@ -50,7 +49,7 @@ const cardInk = computed(() => {
       <span class="tracker-card__header">
         <ContentIcon
           :icon="logged ? 'mdi-check-bold' : tracker.icon"
-          :fallback-icon="logged ? 'mdi-check-bold' : trackingCategoryIcon(tracker.category)"
+          :fallback-icon="logged ? 'mdi-check-bold' : 'mdi-checkbox-marked-circle-outline'"
           size="2rem"
         />
       </span>

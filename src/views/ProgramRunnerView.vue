@@ -56,6 +56,9 @@ const runnerReturnTo = computed(() => router.resolve({
     date: dateKey.value,
     step: stepId.value,
     ...(current.value ? { focus: current.value.id } : {}),
+    ...(current.value?.type === 'interval' && !current.value.exercise
+      ? { intervalPreview: current.value.id }
+      : {}),
     resume: '1',
   },
 }).fullPath)
@@ -149,6 +152,15 @@ async function start() {
   const index = firstOpenRequirementIndex(focusCompletionId.value)
   if (index < 0) {
     screen.value = 'finished'
+    return
+  }
+  activeIndex.value = index
+  if (
+    current.value?.type === 'interval'
+    && !current.value.exercise
+    && route.query.intervalPreview !== current.value.id
+  ) {
+    await runInterval()
     return
   }
   await showRequirement(index)

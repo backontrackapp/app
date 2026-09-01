@@ -118,8 +118,8 @@ function mapReviewSet(record: Record<string, any>): FlashcardReviewSet {
     shareId: record.share_id || undefined,
     matchingCardCount: Number(record.matching_card_count || 0),
     mode: record.mode,
-    cardSides: record.card_sides || DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
-    invertFaces: Boolean(record.invert_faces),
+    cardSides: DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
+    invertFaces: false,
     indefinite: Boolean(record.indefinite),
     timeLimitSeconds: record.mode === 'passive' ? Number(record.time_limit_seconds || 0) : 0,
     maxCards: Number(record.max_cards || DEFAULT_FLASHCARD_SESSION_CARDS),
@@ -173,8 +173,8 @@ function mapSession(record: Record<string, any>): FlashcardReviewSession {
     status: record.status,
     name: record.snapshot_name,
     mode: record.mode_snapshot,
-    cardSides: record.card_sides_snapshot || DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
-    invertFaces: Boolean(record.invert_faces_snapshot),
+    cardSides: DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
+    invertFaces: false,
     indefinite: Boolean(record.indefinite_snapshot),
     timeLimitSeconds: record.mode_snapshot === 'passive'
       ? Number(record.time_limit_seconds_snapshot || 0)
@@ -1013,8 +1013,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       tags: draft.tags,
       assigned_cards: draft.assignedCards || [],
       mode: draft.mode,
-      card_sides: draft.cardSides,
-      invert_faces: draft.cardSides === 'both' && draft.invertFaces === true,
+      card_sides: DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
+      invert_faces: false,
       indefinite: draft.mode === 'passive' && draft.indefinite,
       time_limit_seconds: draft.mode === 'passive' ? draft.timeLimitSeconds || 0 : 0,
       max_cards: draft.maxCards,
@@ -1193,7 +1193,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     const tagNames = [...new Set([languageTagName, category])]
     const cardTagIds: string[] = []
     if (
-      cardsToCreate.length
+      destination.type === 'new'
+      || cardsToCreate.length
       || resolution.action === 'replace'
       || resolution.columns.includes('tags')
     ) {
@@ -1237,7 +1238,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       })),
       existingCardIds,
       ...(destination.type === 'new'
-        ? { name: destination.name }
+        ? { name: destination.name, reviewSetTags: cardTagIds }
         : { reviewSetId: destination.reviewSetId }),
       settings,
     })
@@ -1404,7 +1405,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     action: FlashcardBulkRecordAction,
     cardIds: string[],
   ) {
-    if (action !== 'delete') throw new Error('This bulk action is not available for Review set cards.')
+    if (!['delete', 'remove_from_review_set'].includes(action)) {
+      throw new Error('This bulk action is not available for Review set cards.')
+    }
     const uniqueCardIds = [...new Set(cardIds)]
     if (!uniqueCardIds.length) return []
     const deleted = new Set(uniqueCardIds)
@@ -1414,6 +1417,26 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     const previousCount = reviewSet?.matchingCardCount
     const previousIncludedCards = [...(reviewSet?.assignedCards || [])]
     const next = previousReviewSetCards.filter(card => !deleted.has(card.id))
+    if (action === 'remove_from_review_set') {
+      if (!reviewSet || reviewSet.accessRole !== 'owner') {
+        throw new Error('Only the owner can remove cards from a Review set.')
+      }
+      const assignedCards = previousIncludedCards.filter(id => !deleted.has(id))
+      reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: next }
+      reviewSet.assignedCards = assignedCards
+      reviewSet.matchingCardCount = assignedCards.length
+      try {
+        await api.collection('flashcard_review_sets').update(reviewSetId, { assigned_cards: assignedCards })
+        const accessibleRecords = await api.getAccessibleFlashcardReviewSets()
+        reviewSets.value = accessibleRecords.map(mapReviewSet)
+        return []
+      } catch (cause) {
+        reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: previousReviewSetCards }
+        reviewSet.assignedCards = previousIncludedCards
+        if (previousCount !== undefined) reviewSet.matchingCardCount = previousCount
+        throw cause
+      }
+    }
     reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: next }
     cards.value = cards.value.filter(card => !deleted.has(card.id))
     if (reviewSet) {
@@ -1796,8 +1819,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         status: 'running',
         snapshot_name: preview.name,
         mode_snapshot: preview.mode,
-        card_sides_snapshot: preview.cardSides,
-        invert_faces_snapshot: preview.invertFaces === true,
+        card_sides_snapshot: DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
+        invert_faces_snapshot: false,
         indefinite_snapshot: preview.indefinite,
         time_limit_seconds_snapshot: preview.timeLimitSeconds || 0,
         max_cards_snapshot: preview.maxCards,
@@ -2098,8 +2121,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       const record = usingLocalDatabase
         ? await api.collection('flashcard_review_sessions').update(sessionId, {
           mode_snapshot: sessionSettings.mode,
-          card_sides_snapshot: sessionSettings.cardSides,
-          invert_faces_snapshot: sessionSettings.cardSides === 'both' && sessionSettings.invertFaces === true,
+          card_sides_snapshot: DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
+          invert_faces_snapshot: false,
           indefinite_snapshot: sessionSettings.mode === 'passive' && sessionSettings.indefinite,
           time_limit_seconds_snapshot: sessionSettings.timeLimitSeconds || 0,
           max_cards_snapshot: sessionSettings.maxCards,

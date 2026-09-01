@@ -143,8 +143,8 @@ function flashcardReviewSettingsBody(
 ) {
   return {
     mode: settings.mode,
-    card_sides: settings.cardSides,
-    invert_faces: settings.cardSides === 'both' && settings.invertFaces === true,
+    card_sides: 'both',
+    invert_faces: false,
     indefinite: settings.mode === 'passive' && settings.indefinite,
     time_limit_seconds: settings.timeLimitSeconds || 0,
     max_cards: settings.maxCards,
@@ -553,6 +553,7 @@ class ApiClient {
     existingCardIds: string[]
     reviewSetId?: string
     name?: string
+    reviewSetTags?: string[]
     maxCards?: number
     settings?: FlashcardReviewSettings
     source?: 'curated'
@@ -575,6 +576,7 @@ class ApiClient {
       cards: cardDrafts,
       existing_card_ids: [...new Set(input.existingCardIds)],
       review_set_id: requestedReviewSetId,
+      review_set_tags: [...new Set(input.reviewSetTags || [])],
       name: input.name || '',
       max_cards: input.maxCards || 20,
       source: input.source || 'assistant',
@@ -611,7 +613,7 @@ class ApiClient {
         id: requestedReviewSetId,
         owner: accountId,
         name,
-        tags: [],
+        tags: body.review_set_tags,
         assigned_cards: [...new Set([...body.existing_card_ids, ...cards.map(card => card.id)])],
         excluded_cards: [],
         ...flashcardReviewSettingsBody(input.settings || {
@@ -686,6 +688,7 @@ class ApiClient {
     existingCardIds: string[]
     reviewSetId?: string
     name?: string
+    reviewSetTags?: string[]
     settings: FlashcardReviewSettings
   }) {
     return this.applyAssistantFlashcards({ ...input, source: 'curated' })
@@ -1453,8 +1456,8 @@ class ApiClient {
         color: String(source.color || '#C7F464'),
         tags: [scopeTag.id],
         mode: source.mode,
-        card_sides: source.card_sides,
-        invert_faces: Boolean(source.invert_faces),
+        card_sides: 'both',
+        invert_faces: false,
         indefinite: Boolean(source.indefinite),
         max_cards: Number(source.max_cards || 20),
         eject_behavior: source.eject_behavior || 'remove',

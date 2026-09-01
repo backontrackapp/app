@@ -3,9 +3,11 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppForm from '@/components/AppForm.vue'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
+import AppDialog from '@/components/AppDialog.vue'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import EmojiSelector from '@/components/EmojiSelector.vue'
+import EmptyStateCard from '@/components/EmptyStateCard.vue'
 import FlashcardCardsManager from '@/components/FlashcardCardsManager.vue'
 import FlashcardTagCombobox from '@/components/FlashcardTagCombobox.vue'
 import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsFields.vue'
@@ -53,6 +55,10 @@ const archiveDialog = ref(false)
 const archiveActions = ref(false)
 const deleteDialog = ref(false)
 const deleteCardsWithReviewSet = ref(false)
+const assignCardsDialog = ref(false)
+const assigningCards = ref(false)
+const assignCardsError = ref('')
+const assignmentCardIds = ref<string[]>([])
 const error = ref('')
 const ready = ref(false)
 const original = ref('')
@@ -69,6 +75,7 @@ const isOwner = computed(() => !isEditing.value || currentReviewSet.value?.acces
 const canEditCards = computed(() => (
   isEditing.value && currentReviewSet.value?.accessRole !== 'readonly'
 ))
+const canAssignCards = computed(() => isEditing.value && isOwner.value)
 const draft = reactive<FlashcardReviewSetDraft>({
   name: '',
   icon: '',
@@ -133,8 +140,8 @@ function applyReviewSet(reviewSet: FlashcardReviewSet) {
     assignedCards: [...(reviewSet.assignedCards || [])],
     excludedCards: [...(reviewSet.excludedCards || [])],
     mode: reviewSet.mode,
-    cardSides: reviewSet.cardSides,
-    invertFaces: reviewSet.invertFaces === true,
+    cardSides: DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
+    invertFaces: false,
     indefinite: reviewSet.indefinite,
     timeLimitSeconds: reviewSet.timeLimitSeconds || 0,
     maxCards: reviewSet.maxCards,
@@ -190,10 +197,18 @@ const orderedMatchingCards = computed(() => sortFlashcardsForReview(
   draft.sortMode,
   draft.sortDirection,
 ))
+const assignableCards = computed(() => {
+  const assignedCardIds = new Set(draft.assignedCards)
+  return store.cards.filter(card => card.archived !== true && !assignedCardIds.has(card.id))
+})
 const excludedCardIds = computed(() => new Set(draft.excludedCards || []))
 const includedCardCount = computed(() => orderedMatchingCards.value
   .filter(card => !excludedCardIds.value.has(card.id)).length)
 const deleteCardCount = computed(() => orderedMatchingCards.value.length)
+const assignCardsLabel = computed(() => {
+  const count = assignmentCardIds.value.length
+  return `Assign ${count} ${count === 1 ? 'card' : 'cards'}`
+})
 const reviewSetBulkActions = computed<FlashcardBulkAction[]>(() => {
   if (!canEditCards.value) return ['export_clipboard']
   if (isOwner.value) return FLASHCARD_BULK_MENU_ITEMS.map(item => item.action)
@@ -272,6 +287,18 @@ function bulkUpdateCards(
   cardIds: string[],
   tagIds: string[],
 ) {
+  if (action === 'remove_from_review_set' && draft.id) {
+    const previousAssignedCards = [...draft.assignedCards]
+    const previousExcludedCards = [...(draft.excludedCards || [])]
+    const removed = new Set(cardIds)
+    draft.assignedCards = draft.assignedCards.filter(id => !removed.has(id))
+    draft.excludedCards = previousExcludedCards.filter(id => !removed.has(id))
+    return store.bulkUpdateReviewSetCards(draft.id, action, cardIds).catch((cause) => {
+      draft.assignedCards = previousAssignedCards
+      draft.excludedCards = previousExcludedCards
+      throw cause
+    })
+  }
   if (isOwner.value) return store.bulkUpdateCards(action, cardIds, tagIds)
   if (!draft.id) return Promise.resolve([])
   return store.bulkUpdateReviewSetCards(draft.id, action, cardIds)
@@ -284,6 +311,44 @@ function openNewCard() {
     params: { reviewSetId: draft.id },
     query: { returnTo: editorReturnTo.value },
   })
+}
+
+function openAssignCardsDialog() {
+  if (!canAssignCards.value) return
+  assignmentCardIds.value = []
+  assignCardsError.value = ''
+  assignCardsDialog.value = true
+}
+
+function closeAssignCardsDialog() {
+  if (assigningCards.value) return
+  assignmentCardIds.value = []
+  assignCardsError.value = ''
+  assignCardsDialog.value = false
+}
+
+async function assignSelectedCards() {
+  if (!draft.id || !canAssignCards.value || !assignmentCardIds.value.length) return
+  const cardIds = [...new Set(assignmentCardIds.value)]
+  const previousAssignedCards = [...draft.assignedCards]
+  assigningCards.value = true
+  assignCardsError.value = ''
+  draft.assignedCards = [...new Set([...draft.assignedCards, ...cardIds])]
+  try {
+    await store.createReviewSetFromCards(cardIds, {
+      type: 'existing',
+      reviewSetId: draft.id,
+    })
+    assignmentCardIds.value = []
+    assignCardsDialog.value = false
+  } catch (cause) {
+    draft.assignedCards = previousAssignedCards
+    assignCardsError.value = cause instanceof Error
+      ? cause.message
+      : 'Could not assign the selected cards to this Review set.'
+  } finally {
+    assigningCards.value = false
+  }
 }
 
 function openCard(card: Flashcard, cards: Flashcard[]) {
@@ -387,7 +452,7 @@ async function remove() {
           <v-col cols="12">
             <FlashcardTagCombobox
               v-model="draft.tags"
-              label="Review set tags"
+              label="Tags"
             />
           </v-col>
         </v-row>
@@ -404,15 +469,6 @@ async function remove() {
           </v-chip>
         </div>
 
-        <div class="review-set-summary mt-4">
-          <v-icon icon="mdi-cards-outline" color="secondary" />
-          <div>
-            <strong>{{ matchingCardCount }} assigned {{ matchingCardCount === 1 ? 'card' : 'cards' }}</strong>
-            <p>
-              Cards are assigned from Your cards. Review set tags are metadata only.
-            </p>
-          </div>
-        </div>
       </v-card>
       <FlashcardReviewSettingsFields
         :model-value="draft"
@@ -431,6 +487,7 @@ async function remove() {
           <v-icon icon="mdi-card-multiple-outline" color="secondary" />
         </div>
         <FlashcardCardsManager
+          v-if="isEditing"
           :cards="orderedMatchingCards"
           :tags="cardTableTags"
           :selection-actions="FLASHCARD_REVIEW_SELECTION_MENU_ITEMS"
@@ -440,16 +497,18 @@ async function remove() {
           selectable
           :interactive="false"
           :can-add="canEditCards"
-          :show-import="canEditCards"
-          :import-review-set-id="draft.id"
-          :import-return-to="editorReturnTo"
+          :can-assign="canAssignCards"
+          :assign-disabled="!assignableCards.length"
           :source-review-set-id="draft.id"
           :row-class="cardRowClass"
           :table-surface="false"
           empty-title="No assigned cards"
           empty-description="Select cards from Your cards, then assign them to this Review set."
+          empty-tile
+          empty-flat
           add-aria-label="Add a card to this Review set"
           @add-card="openNewCard"
+          @assign-cards="openAssignCardsDialog"
           @open-card="openCard"
         >
           <template #action-column-heading><span v-if="canEditCards" class="d-sr-only">Edit</span></template>
@@ -473,6 +532,14 @@ async function remove() {
             </div>
           </template>
         </FlashcardCardsManager>
+        <EmptyStateCard
+          v-else
+          icon="mdi-card-plus-outline"
+          title="No cards yet"
+          subtitle="Once saved, you can assign cards or add new cards to this review set."
+          tile
+          flat
+        />
       </v-card>
     </AppForm>
 
@@ -494,6 +561,53 @@ async function remove() {
       @cancel="router.back()"
       @archive="openRetirementActions"
     />
+
+    <AppDialog
+      v-model="assignCardsDialog"
+      persistent
+      scrollable
+      fullscreen
+      @update:model-value="!$event && closeAssignCardsDialog()"
+    >
+      <v-card class="assign-cards-dialog" rounded="0">
+        <v-card-title class="assign-cards-dialog__header d-flex align-center ga-3">
+          <v-icon icon="mdi-card-plus-outline" color="secondary" />
+          <span>Assign cards</span>
+        </v-card-title>
+        <v-card-text class="px-5 py-4">
+          <p class="text-body-2 muted mb-4">Select cards to add to this Review set.</p>
+          <v-alert v-if="assignCardsError" type="error" variant="tonal" density="compact" class="mb-4">
+            {{ assignCardsError }}
+          </v-alert>
+          <FlashcardCardsManager
+            v-model:selected-card-ids="assignmentCardIds"
+            :cards="assignableCards"
+            :tags="store.tags"
+            selectable
+            :interactive="false"
+            :can-add="false"
+            :show-import="false"
+            empty-title="No cards available to assign"
+            empty-description="Create a card first, then assign it to this Review set."
+          />
+        </v-card-text>
+        <v-divider />
+        <v-card-actions class="assign-cards-dialog__actions ga-2">
+          <v-spacer />
+          <v-btn variant="text" :disabled="assigningCards" @click="closeAssignCardsDialog">Cancel</v-btn>
+          <v-btn
+            class="mobile-large-action"
+            color="secondary"
+            size="large"
+            :loading="assigningCards"
+            :disabled="!assignmentCardIds.length"
+            @click="assignSelectedCards"
+          >
+            {{ assignCardsLabel }}
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </AppDialog>
 
     <ActionBottomSheet
       v-model="archiveActions"
@@ -554,10 +668,10 @@ async function remove() {
 <style scoped>
 .shared-set-heading { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 1rem; }
 .required-mark { color: rgb(var(--v-theme-error)); }
-.review-set-summary { display: flex; align-items: center; gap: .75rem; padding: .85rem; border-radius: 1rem; background: rgba(var(--v-theme-secondary), .08); }
-.review-set-summary strong { font-size: .82rem; }
-.review-set-summary p { margin-top: .15rem; color: rgba(var(--v-theme-on-surface), .56); font-size: .7rem; }
 .review-set-loading { display: flex; align-items: center; justify-content: center; gap: .75rem; }
 .review-set-card-selection { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .review-set-card-edit { position: relative; z-index: 2; display: flex; align-items: center; justify-content: center; }
+.assign-cards-dialog { min-height: 100dvh; }
+.assign-cards-dialog__header { padding: calc(1.25rem + max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem))) calc(1.25rem + env(safe-area-inset-right, 0rem)) 1rem calc(1.25rem + env(safe-area-inset-left, 0rem)) !important; }
+.assign-cards-dialog__actions { padding: 1rem calc(1rem + env(safe-area-inset-right, 0rem)) calc(1rem + max(env(safe-area-inset-bottom, 0rem), var(--safe-area-inset-bottom, 0rem))) calc(1rem + env(safe-area-inset-left, 0rem)) !important; }
 </style>

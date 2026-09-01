@@ -7,7 +7,9 @@ import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import EmojiSelector from '@/components/EmojiSelector.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
+import NumberPadField from '@/components/NumberPadField.vue'
 import { contentRetirementActions, type ContentRetirementActionId } from '@/services/contentRetirementActions'
+import { getHealthConnectStatus } from '@/services/healthConnect'
 import { defaultAggregation, TRACKING_PRESETS, trackerDraftFromPreset } from '@/services/tracking'
 import { useTrackingStore } from '@/stores/tracking'
 import type { TrackerKind, TrackingTrackerDraft } from '@/types/domain'
@@ -25,6 +27,8 @@ const deleteDialog = ref(false)
 const error = ref('')
 const ready = ref(false)
 const original = ref('')
+const healthConnectConnected = ref(false)
+const customUnitSelected = ref(false)
 const retirementActions = contentRetirementActions(
   'tracker',
   'Hide it from tracking while preserving its settings and every log.',
@@ -38,24 +42,13 @@ const kindOptions: Array<{ value: TrackerKind; title: string; subtitle: string; 
   { value: 'rating', title: 'Rating', subtitle: 'A bounded scale, such as 1–10', icon: 'mdi-star-outline' },
   { value: 'duration', title: 'Duration', subtitle: 'Minutes spent on something', icon: 'mdi-timer-outline' },
 ]
-
-const categoryOptions = [
-  { title: 'Mindfulness', value: 'mindfulness' },
-  { title: 'Medication', value: 'medication' },
-  { title: 'Nutrition', value: 'nutrition' },
-  { title: 'Mood', value: 'mood' },
-  { title: 'Symptom', value: 'symptom' },
-  { title: 'Sleep', value: 'sleep' },
-  { title: 'Activity', value: 'activity' },
-  { title: 'Other', value: 'other' },
-]
+const customUnitValue = 'custom'
 
 const draft = reactive<TrackingTrackerDraft>({
   name: '',
   description: '',
   role: 'factor',
   kind: 'yes_no',
-  category: 'other',
   unit: '',
   targetValue: 0,
   targetOperator: 'gte',
@@ -72,16 +65,57 @@ const draft = reactive<TrackingTrackerDraft>({
   icon: 'mdi-checkbox-marked-circle-outline',
 })
 
+const scaleUnitValue = computed(() => `/ ${draft.scaleMax}`)
+const unitOptions = computed(() => [
+  { title: 'Count', value: 'count' },
+  { title: 'Times', value: 'times' },
+  { title: 'Sessions', value: 'sessions' },
+  { title: 'Steps', value: 'steps' },
+  { title: 'Kilograms (kg)', value: 'kg' },
+  { title: 'Pounds (lb)', value: 'lb' },
+  { title: 'Grams (g)', value: 'g' },
+  { title: 'Litres (L)', value: 'L' },
+  { title: 'Millilitres (mL)', value: 'mL' },
+  { title: 'Calories (kcal)', value: 'kcal' },
+  { title: 'Percent (%)', value: '%' },
+  { title: 'Minutes', value: 'minutes' },
+  ...(draft.kind === 'rating' ? [{
+    title: `Out of ${draft.scaleMin}–${draft.scaleMax}`,
+    value: scaleUnitValue.value,
+  }] : []),
+  { title: 'Custom', value: customUnitValue },
+])
+
 const isEditing = computed(() => Boolean(route.params.id))
 const hasEntries = computed(() => Boolean(draft.id && store.entries.some((entry) => entry.tracker === draft.id)))
 const measurementLocked = computed(() => isEditing.value && hasEntries.value)
+const canConfigureUnit = computed(() => draft.kind !== 'yes_no'
+  && draft.source !== 'health_connect_steps')
 const signature = computed(() => JSON.stringify(draft))
 const changed = computed(() => ready.value && signature.value !== original.value)
-const targetValueModel = computed({
+const sourceOptions = computed(() => [
+  { title: 'Log manually', value: 'manual' },
+  {
+    title: 'Health Connect steps',
+    value: 'health_connect_steps',
+    props: { disabled: !healthConnectConnected.value },
+  },
+])
+const targetValueModel = computed<number>({
   get: () => draft.kind === 'duration' ? draft.targetValue / 60 : draft.targetValue,
-  set: (value: number | null) => {
-    const target = Number(value || 0)
-    draft.targetValue = draft.kind === 'duration' ? target * 60 : target
+  set: (value) => {
+    draft.targetValue = draft.kind === 'duration' ? value * 60 : value
+  },
+})
+const unitSelection = computed({
+  get: () => customUnitSelected.value
+    ? customUnitValue
+    : unitOptions.value.some(option => option.value === draft.unit)
+      ? draft.unit
+      : draft.unit ? customUnitValue : null,
+  set: (value: string | null) => {
+    customUnitSelected.value = value === customUnitValue
+    draft.unit = value === customUnitValue ? '' : value || ''
   },
 })
 
@@ -93,6 +127,7 @@ async function markFormReady() {
 
 watch(() => draft.kind, (kind) => {
   if (measurementLocked.value) return
+  customUnitSelected.value = false
   draft.dailyAggregation = defaultAggregation(kind)
   if (kind === 'rating') {
     draft.scaleMin = 1
@@ -116,8 +151,18 @@ watch(() => draft.kind, (kind) => {
   }
 })
 
+watch(
+  () => [draft.scaleMin, draft.scaleMax] as const,
+  ([, scaleMax], [, previousScaleMax]) => {
+    if (draft.kind === 'rating' && draft.unit === `/ ${previousScaleMax}`) {
+      draft.unit = `/ ${scaleMax}`
+    }
+  },
+)
+
 watch(() => draft.source, (source) => {
   if (measurementLocked.value || source !== 'health_connect_steps') return
+  customUnitSelected.value = false
   draft.kind = 'number'
   draft.unit = 'steps'
   draft.dailyAggregation = 'sum'
@@ -128,8 +173,19 @@ watch(() => draft.role, (role) => {
   else if (draft.favorableDirection === 'neutral') draft.favorableDirection = 'higher'
 })
 
+async function refreshHealthConnectStatus() {
+  try {
+    const status = await getHealthConnectStatus()
+    healthConnectConnected.value = status.availability === 'available' && status.authorized
+  } catch {
+    healthConnectConnected.value = false
+  }
+}
+
 onMounted(async () => {
+  const healthStatus = refreshHealthConnectStatus()
   if (!store.loaded) await store.load().catch(() => undefined)
+  await healthStatus
   const id = typeof route.params.id === 'string' ? route.params.id : ''
   if (id) {
     const tracker = store.trackers.find((item) => item.id === id)
@@ -229,7 +285,6 @@ function runRetirementAction(action: ContentRetirementActionId) {
       <v-card class="tracker-form-section surface-card pa-5 mb-4">
         <h2 class="section-title">Basics</h2>
         <v-text-field v-model="draft.name" label="Name" :rules="[(value: string) => Boolean(value?.trim()) || 'Name is required']" maxlength="160" variant="outlined" />
-        <v-select v-model="draft.category" label="Category" :items="categoryOptions" variant="outlined" />
         <EmojiSelector
           v-model="draft.icon"
           label="Tracker icon"
@@ -239,6 +294,87 @@ function runRetirementAction(action: ContentRetirementActionId) {
       </v-card>
 
       <v-card class="tracker-form-section surface-card pa-5 mb-4">
+        <h2 class="section-title">Measurement</h2>
+        <v-radio-group v-model="draft.kind" :disabled="measurementLocked" class="kind-list" hide-details>
+          <v-radio v-for="kind in kindOptions" :key="kind.value" :value="kind.value" color="secondary">
+            <template #label>
+              <div class="kind-option"><v-icon :icon="kind.icon" /><div><strong>{{ kind.title }}</strong><span>{{ kind.subtitle }}</span></div></div>
+            </template>
+          </v-radio>
+        </v-radio-group>
+
+        <div v-if="draft.kind === 'rating'" class="scale-grid">
+          <NumberPadField
+            v-model="draft.scaleMin"
+            title="Scale minimum"
+            :disabled="measurementLocked"
+          />
+          <NumberPadField
+            v-model="draft.scaleMax"
+            title="Scale maximum"
+            :disabled="measurementLocked"
+          />
+        </div>
+        <v-select
+          v-if="draft.kind === 'number'"
+          v-model="draft.source"
+          label="Source"
+          :disabled="measurementLocked"
+          :items="sourceOptions"
+          variant="outlined"
+        />
+        <p v-if="draft.kind === 'number' && !healthConnectConnected" class="field-help">
+          Connect Health Connect in Settings to use step data.
+        </p>
+  <v-select
+    v-if="canConfigureUnit"
+    v-model="unitSelection"
+    label="Unit or scale label (optional)"
+    placeholder="None"
+    persistent-placeholder
+    :items="unitOptions"
+          :disabled="measurementLocked"
+          variant="outlined"
+        >
+          <template #append-inner>
+            <v-btn
+              icon="mdi-close"
+              size="small"
+              variant="text"
+              aria-label="Clear unit or scale label"
+              :disabled="measurementLocked || !unitSelection"
+              @click.stop="unitSelection = null"
+            />
+          </template>
+        </v-select>
+        <v-expand-transition>
+          <div v-if="canConfigureUnit && unitSelection === customUnitValue">
+            <v-text-field
+              v-model="draft.unit"
+              label="Custom unit or scale label (optional)"
+              maxlength="30"
+              :disabled="measurementLocked"
+              variant="outlined"
+            />
+          </div>
+        </v-expand-transition>
+        <v-select
+          v-if="draft.kind === 'number' && draft.source !== 'health_connect_steps'"
+          v-model="draft.dailyAggregation"
+          label="When there are several logs in a day"
+          :disabled="measurementLocked"
+          :items="[
+            { title: 'Use the average', value: 'average' },
+            { title: 'Add them together', value: 'sum' },
+            { title: 'Use the last log', value: 'last' },
+          ]"
+          variant="outlined"
+        />
+        <p v-if="draft.kind === 'event'" class="field-help">Log each occurrence. A day without a log is treated as not occurred.</p>
+        <p v-else-if="draft.kind === 'yes_no'" class="field-help">Log an explicit Yes or No for each observation.</p>
+        <p v-else class="field-help">Days without a log stay missing.</p>
+
+        <v-divider />
         <h2 class="section-title">Purpose</h2>
         <v-btn-toggle v-model="draft.role" mandatory color="secondary" class="purpose-toggle">
           <v-btn value="factor" prepend-icon="mdi-flask-outline">Thing I did</v-btn>
@@ -260,67 +396,14 @@ function runRetirementAction(action: ContentRetirementActionId) {
         />
       </v-card>
 
-      <v-card class="tracker-form-section surface-card pa-5 mb-4">
-        <h2 class="section-title">Measurement</h2>
-        <v-radio-group v-model="draft.kind" :disabled="measurementLocked" class="kind-list" hide-details>
-          <v-radio v-for="kind in kindOptions" :key="kind.value" :value="kind.value" color="secondary">
-            <template #label>
-              <div class="kind-option"><v-icon :icon="kind.icon" /><div><strong>{{ kind.title }}</strong><span>{{ kind.subtitle }}</span></div></div>
-            </template>
-          </v-radio>
-        </v-radio-group>
-
-        <div v-if="draft.kind === 'rating'" class="scale-grid">
-          <v-number-input v-model="draft.scaleMin" label="Scale minimum" :disabled="measurementLocked" variant="outlined" />
-          <v-number-input v-model="draft.scaleMax" label="Scale maximum" :disabled="measurementLocked" variant="outlined" />
-        </div>
-        <v-select
-          v-if="draft.kind === 'number'"
-          v-model="draft.source"
-          label="Source"
-          :disabled="measurementLocked"
-          :items="[
-            { title: 'Log manually', value: 'manual' },
-            { title: 'Health Connect steps', value: 'health_connect_steps' },
-          ]"
-          variant="outlined"
-        />
-        <v-text-field
-          v-if="(draft.kind === 'number' || draft.kind === 'rating') && draft.source !== 'health_connect_steps'"
-          v-model="draft.unit"
-          label="Unit or scale label (optional)"
-          maxlength="30"
-          :disabled="measurementLocked"
-          variant="outlined"
-        />
-        <v-select
-          v-if="draft.kind === 'number' && draft.source !== 'health_connect_steps'"
-          v-model="draft.dailyAggregation"
-          label="When there are several logs in a day"
-          :disabled="measurementLocked"
-          :items="[
-            { title: 'Use the average', value: 'average' },
-            { title: 'Add them together', value: 'sum' },
-            { title: 'Use the last log', value: 'last' },
-          ]"
-          variant="outlined"
-        />
-        <p v-if="draft.kind === 'event'" class="field-help">Log each occurrence. A day without a log is treated as not occurred.</p>
-        <p v-else-if="draft.kind === 'yes_no'" class="field-help">Log an explicit Yes or No for each observation.</p>
-        <p v-else class="field-help">Days without a log stay missing.</p>
-      </v-card>
-
       <v-card v-if="draft.kind === 'number' || draft.kind === 'duration'" class="tracker-form-section surface-card pa-5 mb-4">
         <div>
           <h2 class="section-title">Task goal</h2>
           <p class="field-help">Tasks can use this tracker’s target and tracking window while keeping every value in Tracking.</p>
         </div>
-        <v-number-input
+        <NumberPadField
           v-model="targetValueModel"
-          :label="draft.kind === 'duration' ? 'Target minutes (optional)' : 'Target (optional)'"
-          :min="0"
-          :precision="null"
-          variant="outlined"
+          :title="draft.kind === 'duration' ? 'Target minutes (optional)' : 'Target (optional)'"
         />
         <template v-if="draft.targetValue > 0">
           <v-select
@@ -381,7 +464,7 @@ function runRetirementAction(action: ContentRetirementActionId) {
 .section-title { font-size: .78rem; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; }
 .tracker-form-section { display: grid; gap: 1rem; }
 .field-help { color: rgb(var(--v-theme-on-surface) / .58); font-size: .75rem; line-height: 1.5; }
-.purpose-toggle { display: grid; width: 100%; grid-template-columns: 1fr 1fr; }
+.purpose-toggle { display: grid; width: 100%; grid-template-columns: 1fr 1fr; gap: .5rem; }
 .purpose-toggle :deep(.v-btn) { min-width: 0; }
 .kind-list :deep(.v-selection-control) { min-height: 58px; padding: .35rem .25rem; }
 .kind-option { display: flex; align-items: center; gap: .8rem; }

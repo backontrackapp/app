@@ -270,10 +270,10 @@ const trackingTrackerItems = computed(() => trackingStore.trackers
   .map(tracker => ({
     title: tracker.name,
     value: tracker.id,
-    icon: tracker.icon,
+    icon: tracker.icon || 'mdi-checkbox-marked-circle-outline',
     color: tracker.color,
     props: {
-      subtitle: `${tracker.role === 'factor' ? 'Factor' : 'Outcome'} · ${tracker.category}${tracker.archived ? ' · Archived' : tracker.active ? '' : ' · Paused'}`,
+      subtitle: `${tracker.role === 'factor' ? 'Factor' : 'Outcome'}${tracker.archived ? ' · Archived' : tracker.active ? '' : ' · Paused'}`,
     },
   })))
 
@@ -808,22 +808,35 @@ async function deleteTaskPermanently() {
           <v-text-field v-model="draft.name" label="Task name" placeholder="e.g. Hit protein target" :rules="[v => Boolean(v) || 'Name is required']" />
         </div>
         <div v-if="!typeLocked" class="mb-4">
-          <label class="field-label">Task type</label>
-          <div class="type-selector mt-2">
-            <button
-              v-for="option in TASK_CREATE_TYPE_OPTIONS"
-              :key="option.type"
-              type="button"
-              class="editor-type"
-              :class="{ 'editor-type--selected': draft.type === option.type }"
-              :aria-pressed="draft.type === option.type"
-              @click="draft.type = option.type"
-            >
-              <span :style="{ background: option.color }"><v-icon :icon="option.icon" /></span>
-              <strong>{{ option.title }}</strong>
-              <small>{{ option.subtitle }}</small>
-            </button>
-          </div>
+          <v-select
+            v-model="draft.type"
+            label="Task type"
+            :items="TASK_CREATE_TYPE_OPTIONS"
+            item-title="title"
+            item-value="type"
+          >
+            <template #item="{ props: itemProps, item }">
+              <v-list-item
+                v-bind="itemProps"
+                :title="item.raw.title"
+                :subtitle="item.raw.subtitle"
+              >
+                <template #prepend>
+                  <span class="task-type-option-icon mr-3" :style="{ background: item.raw.color }">
+                    <v-icon :icon="item.raw.icon" size="1.125rem" />
+                  </span>
+                </template>
+              </v-list-item>
+            </template>
+            <template #selection="{ item }">
+              <span class="task-type-selection">
+                <span class="task-type-selection-icon" :style="{ background: item.raw.color }">
+                  <v-icon :icon="item.raw.icon" size="1rem" />
+                </span>
+                {{ item.title }}
+              </span>
+            </template>
+          </v-select>
         </div>
         <EmojiSelector
           :model-value="draft.icon || TASK_TYPE_PRESENTATION[draft.type].icon"
@@ -916,7 +929,7 @@ async function deleteTaskPermanently() {
           <v-icon icon="mdi-cards-outline" size="36" class="mb-3" />
           <h2 class="text-body-1 font-weight-black">Create a Review set first</h2>
           <p class="text-body-2 muted mt-2 mb-4">Review set tasks need a saved Review set to run.</p>
-          <v-btn color="secondary" variant="tonal" to="/flashcards/review-sets/new">Create Review set</v-btn>
+          <v-btn color="secondary" variant="tonal" to="/flashcards/review-sets/new">Create a review set</v-btn>
         </div>
       </v-card>
 
@@ -1454,15 +1467,11 @@ async function deleteTaskPermanently() {
 </template>
 
 <style scoped>
-.type-selector { display: grid; grid-template-columns: 1fr; gap: .6rem; }
-.editor-type { position: relative; display: grid; grid-template-columns: 44px 1fr; grid-template-rows: auto auto; align-content: center; column-gap: .65rem; padding: .9rem; border: 0; border-radius: 20px; background: rgb(var(--v-theme-surface-variant) / .72); color: rgb(var(--v-theme-on-surface)); text-align: left; cursor: pointer; }
-.editor-type::after { position: absolute; inset: 0; border: 2px solid #626a61; border-radius: inherit; content: ""; pointer-events: none; }
-.editor-type > span { display: grid; width: 42px; height: 42px; grid-row: 1 / 3; place-items: center; border-radius: 13px; color: #17200f; }
-.editor-type strong { align-self: end; font-size: .85rem; }
-.editor-type small { align-self: start; color: rgb(var(--v-theme-on-surface) / .72); font-size: .68rem; }
-.editor-type--selected { background: rgb(var(--v-theme-secondary) / .16); box-shadow: 0 8px 22px rgb(var(--v-theme-secondary) / .12); }
-.editor-type--selected::after { border: 3px solid #c7f464; }
-.editor-type:focus-visible { outline: 3px solid rgb(var(--v-theme-primary) / .55); outline-offset: 3px; }
+.task-type-option-icon,
+.task-type-selection-icon { display: inline-grid; flex: 0 0 auto; place-items: center; border-radius: .5rem; color: #17200f; }
+.task-type-option-icon { width: 2.25rem; height: 2.25rem; }
+.task-type-selection { display: inline-flex; min-width: 0; align-items: center; gap: .5rem; }
+.task-type-selection-icon { width: 1.5rem; height: 1.5rem; }
 .setting-row { display: flex; min-height: 70px; align-items: center; justify-content: space-between; gap: 1rem; }
 .setting-row strong { font-size: .83rem; }
 .setting-row p { margin-top: .15rem; color: rgb(var(--v-theme-on-surface) / .5); font-size: .7rem; }
@@ -1476,7 +1485,7 @@ async function deleteTaskPermanently() {
   opacity: 1;
 }
 .field-stack { display: grid; gap: 1rem; }
-.schedule-mode-toggle { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); height: auto; }
+.schedule-mode-toggle { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); height: auto; gap: .5rem; }
 .schedule-mode-toggle :deep(.v-btn) { min-width: 0; min-height: 2.75rem; }
 .schedule-mode-toggle :deep(.schedule-mode-toggle--selected) {
   background: rgb(var(--v-theme-secondary));
@@ -1513,12 +1522,10 @@ async function deleteTaskPermanently() {
 .editor-page,
 .editor-page--editing { padding-bottom: 5rem; }
 @media (min-width: 60rem) {
-  .editor-type { padding: 2rem; }
   .editor-page,
   .editor-page--editing { padding-bottom: 5rem; }
 }
 @media (min-width: 37.5rem) {
-  .type-selector { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .weekday-picker :deep(.v-btn) { width: auto; min-width: 0; flex: 1 1 0; }
   .completion-requirement .target-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

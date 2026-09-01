@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import { api, apiAssetUrl } from '@/lib/api'
 import type { CuratedReviewSetSummary } from '@/types/domain'
 
@@ -8,6 +9,8 @@ const loading = ref(true)
 const error = ref('')
 const search = ref('')
 const category = ref('')
+const categoryFilterOpen = ref(false)
+const categoryFilterTarget = ref<HTMLElement>()
 const reducedMotion = ref(false)
 let motionQuery: MediaQueryList | undefined
 const categories = computed(() => [...new Set(items.value.map(item => item.category))].sort())
@@ -28,6 +31,10 @@ onMounted(() => {
 onBeforeUnmount(() => motionQuery?.removeEventListener('change', updateMotionPreference))
 function updateMotionPreference(event: MediaQueryListEvent) {
   reducedMotion.value = event.matches
+}
+function selectCategory(value: string) {
+  category.value = value
+  categoryFilterOpen.value = false
 }
 async function load() {
   loading.value = true
@@ -57,30 +64,55 @@ async function load() {
         autocomplete="off"
         clearable
         hide-details
-      />
-      <div class="curated-categories">
-        <span class="curated-categories__label">Category</span>
-        <v-chip-group v-model="category" mandatory aria-label="Category">
-          <v-chip
-            value=""
-            color="secondary"
-            :variant="category === '' ? 'flat' : 'outlined'"
-            filter
-          >
-            All
-          </v-chip>
-          <v-chip
-            v-for="itemCategory in categories"
-            :key="itemCategory"
-            :value="itemCategory"
-            color="secondary"
-            :variant="category === itemCategory ? 'flat' : 'outlined'"
-            filter
-          >
-            {{ itemCategory }}
-          </v-chip>
-        </v-chip-group>
-      </div>
+      >
+        <template #append-inner>
+          <span ref="categoryFilterTarget">
+            <v-badge
+              :model-value="Boolean(category)"
+              color="secondary"
+              dot
+              location="top end"
+              offset-x="2"
+              offset-y="2"
+            >
+              <v-btn
+                icon="mdi-filter-variant"
+                variant="text"
+                :aria-label="category ? `Filter curated sets: ${category}` : 'Filter curated sets'"
+                :aria-pressed="Boolean(category)"
+                @pointerdown.stop
+                @touchstart.stop
+                @click.stop="categoryFilterOpen = true"
+              />
+            </v-badge>
+          </span>
+        </template>
+      </v-text-field>
+      <ActionBottomSheet
+        v-model="categoryFilterOpen"
+        title="Filters"
+        aria-label="Curated Review set filters"
+        :menu-target="categoryFilterTarget"
+      >
+        <v-list-item
+          :prepend-icon="category === '' ? 'mdi-checkbox-marked' : 'mdi-checkbox-blank-outline'"
+          title="All categories"
+          :active="category === ''"
+          color="secondary"
+          :aria-pressed="category === ''"
+          @click="selectCategory('')"
+        />
+        <v-list-item
+          v-for="itemCategory in categories"
+          :key="itemCategory"
+          :prepend-icon="category === itemCategory ? 'mdi-checkbox-marked' : 'mdi-checkbox-blank-outline'"
+          :title="itemCategory"
+          :active="category === itemCategory"
+          color="secondary"
+          :aria-pressed="category === itemCategory"
+          @click="selectCategory(itemCategory)"
+        />
+      </ActionBottomSheet>
     </div>
 
     <div v-if="loading" class="d-flex justify-center align-center ga-3 py-12" role="status">
@@ -140,9 +172,6 @@ async function load() {
 
 <style scoped>
 .curated-filters { display: flex; flex-direction: column; gap: .75rem; }
-.curated-categories { min-width: 0; }
-.curated-categories__label { display: block; margin-bottom: .25rem; color: rgba(var(--v-theme-on-surface), .68); font-size: .75rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-.curated-categories :deep(.v-chip) { min-height: 2.75rem; }
 .curated-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
 .curated-tile { overflow: hidden; border: 0; }
 .curated-tile h2 { font-size: 1.05rem; font-weight: 900; line-height: 1.25; }
