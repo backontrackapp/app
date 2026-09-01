@@ -43,6 +43,7 @@ import {
   flashcardBackDurationMs,
   flashcardReviewFaceCanSpeak,
   flashcardReviewFaceSpeech,
+  flashcardReviewSpeechFaceValue,
   flashcardReviewFaceValue,
   flashcardReviewShowsSide,
   flashcardReviewSettingsAreValid,
@@ -1011,7 +1012,8 @@ async function speakCurrentSide(allowPaused = false) {
   lastSpokenKey = key
   const side = currentSpeechSide.value
   try {
-    const faceValue = side === 'front' ? currentFrontDisplay.value : currentBackDisplay.value
+    const displayedValue = side === 'front' ? currentFrontDisplay.value : currentBackDisplay.value
+    const faceValue = flashcardReviewSpeechFaceValue(side, displayedValue)
     const { text, audio } = flashcardReviewFaceSpeech(card, faceValue)
     const language = side === 'front' ? value.frontLanguage : value.backLanguage
     if (!text && !audio) {

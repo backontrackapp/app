@@ -7,6 +7,7 @@ import {
   flashcardAccuracy,
   flashcardSideFromSwipe,
   flashcardReviewActionFromSwipe,
+  flashcardReviewSpeechFaceValue,
   flashcardSwipeDirection,
   flashcardTextFontSize,
   flashcardDifficulty,
@@ -72,6 +73,12 @@ const reviewSet: FlashcardReviewSet = {
 }
 
 describe('flashcard review helpers', () => {
+  it('speaks the Back value when the back face displays its transliteration', () => {
+    expect(flashcardReviewSpeechFaceValue('back', 'transliteration')).toBe('back')
+    expect(flashcardReviewSpeechFaceValue('front', 'transliteration')).toBe('transliteration')
+    expect(flashcardReviewSpeechFaceValue('back', 'note')).toBe('note')
+  })
+
   it('places clipboard export directly below Clear tags with a top divider', () => {
     const exportIndex = FLASHCARD_BULK_MENU_ITEMS.findIndex(item => item.action === 'export_clipboard')
 

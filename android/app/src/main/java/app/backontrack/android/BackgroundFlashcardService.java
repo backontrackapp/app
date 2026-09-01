@@ -321,7 +321,8 @@ public class BackgroundFlashcardService extends Service {
         if (MainActivity.isAppVisible() || cardIndex >= cards.size()) return;
         stopSpeechPlayback();
         Card card = cards.get(cardIndex);
-        String faceValue = "front".equals(side) ? frontDisplay : backDisplay;
+        String displayedValue = "front".equals(side) ? frontDisplay : backDisplay;
+        String faceValue = speechFaceValue(side, displayedValue);
         pendingSpeechText = faceText(card, faceValue);
         pendingSpeechLanguage = "front".equals(side) ? frontLanguage : backLanguage;
         pendingRecordingUrl = faceRecording(card, faceValue);
@@ -336,6 +337,12 @@ public class BackgroundFlashcardService extends Service {
             || "image".equals(value)
                 ? value
                 : fallback;
+    }
+
+    private static String speechFaceValue(String side, String displayedValue) {
+        return "back".equals(side) && "transliteration".equals(displayedValue)
+            ? "back"
+            : displayedValue;
     }
 
     private static String faceText(Card card, String value) {

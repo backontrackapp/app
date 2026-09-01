@@ -546,7 +546,8 @@ public class BackgroundIntervalService extends Service {
         stopSpeechPlayback();
         ReviewCard card = reviewCards.get(phase.cardIndex);
         lastReviewSpeechKey = phase.key;
-        String faceValue = "front".equals(phase.side) ? reviewFrontDisplay : reviewBackDisplay;
+        String displayedValue = "front".equals(phase.side) ? reviewFrontDisplay : reviewBackDisplay;
+        String faceValue = speechFaceValue(phase.side, displayedValue);
         pendingReviewSpeechText = faceText(card, faceValue);
         pendingReviewSpeechLanguage = "front".equals(phase.side)
             ? reviewFrontLanguage
@@ -564,6 +565,12 @@ public class BackgroundIntervalService extends Service {
             || "image".equals(value)
                 ? value
                 : fallback;
+    }
+
+    private static String speechFaceValue(String side, String displayedValue) {
+        return "back".equals(side) && "transliteration".equals(displayedValue)
+            ? "back"
+            : displayedValue;
     }
 
     private static String faceText(ReviewCard card, String value) {

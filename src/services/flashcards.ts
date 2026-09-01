@@ -158,6 +158,17 @@ export function flashcardReviewFaceSpeech(
   return { text: flashcardReviewFaceText(card, value), audio: '' }
 }
 
+export function flashcardReviewSpeechFaceValue(
+  side: FlashcardReviewSide,
+  displayedValue: FlashcardReviewFaceValue,
+) {
+  // Transliteration is a reading aid for the Back value; retain the Back
+  // pronunciation, speech override, and recording when it is displayed.
+  return side === 'back' && displayedValue === 'transliteration'
+    ? 'back'
+    : displayedValue
+}
+
 export const FLASHCARD_REVIEW_SESSION_MENU_ITEMS = [
   { action: 'add', title: 'Add card', icon: 'mdi-card-plus-outline', permission: 'add' },
   { action: 'edit', title: 'Edit card', icon: 'mdi-pencil-outline', permission: 'manage' },

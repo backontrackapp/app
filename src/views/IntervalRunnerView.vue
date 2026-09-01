@@ -41,6 +41,7 @@ import {
   flashcardEjectReachesExclusionThreshold,
   flashcardEjectLoadsNext,
   flashcardReviewFaceSpeech,
+  flashcardReviewSpeechFaceValue,
   flashcardReviewFaceValue,
   flashcardReviewActionFromSwipe,
   intervalFlashcardEjectionOffsetMs,
@@ -855,9 +856,10 @@ async function speakCurrentFlashcardSide(allowPaused = false) {
 
   lastSpokenFlashcardKey = key
   try {
-    const faceValue = phase.side === 'front'
+    const displayedValue = phase.side === 'front'
       ? flashcardFrontDisplay.value
       : flashcardBackDisplay.value
+    const faceValue = flashcardReviewSpeechFaceValue(phase.side, displayedValue)
     const { text, audio } = flashcardReviewFaceSpeech(phase.card, faceValue)
     const language = phase.side === 'front' ? review.frontLanguage : review.backLanguage
     if (!text && !audio) {
