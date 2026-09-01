@@ -676,7 +676,7 @@ defineExpose({ refitContent })
 .interval-review-card__set > .text-truncate { min-width: 0; flex: 1 1 auto; }
 .interval-review-card__count { flex: 0 0 auto; }
 .interval-review-card__content small { color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
-.interval-review-card__face-window { display: grid; width: 100%; min-height: 0; overflow: hidden; flex: 1 1 auto; }
+.interval-review-card__face-window { display: grid; width: 100%; min-height: 0; flex: 1 1 auto; }
 .interval-review-card__faces { display: grid; width: 100%; min-height: 0; grid-area: 1 / 1; place-items: center; }
 .interval-review-card__faces > * { grid-area: 1 / 1; max-width: 100%; }
 .interval-review-card__tag-actions { position: relative; z-index: 1; display: grid; padding: 0 1rem .75rem; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: .3rem; }
