@@ -4,7 +4,7 @@ import { flashcardSpeechTextParts, pinyinTextParts, pinyinTone } from '@/service
 import type { FlashcardSpeechTextPart } from '@/services/spokenText'
 import type { FlashcardSpeechWord } from '@/types/domain'
 
-const COMMA_CHARACTER = /^[,\u060c\u07f8\u1363\u1802\u1808\u2e32\u2e34\u2e41\u2e49\u2e4c\u3001\ua4fe\ua60d\ua6f5\ufe10\ufe11\ufe50\ufe51\uff0c\uff64]/u
+const PUNCTUATION_CHARACTER = /^\p{P}$/u
 
 const props = withDefaults(defineProps<{
   text: string
@@ -37,14 +37,43 @@ const parts = computed(() => props.pinyin
   ? pinyinTextParts(props.text)
   : flashcardSpeechTextParts(props.text, props.language))
 const renderedParts = computed(() => parts.value.flatMap((part) => {
-  if (part.wordIndex !== undefined || !COMMA_CHARACTER.test(part.value)) return [part]
-  const commaLength = [...part.value][0]?.length || 0
-  if (!commaLength || commaLength === part.value.length) return [part]
-  return [
-    { ...part, value: part.value.slice(0, commaLength), end: part.start + commaLength },
-    { ...part, value: part.value.slice(commaLength), start: part.start + commaLength },
-  ]
+  if (part.wordIndex !== undefined) return [part]
+
+  const splitParts: FlashcardSpeechTextPart[] = []
+  let chunkStart = 0
+  let chunkIsPunctuation: boolean | undefined
+
+  for (let index = 0; index < part.value.length;) {
+    const character = String.fromCodePoint(part.value.codePointAt(index) || 0)
+    const isPunctuation = PUNCTUATION_CHARACTER.test(character)
+    if (chunkIsPunctuation !== undefined && chunkIsPunctuation !== isPunctuation) {
+      splitParts.push({
+        ...part,
+        value: part.value.slice(chunkStart, index),
+        start: part.start + chunkStart,
+        end: part.start + index,
+      })
+      chunkStart = index
+    }
+    chunkIsPunctuation = isPunctuation
+    index += character.length
+  }
+
+  if (chunkIsPunctuation !== undefined) {
+    splitParts.push({
+      ...part,
+      value: part.value.slice(chunkStart),
+      start: part.start + chunkStart,
+    })
+  }
+  return splitParts
 }))
+
+function isPunctuationPart(part: FlashcardSpeechTextPart) {
+  return part.wordIndex === undefined
+    && [...part.value].every(character => PUNCTUATION_CHARACTER.test(character))
+}
+
 const partGroups = computed(() => {
   const groups: Array<{
     parts: FlashcardSpeechTextPart[]
@@ -54,10 +83,23 @@ const partGroups = computed(() => {
   renderedParts.value.forEach((part) => {
     const previousGroup = groups.at(-1)
     const previousPart = previousGroup?.parts.at(-1)
+    const isPunctuation = isPunctuationPart(part)
+    const directlyFollowsPreviousPart = previousPart?.end === part.start
     if (
-      part.wordIndex === undefined
-      && COMMA_CHARACTER.test(part.value)
-      && previousPart?.wordIndex !== undefined
+      isPunctuation
+      && directlyFollowsPreviousPart
+      && previousGroup
+      && (previousGroup.parts.some(previous => previous.wordIndex !== undefined)
+        || previousGroup.parts.every(isPunctuationPart))
+    ) {
+      previousGroup.parts.push(part)
+      previousGroup.unbroken = true
+      return
+    }
+    if (
+      part.wordIndex !== undefined
+      && directlyFollowsPreviousPart
+      && previousGroup?.parts.every(isPunctuationPart)
     ) {
       previousGroup.parts.push(part)
       previousGroup.unbroken = true
