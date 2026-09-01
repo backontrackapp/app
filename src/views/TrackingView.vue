@@ -254,13 +254,13 @@ async function loadVisibleWeekEntries() {
   const request = ++weeklyLoadRequest
   weeklyChartError.value = ''
   weeklyChartLoading.value = true
-  const start = format(visibleWeekStart.value, 'yyyy-MM-dd')
-  const end = format(addDays(visibleWeekStart.value, 6), 'yyyy-MM-dd')
-  const screenTimeDates = Array.from({ length: 7 }, (_, index) => format(addDays(visibleWeekStart.value, index), 'yyyy-MM-dd'))
+  const chartContextStart = format(addDays(visibleWeekStart.value, -7), 'yyyy-MM-dd')
+  const chartContextEnd = format(addDays(visibleWeekStart.value, 13), 'yyyy-MM-dd')
+  const screenTimeDates = Array.from({ length: 21 }, (_, index) => format(addDays(visibleWeekStart.value, index - 7), 'yyyy-MM-dd'))
     .filter(date => date <= format(new Date(), 'yyyy-MM-dd'))
   try {
     const [trackingResult, screenTimeResult] = await Promise.allSettled([
-      store.loaded ? store.loadRange(start, end) : Promise.resolve(),
+      store.loaded ? store.loadRange(chartContextStart, chartContextEnd) : Promise.resolve(),
       screenTimeEnabled.value && screenTimeDates.length
         ? readScreenTimeForDates(screenTimeDates)
         : Promise.resolve({}),

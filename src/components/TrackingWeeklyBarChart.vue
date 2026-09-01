@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { addDays, format } from 'date-fns'
+import { addDays, differenceInCalendarDays, format, parseISO } from 'date-fns'
 import ContentIcon from '@/components/ContentIcon.vue'
 import { useResponsiveChartWidth } from '@/services/responsiveChart'
-import { formatNumber, formatTrackingValue, trackingDailyValuesForRange } from '@/services/tracking'
+import { aggregateTrackingEntries, formatNumber, formatTrackingValue, trackingDailyValuesForRange } from '@/services/tracking'
 import { readInactiveTrackingChartTrackerIds, storeInactiveTrackingChartTrackerIds } from '@/services/trackingChartPreferences'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
 
@@ -75,6 +75,14 @@ const trackerSeries = computed(() => props.trackers
     const valueByDate = new Map(daily.map((item) => [item.date, item.value]))
     const values = days.value.map((day) => valueByDate.get(day.key) ?? null)
     const observed = values.filter((value): value is number => value !== null)
+    const allDaily = aggregateTrackingEntries(tracker, props.entries)
+    const previous = [...allDaily].reverse().find((item) => item.date < start)
+    const next = allDaily.find((item) => item.date > end)
+    const connectedValues = [
+      ...observed,
+      ...(isLineTracker(tracker) && previous ? [previous.value] : []),
+      ...(isLineTracker(tracker) && next ? [next.value] : []),
+    ]
     const configuredMax = tracker.kind === 'yes_no'
       ? 1
       : tracker.kind === 'rating' && tracker.scaleMax > 0
@@ -83,25 +91,41 @@ const trackerSeries = computed(() => props.trackers
     return {
       tracker,
       values,
-      lineMin: observed.length ? Math.floor(Math.min(...observed)) : 0,
+      previous: isLineTracker(tracker) ? previous : undefined,
+      next: isLineTracker(tracker) ? next : undefined,
+      lineMin: connectedValues.length ? Math.floor(Math.min(...connectedValues)) : 0,
       max: Math.max(configuredMax, ...observed.map((value) => Math.abs(value)), 1),
-      lineMax: observed.length ? Math.ceil(Math.max(...observed)) : 0,
+      lineMax: connectedValues.length ? Math.ceil(Math.max(...connectedValues)) : 0,
       hasValues: observed.length > 0,
     }
   }))
 const screenTimeSeries = computed(() => {
   if (!props.screenTimeValues) return []
+  const start = days.value[0]?.key || ''
+  const end = days.value.at(-1)?.key || ''
   const values = days.value.map((day) => {
     const minutes = props.screenTimeValues?.[day.key]
     return minutes === undefined ? null : minutes * 60
   })
   const observed = values.filter((value): value is number => value !== null)
+  const knownValues = Object.entries(props.screenTimeValues)
+    .map(([date, minutes]) => ({ date, value: minutes * 60 }))
+    .sort((a, b) => a.date.localeCompare(b.date))
+  const previous = [...knownValues].reverse().find((item) => item.date < start)
+  const next = knownValues.find((item) => item.date > end)
+  const connectedValues = [
+    ...observed,
+    ...(previous ? [previous.value] : []),
+    ...(next ? [next.value] : []),
+  ]
   return [{
     tracker: screenTimeTracker,
     values,
-    lineMin: observed.length ? Math.floor(Math.min(...observed)) : 0,
+    previous,
+    next,
+    lineMin: connectedValues.length ? Math.floor(Math.min(...connectedValues)) : 0,
     max: Math.max(...observed, 1),
-    lineMax: observed.length ? Math.ceil(Math.max(...observed)) : 0,
+    lineMax: connectedValues.length ? Math.ceil(Math.max(...connectedValues)) : 0,
     hasValues: observed.length > 0,
   }]
 })
@@ -211,9 +235,29 @@ function lineY(value: number, min: number, max: number) {
   return plotTop + plotHeight - ratio * plotHeight
 }
 
-function linePath(values: Array<number | null>, min: number, max: number) {
-  return values.reduce((path, value, dayIndex) => {
-    if (value === null) return `${path} `
+function linePath(
+  values: Array<number | null>,
+  min: number,
+  max: number,
+  previous?: { date: string; value: number },
+  next?: { date: string; value: number },
+) {
+  const firstDay = days.value[0]
+  if (!firstDay || !values.some(value => value !== null)) return ''
+  const points = values.flatMap((value, dayIndex) => value === null ? [] : [{ dayIndex, value }])
+  if (previous) {
+    points.unshift({
+      dayIndex: differenceInCalendarDays(parseISO(previous.date), firstDay.date),
+      value: previous.value,
+    })
+  }
+  if (next) {
+    points.push({
+      dayIndex: differenceInCalendarDays(parseISO(next.date), firstDay.date),
+      value: next.value,
+    })
+  }
+  return points.reduce((path, { dayIndex, value }) => {
     const command = path.trim() ? 'L' : 'M'
     return `${path}${command}${lineX(dayIndex).toFixed(2)},${lineY(value, min, max).toFixed(2)} `
   }, '').trim()
@@ -246,7 +290,7 @@ function showTooltip() {
   tooltipTimer = window.setTimeout(() => {
     tooltipVisible.value = false
     tooltipTimer = undefined
-  }, 3000)
+  }, 1500)
 }
 
 function hideTooltip() {
@@ -365,7 +409,7 @@ function onKeydown(event: KeyboardEvent) {
 
             <template v-for="item in activeLineSeries" :key="item.tracker.id">
               <path
-                :d="linePath(item.values, item.lineMin, item.lineMax)"
+                :d="linePath(item.values, item.lineMin, item.lineMax, item.previous, item.next)"
                 :stroke="item.tracker.color"
                 class="chart-line"
               />
@@ -494,7 +538,7 @@ function onKeydown(event: KeyboardEvent) {
   padding: .625rem .75rem;
   border: .0625rem solid rgb(var(--v-theme-on-surface) / .12);
   border-radius: .75rem;
-  background: rgb(var(--v-theme-surface));
+  background: rgba(var(--v-theme-surface), .9);
   box-shadow: 0 .5rem 1.25rem rgb(0 0 0 / .32);
   gap: .25rem;
   opacity: 0;
