@@ -194,10 +194,10 @@ function cardTagNames(card: Flashcard) {
           <div class="card-library-header__cell card-library-header__image" aria-hidden="true">Image</div>
           <div class="card-library-header__cell" aria-hidden="true">Faces</div>
           <div class="card-library-header__cell" aria-hidden="true">Transliteration</div>
+          <div v-if="showLastColumn" class="card-library-header__cell" aria-hidden="true">Notes</div>
           <div v-if="showLastColumn" class="card-library-header__cell" aria-hidden="true">
             <slot name="last-column-heading">Tags</slot>
           </div>
-          <div v-if="showLastColumn" class="card-library-header__cell" aria-hidden="true">Notes</div>
         </div>
       </div>
       <div
@@ -222,8 +222,8 @@ function cardTagNames(card: Flashcard) {
             <col class="card-library-table__image-column">
             <col class="card-library-table__faces-column">
             <col class="card-library-table__transliteration-column">
-            <col v-if="showLastColumn" class="card-library-table__tags-column">
             <col v-if="showLastColumn" class="card-library-table__notes-column">
+            <col v-if="showLastColumn" class="card-library-table__tags-column">
           </colgroup>
           <thead class="card-library-table__semantic-heading">
             <tr>
@@ -234,10 +234,10 @@ function cardTagNames(card: Flashcard) {
               <th scope="col" class="card-library-table__image-heading">Image</th>
               <th scope="col" class="card-library-table__faces-heading">Faces</th>
               <th scope="col" class="card-library-table__transliteration-heading">Transliteration</th>
+              <th v-if="showLastColumn" scope="col" class="card-library-table__notes-heading">Notes</th>
               <th v-if="showLastColumn" scope="col" class="card-library-table__tags-heading">
                 <slot name="last-column-heading">Tags</slot>
               </th>
-              <th v-if="showLastColumn" scope="col" class="card-library-table__notes-heading">Notes</th>
             </tr>
           </thead>
           <tbody>
@@ -313,17 +313,17 @@ function cardTagNames(card: Flashcard) {
                   {{ card.transliteration || '—' }}
                 </span>
               </td>
+              <td v-if="showLastColumn" class="card-library-table__notes-cell">
+                <span class="flashcard-table__text flashcard-table__notes" :title="card.note || 'No notes'">
+                  {{ card.note || '—' }}
+                </span>
+              </td>
               <td v-if="showLastColumn" class="card-library-table__tags-cell text-no-wrap">
                 <slot name="last-column" :card="card">
                   <span class="flashcard-table__text flashcard-table__tags" :title="cardTagNames(card)">
                     {{ cardTagNames(card) }}
                   </span>
                 </slot>
-              </td>
-              <td v-if="showLastColumn" class="card-library-table__notes-cell">
-                <span class="flashcard-table__text flashcard-table__notes" :title="card.note || 'No notes'">
-                  {{ card.note || '—' }}
-                </span>
               </td>
             </tr>
           </tbody>

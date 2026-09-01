@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import FlashcardCardsManager from '@/components/FlashcardCardsManager.vue'
 import { useFlashcardStore } from '@/stores/flashcards'
-import type { Flashcard } from '@/types/domain'
+import type { Flashcard, FlashcardReviewSet } from '@/types/domain'
 
 const router = useRouter()
 const store = useFlashcardStore()
@@ -12,6 +12,24 @@ const archivedFilteredCardCount = ref(0)
 const archiveExpanded = ref(false)
 const activeCards = computed(() => store.cards.filter(card => card.archived !== true))
 const archivedCards = computed(() => store.cards.filter(card => card.archived === true))
+const reviewSetsByCardId = computed(() => {
+  const assignments = new Map<string, FlashcardReviewSet[]>()
+
+  store.reviewSets.forEach((reviewSet) => {
+    (reviewSet.assignedCards || []).forEach((cardId) => {
+      const cardReviewSets = assignments.get(cardId) || []
+      cardReviewSets.push(reviewSet)
+      assignments.set(cardId, cardReviewSets)
+    })
+  })
+
+  return assignments
+})
+
+function cardReviewSets(card: Flashcard) {
+  return reviewSetsByCardId.value.get(card.id) || []
+}
+
 onMounted(() => {
   if (!store.loaded) store.load().catch(() => undefined)
 })
@@ -62,6 +80,34 @@ function openCard(card: Flashcard, cards: Flashcard[]) {
           @open-card="openCard"
         >
           <template #action-column-heading><span class="d-sr-only">Edit</span></template>
+          <template #last-column-heading>Review sets</template>
+          <template #last-column="{ card }">
+            <div
+              v-if="cardReviewSets(card).length"
+              class="flashcard-review-set-chips"
+              role="list"
+              :aria-label="`Review sets containing ${card.front}`"
+            >
+              <v-chip
+                v-for="reviewSet in cardReviewSets(card)"
+                :key="reviewSet.id"
+                size="x-small"
+                variant="outlined"
+                class="flashcard-review-set-chip"
+                :style="{ borderColor: reviewSet.color, color: reviewSet.color }"
+                role="listitem"
+              >
+                <template #prepend>
+                  <span class="flashcard-review-set-chip__icon" aria-hidden="true">
+                    <span v-if="reviewSet.icon">{{ reviewSet.icon }}</span>
+                    <v-icon v-else icon="mdi-cards-outline" size="x-small" />
+                  </span>
+                </template>
+                {{ reviewSet.name }}{{ reviewSet.archived ? ' (archived)' : '' }}
+              </v-chip>
+            </div>
+            <span v-else class="flashcard-review-set-empty">No review sets</span>
+          </template>
           <template #action-column="{ card, cards }">
             <div
               class="flashcard-card-edit"
@@ -139,6 +185,11 @@ function openCard(card: Flashcard, cards: Flashcard[]) {
 
 <style scoped>
 .flashcard-card-edit { position: relative; z-index: 2; display: flex; align-items: center; justify-content: center; }
+.flashcard-review-set-chips { display: flex; flex-wrap: wrap; gap: .25rem; }
+.flashcard-review-set-chip { max-width: 100%; }
+.flashcard-review-set-chip__icon { display: inline-flex; margin-right: .25rem; }
+.flashcard-review-set-chip :deep(.v-chip__content) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flashcard-review-set-empty { color: rgb(var(--v-theme-on-surface) / .56); font-size: .7rem; }
 .archive-heading { min-height: 2.75rem; }
 .archive-heading :deep(.v-btn__content) { width: 100%; justify-content: flex-start; gap: .5rem; }
 .archive-heading__count { margin-left: auto; color: rgb(var(--v-theme-on-surface) / .54); font-size: .7rem; }
