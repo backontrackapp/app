@@ -16,6 +16,7 @@ return [
             UPDATE sync_record_versions
             SET field_clocks = json_remove(field_clocks, '$.category')
             WHERE resource = 'tracking_trackers'
+              AND json_valid(field_clocks)
             SQL);
     },
 ];
