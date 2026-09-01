@@ -14,6 +14,7 @@ import {
   flashcardReviewFaceValue,
   normalizeFlashcardBackSpeechRate,
 } from '@/services/flashcards'
+import { updateReviewSetBluetoothAudioActive } from '@/services/reviewSetAudioFocus'
 import type {
   BackgroundFlashcardReviewState,
   FlashcardReviewSession,
@@ -423,6 +424,7 @@ export async function speakFlashcardText(
     clearFlashcardSpeechWordTracking()
     return
   }
+  await updateReviewSetBluetoothAudioActive()
   if (isNativeAndroid()) {
     clearFlashcardSpeechWordTracking()
     activeNativeSpeechText = content

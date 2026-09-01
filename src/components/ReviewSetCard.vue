@@ -446,16 +446,17 @@ defineExpose({ refitContent })
         </small>
       </div>
     </footer>
-    <v-progress-linear
-      class="review-set-card__progress interval-review-card__progress"
-      :model-value="progress"
-      :color="progressColor"
-      bg-color="white"
-      :bg-opacity="0.14"
-      height="5"
-      rounded
-      :aria-label="progressAriaLabel"
-    >
+    <div class="review-set-card__progress interval-review-card__progress">
+      <v-progress-linear
+        class="review-set-card__progress-track"
+        :model-value="progress"
+        :color="progressColor"
+        bg-color="white"
+        :bg-opacity="0.14"
+        height="5"
+        rounded
+        :aria-label="progressAriaLabel"
+      />
       <span
         v-for="position in progressTickPositions"
         :key="position"
@@ -463,7 +464,7 @@ defineExpose({ refitContent })
         :style="{ '--progress-tick-position': `${position}%` }"
         aria-hidden="true"
       />
-    </v-progress-linear>
+    </div>
   </div>
 
   <div
@@ -588,15 +589,16 @@ defineExpose({ refitContent })
               <v-icon icon="mdi-volume-high" size="1.125rem" /> Tap to replay
             </span>
           </div>
-          <v-progress-linear
-            class="review-set-card__progress review-progress"
-            :model-value="progress"
-            :color="progressColor"
-            bg-color="white"
-            :bg-opacity="0.14"
-            height="6"
-            rounded
-          >
+          <div class="review-set-card__progress review-progress">
+            <v-progress-linear
+              class="review-set-card__progress-track"
+              :model-value="progress"
+              :color="progressColor"
+              bg-color="white"
+              :bg-opacity="0.14"
+              height="6"
+              rounded
+            />
             <span
               v-for="position in progressTickPositions"
               :key="position"
@@ -604,7 +606,7 @@ defineExpose({ refitContent })
               :style="{ '--progress-tick-position': `${position}%` }"
               aria-hidden="true"
             />
-          </v-progress-linear>
+          </div>
         </div>
       </div>
     </div>
@@ -686,7 +688,7 @@ defineExpose({ refitContent })
 .review-set-card__progress { position: relative; z-index: 5; flex: 0 0 auto; transition: none; }
 .review-set-card__progress :deep(.v-progress-linear__determinate) { transition: none; }
 .passive-card .review-set-card__progress { width: min(20rem, 100%); }
-.review-set-card__progress-tick { position: absolute; z-index: 1; top: 0; bottom: 0; left: var(--progress-tick-position); width: .125rem; border-radius: .0625rem; background: rgb(var(--v-theme-secondary)); box-shadow: 0 0 0 .0625rem rgba(var(--v-theme-surface), .5); pointer-events: none; transform: translateX(-50%); }
+.review-set-card__progress-tick { position: absolute; z-index: 1; top: 50%; left: var(--progress-tick-position); height: calc(100% + .1875rem); aspect-ratio: 1; border-radius: 50%; background: rgb(var(--v-theme-secondary)); pointer-events: none; transform: translate(-50%, -50%); }
 .review-card__tag-actions { position: absolute; z-index: 3; right: 1.5rem; bottom: 1.25rem; left: 1.5rem; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: .5rem; }
 .review-card__tag-control { min-height: 2.75rem; }
 .review-card__eject-button { min-width: 0; grid-column: 1; justify-self: start; }

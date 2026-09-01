@@ -48,9 +48,10 @@ const cardInk = computed(() => {
     >
       <span class="tracker-card__header">
         <ContentIcon
-          :icon="logged ? 'mdi-check-bold' : tracker.icon"
-          :fallback-icon="logged ? 'mdi-check-bold' : 'mdi-checkbox-marked-circle-outline'"
+          :icon="tracker.icon"
+          fallback-icon="mdi-checkbox-marked-circle-outline"
           size="2rem"
+          class="tracker-card__icon"
         />
       </span>
       <span class="tracker-card__content">
@@ -109,7 +110,11 @@ const cardInk = computed(() => {
 
 .tracker-card--logged:not(.tracker-card--paused) .tracker-card__header {
   background: rgb(var(--v-theme-surface-variant));
-  color: rgb(var(--v-theme-on-surface) / .52);
+}
+
+.tracker-card--logged .tracker-card__icon {
+  filter: grayscale(1);
+  opacity: .52;
 }
 
 .tracker-card--logged .tracker-card__title {

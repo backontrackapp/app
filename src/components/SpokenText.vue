@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { flashcardSpeechTextParts, pinyinTextParts, pinyinTone } from '@/services/spokenText'
+import { reviewSetBluetoothAudioActive } from '@/services/reviewSetAudioFocus'
 import type { FlashcardSpeechTextPart } from '@/services/spokenText'
 import type { FlashcardSpeechWord } from '@/types/domain'
 
@@ -118,12 +119,13 @@ const partGroups = computed(() => {
 })
 const toneSourceWords = computed(() => pinyinTextParts(props.toneSource)
   .filter(part => part.wordIndex !== undefined))
-const WORD_PULSE_ZOOM_IN_DURATION_MS = 160
 const WORD_PULSE_ZOOM_OUT_DURATION_MS = 240
+const BLUETOOTH_WORD_PULSE_DELAY_MS = 350
 const pulsingPartStarts = ref(new Set<number>())
 const returningPartStarts = ref(new Set<number>())
 const wordPulseTimers = new Map<number, {
-  zoomOutTimer: ReturnType<typeof setTimeout>
+  zoomInTimer?: ReturnType<typeof setTimeout>
+  zoomOutTimer?: ReturnType<typeof setTimeout>
   completeTimer?: ReturnType<typeof setTimeout>
 }>()
 
@@ -150,8 +152,9 @@ function partIsActive(part: (typeof parts.value)[number]) {
 }
 
 function clearWordPulses() {
-  wordPulseTimers.forEach(({ zoomOutTimer, completeTimer }) => {
-    clearTimeout(zoomOutTimer)
+  wordPulseTimers.forEach(({ zoomInTimer, zoomOutTimer, completeTimer }) => {
+    if (zoomInTimer) clearTimeout(zoomInTimer)
+    if (zoomOutTimer) clearTimeout(zoomOutTimer)
     if (completeTimer) clearTimeout(completeTimer)
   })
   wordPulseTimers.clear()
@@ -159,30 +162,53 @@ function clearWordPulses() {
   returningPartStarts.value = new Set()
 }
 
+function beginWordZoom(partStart: number) {
+  const timers = wordPulseTimers.get(partStart)
+  if (!timers) return
+  pulsingPartStarts.value = new Set(pulsingPartStarts.value).add(partStart)
+  const nextReturningParts = new Set(returningPartStarts.value)
+  nextReturningParts.delete(partStart)
+  returningPartStarts.value = nextReturningParts
+  wordPulseTimers.set(partStart, { ...timers, zoomInTimer: undefined })
+}
+
+function finishWordZoom(partStart: number) {
+  const timers = wordPulseTimers.get(partStart)
+  if (!timers || timers.zoomOutTimer || timers.completeTimer) return
+  const zoomOutTimer = setTimeout(() => {
+    const nextPulsingParts = new Set(pulsingPartStarts.value)
+    nextPulsingParts.delete(partStart)
+    pulsingPartStarts.value = nextPulsingParts
+    returningPartStarts.value = new Set(returningPartStarts.value).add(partStart)
+    const completeTimer = setTimeout(() => {
+      wordPulseTimers.delete(partStart)
+      const nextReturningParts = new Set(returningPartStarts.value)
+      nextReturningParts.delete(partStart)
+      returningPartStarts.value = nextReturningParts
+    }, WORD_PULSE_ZOOM_OUT_DURATION_MS)
+    wordPulseTimers.set(partStart, { zoomOutTimer, completeTimer })
+  }, reviewSetBluetoothAudioActive.value ? BLUETOOTH_WORD_PULSE_DELAY_MS : 0)
+  wordPulseTimers.set(partStart, { ...timers, zoomOutTimer })
+}
+
+function startWordZoom(part: (typeof parts.value)[number]) {
+  const zoomInTimer = reviewSetBluetoothAudioActive.value
+    ? setTimeout(() => beginWordZoom(part.start), BLUETOOTH_WORD_PULSE_DELAY_MS)
+    : undefined
+  wordPulseTimers.set(part.start, { zoomInTimer })
+  if (!zoomInTimer) beginWordZoom(part.start)
+}
+
 function pulseActiveParts() {
   const activeParts = parts.value.filter(partIsActive)
-  if (!activeParts.length) {
-    clearWordPulses()
-    return
-  }
+  const activePartStarts = new Set(activeParts.map(part => part.start))
+  Array.from(wordPulseTimers.keys()).forEach((partStart) => {
+    if (!activePartStarts.has(partStart)) finishWordZoom(partStart)
+  })
 
   activeParts.forEach((part) => {
     if (wordPulseTimers.has(part.start)) return
-    pulsingPartStarts.value = new Set(pulsingPartStarts.value).add(part.start)
-    const zoomOutTimer = setTimeout(() => {
-      const nextPulsingParts = new Set(pulsingPartStarts.value)
-      nextPulsingParts.delete(part.start)
-      pulsingPartStarts.value = nextPulsingParts
-      returningPartStarts.value = new Set(returningPartStarts.value).add(part.start)
-      const completeTimer = setTimeout(() => {
-        wordPulseTimers.delete(part.start)
-        const nextReturningParts = new Set(returningPartStarts.value)
-        nextReturningParts.delete(part.start)
-        returningPartStarts.value = nextReturningParts
-      }, WORD_PULSE_ZOOM_OUT_DURATION_MS)
-      wordPulseTimers.set(part.start, { zoomOutTimer, completeTimer })
-    }, WORD_PULSE_ZOOM_IN_DURATION_MS)
-    wordPulseTimers.set(part.start, { zoomOutTimer })
+    startWordZoom(part)
   })
 }
 
@@ -216,10 +242,22 @@ function pressWord(event: MouseEvent, part: (typeof parts.value)[number]) {
     wordEnd: part.wordIndex + 1,
   })
 }
+
+function stopWordPointerDown(event: PointerEvent | MouseEvent, part: (typeof parts.value)[number]) {
+  if (!props.wordsPressable || part.wordIndex === undefined) return
+  event.stopPropagation()
+  event.preventDefault();
+}
 </script>
 
 <template>
-  <span class="spoken-text" :aria-label="text">
+  <span
+    :class="[
+      'spoken-text',
+      { 'spoken-text--emphasizing': pulsingPartStarts.size > 0 },
+    ]"
+    :aria-label="text"
+  >
     <span
       v-for="group in partGroups"
       :key="group.parts[0]?.start"
@@ -240,6 +278,8 @@ function pressWord(event: MouseEvent, part: (typeof parts.value)[number]) {
           },
         ]"
         aria-hidden="true"
+        @pointerdown="stopWordPointerDown($event, part)"
+        @mousedown="stopWordPointerDown($event, part)"
         @click="pressWord($event, part)"
       >{{ part.value }}</span>
     </span>
@@ -260,7 +300,11 @@ function pressWord(event: MouseEvent, part: (typeof parts.value)[number]) {
   position: relative;
   transform: scale(1);
   transform-origin: center;
-  transition: transform 160ms cubic-bezier(.22, 1, .36, 1), color 160ms ease;
+  transition: transform 160ms cubic-bezier(.22, 1, .36, 1), color 160ms ease, opacity 160ms ease;
+}
+
+.spoken-text--emphasizing .spoken-text__part {
+  opacity: .33;
 }
 
 .spoken-text__part--pressable {
@@ -268,8 +312,9 @@ function pressWord(event: MouseEvent, part: (typeof parts.value)[number]) {
   pointer-events: auto;
 }
 
-.spoken-text__part--active {
+.spoken-text--emphasizing .spoken-text__part--active {
   z-index: 1;
+  opacity: 1;
   transform: scale(1.16);
 }
 

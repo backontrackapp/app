@@ -41,7 +41,8 @@ class ReviewSetAudioFocusPlugin: CAPPlugin, CAPBridgedPlugin {
     let jsName = "ReviewSetAudioFocus"
     let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "setActive", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "reapply", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "reapply", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "isBluetoothAudioActive", returnType: CAPPluginReturnPromise)
     ]
 
     @objc func setActive(_ call: CAPPluginCall) {
@@ -65,6 +66,20 @@ class ReviewSetAudioFocusPlugin: CAPPlugin, CAPBridgedPlugin {
             } catch {
                 call.reject("Review set audio focus could not be restored.", nil, error)
             }
+        }
+    }
+
+    @objc func isBluetoothAudioActive(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            let bluetoothPorts: Set<AVAudioSession.Port> = [
+                .bluetoothA2DP,
+                .bluetoothHFP,
+                .bluetoothLE
+            ]
+            let active = AVAudioSession.sharedInstance().currentRoute.outputs.contains {
+                bluetoothPorts.contains($0.portType)
+            }
+            call.resolve(["active": active])
         }
     }
 }
