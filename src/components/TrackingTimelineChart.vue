@@ -50,11 +50,21 @@ const selectedPoint = computed(() => selectedIndex.value === undefined
   : props.points[selectedIndex.value])
 const readoutPoint = computed(() => selectedPoint.value ?? props.points.at(-1))
 const xLabels = computed(() => {
-  if (!props.points.length) return []
-  if (horizontallyScrollable.value) {
-    return props.points.map((point, index) => ({ index, label: format(parseISO(point.date), 'MMM d') }))
-  }
-  const indices = [...new Set([0, Math.floor((props.points.length - 1) / 2), props.points.length - 1])]
+  const pointCount = props.points.length
+  if (!pointCount) return []
+  if (pointCount === 1) return [{ index: 0, label: format(parseISO(props.points[0]!.date), 'MMM d') }]
+
+  const lastIndex = pointCount - 1
+  const minimumDateLabelSpacing = 72
+  const pointSpacing = plotWidth.value / lastIndex
+  const labelStep = Math.max(1, Math.ceil(minimumDateLabelSpacing / pointSpacing))
+  const indices = [0]
+
+  for (let index = labelStep; index < lastIndex; index += labelStep) indices.push(index)
+
+  if ((lastIndex - indices.at(-1)!) * pointSpacing < minimumDateLabelSpacing) indices.pop()
+  indices.push(lastIndex)
+
   return indices.map((index) => ({ index, label: format(parseISO(props.points[index]!.date), 'MMM d') }))
 })
 const ariaLabel = computed(() => {
