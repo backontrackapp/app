@@ -2,7 +2,7 @@
 
 Saved intervals support an optional emoji and selectable color as visual anchors. The editor places the shared emoji selector button directly above the color picker. Active interval cards show the selected emoji against that color and fall back to the timer icon when no emoji is selected; archived cards retain their archive status icon. Duplicating an interval preserves both its emoji and color.
 
-The interval editor does not expose the former optional template description field. Existing stored descriptions remain intact when another interval setting is edited.
+The interval editor includes an optional template description. It is saved with the interval and is preserved when the template is duplicated or edited.
 
 An empty interval-plan list uses the shared empty-state card with a direct **Create interval** action. Recent-run history uses the same component when the selected week has no finished sessions.
 

@@ -172,13 +172,21 @@ function runRetirementAction(action: ContentRetirementActionId) {
       <v-card class="surface-card pa-5">
         <div class="field-stack">
           <v-text-field v-model="draft.name" label="Template name" :rules="[value => Boolean(value) || 'Name is required']" />
+          <v-textarea
+            v-model="draft.description"
+            label="Description (optional)"
+            rows="2"
+            auto-grow
+            variant="outlined"
+          />
         </div>
-        <EmojiSelector
-          v-model="draft.icon"
-          label="Interval icon"
-          dialog-title="Choose an icon"
-          class="mt-4"
-        />
+        <div class="mt-4">
+          <EmojiSelector
+            v-model="draft.icon"
+            label="Interval icon"
+            dialog-title="Choose an icon"
+          />
+        </div>
         <ColorSwatchPicker
           v-model="draft.color"
           label="Template color"
