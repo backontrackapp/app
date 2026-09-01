@@ -79,7 +79,6 @@ public class BackgroundIntervalService extends Service {
     private long reviewConfiguredWindowElapsedMs;
     private long reviewFrontDurationMs = 5000L;
     private long reviewBaseBackDurationMs = 5000L;
-    private long reviewBackDurationMs = 5000L;
     private int reviewBackSpeechRepeatCount = 1;
     private String reviewCardSides = "both";
     private boolean reviewInvertFaces;
@@ -340,7 +339,6 @@ public class BackgroundIntervalService extends Service {
             1,
             Math.min(5, review.optInt("backSpeechRepeatCount", 1))
         );
-        reviewBackDurationMs = reviewBaseBackDurationMs * reviewBackSpeechRepeatCount;
         reviewBackSpeechRate = (float) Math.max(
             0.25,
             Math.min(1.0, review.optDouble("backSpeechRate", 1.0))
@@ -460,33 +458,77 @@ public class BackgroundIntervalService extends Service {
         if (reviewCards.isEmpty()) return null;
         boolean showsFront = !"back".equals(reviewCardSides);
         boolean showsBack = !"front".equals(reviewCardSides);
-        long cardDurationMs = (showsFront ? reviewFrontDurationMs : 0L)
-            + (showsBack ? reviewBackDurationMs : 0L);
         long elapsedMs = currentReviewElapsedMs(now);
-        long absoluteCardIndex = elapsedMs / cardDurationMs;
-        int cardIndex = (int) (absoluteCardIndex % reviewCards.size());
-        long elapsedInCard = elapsedMs % cardDurationMs;
+        long cycleDurationMs = 0L;
+        for (ReviewCard card : reviewCards) {
+            cycleDurationMs += reviewCardDurationMs(card, showsFront, showsBack);
+        }
+        if (cycleDurationMs <= 0L) return null;
+
+        long cycle = elapsedMs / cycleDurationMs;
+        long elapsedInCycle = elapsedMs % cycleDurationMs;
+        int cardIndex = 0;
+        ReviewCard card = reviewCards.get(cardIndex);
+        while (cardIndex < reviewCards.size() - 1) {
+            long cardDurationMs = reviewCardDurationMs(card, showsFront, showsBack);
+            if (elapsedInCycle < cardDurationMs) break;
+            elapsedInCycle -= cardDurationMs;
+            cardIndex += 1;
+            card = reviewCards.get(cardIndex);
+        }
         String firstSide = showsBack && (!showsFront || reviewInvertFaces) ? "back" : "front";
-        long firstSideDurationMs = "front".equals(firstSide)
-            ? reviewFrontDurationMs
-            : reviewBackDurationMs;
-        String side = elapsedInCard < firstSideDurationMs
+        long firstSideDurationMs = reviewFaceDurationMs(card, firstSide);
+        String side = elapsedInCycle < firstSideDurationMs
             ? firstSide
             : ("front".equals(firstSide) ? "back" : "front");
         long elapsedInBack = "back".equals(side)
-            ? ("back".equals(firstSide) ? elapsedInCard : elapsedInCard - firstSideDurationMs)
+            ? ("back".equals(firstSide) ? elapsedInCycle : elapsedInCycle - firstSideDurationMs)
             : 0L;
         int backSpeechRepeatIndex = "back".equals(side)
             ? Math.min(
                 reviewBackSpeechRepeatCount - 1,
-                (int) (elapsedInBack / reviewBaseBackDurationMs)
+                (int) (elapsedInBack / reviewBackRepeatDurationMs(card))
             )
             : 0;
         return new ReviewPhase(
             cardIndex,
             side,
-            absoluteCardIndex + ":" + side + ":" + backSpeechRepeatIndex
+            cycle + ":" + cardIndex + ":" + side + ":" + backSpeechRepeatIndex
         );
+    }
+
+    private long reviewCardDurationMs(ReviewCard card, boolean showsFront, boolean showsBack) {
+        return (showsFront ? reviewFaceDurationMs(card, "front") : 0L)
+            + (showsBack ? reviewFaceDurationMs(card, "back") : 0L);
+    }
+
+    private long reviewFaceDurationMs(ReviewCard card, String side) {
+        long configuredDurationMs = "back".equals(side)
+            ? reviewBaseBackDurationMs
+            : reviewFrontDurationMs;
+        int repetitions = "back".equals(side) ? reviewBackSpeechRepeatCount : 1;
+        return repetitions * (configuredDurationMs + reviewSpeechDurationMs(card, side));
+    }
+
+    private long reviewBackRepeatDurationMs(ReviewCard card) {
+        return reviewBaseBackDurationMs + reviewSpeechDurationMs(card, "back");
+    }
+
+    private long reviewSpeechDurationMs(ReviewCard card, String side) {
+        String displayedValue = "front".equals(side) ? reviewFrontDisplay : reviewBackDisplay;
+        String faceValue = speechFaceValue(side, displayedValue);
+        String text = faceText(card, faceValue).trim();
+        String language = "front".equals(side) ? reviewFrontLanguage : reviewBackLanguage;
+        if (text.isEmpty() || language.isEmpty()) return 0L;
+
+        boolean isChinese = language.toLowerCase(Locale.ROOT).startsWith("zh");
+        int unitCount = isChinese
+            ? text.codePointCount(0, text.length())
+            : text.split("\\s+").length;
+        float speechRate = "back".equals(side) ? reviewBackSpeechRate : 1.0f;
+        double millisecondsPerUnit = (isChinese ? 260d : 340d)
+            / Math.max(0.25d, Math.min(1d, speechRate));
+        return Math.max(0L, Math.round(unitCount * millisecondsPerUnit));
     }
 
     private void updateReviewSpeech(long now) {
