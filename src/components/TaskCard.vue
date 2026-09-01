@@ -622,6 +622,10 @@ onBeforeUnmount(() => {
   background: rgba(var(--v-theme-on-surface), .04);
   transition: background-color .18s ease, opacity .18s ease;
 }
+.task-detail-item--done {
+  filter: grayscale(1);
+  opacity: .55;
+}
 .task-detail-item__icon {
   position: relative;
   display: grid;
