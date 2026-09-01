@@ -117,6 +117,15 @@ final class FlashcardRecordingPlayer {
         return player != null;
     }
 
+    synchronized int durationMs() {
+        if (player == null) return 0;
+        try {
+            return Math.max(0, player.getDuration());
+        } catch (RuntimeException ignored) {
+            return 0;
+        }
+    }
+
     private File writeDataUrl(String source) throws IOException {
         int comma = source.indexOf(',');
         String metadata = comma < 0 ? "" : source.substring(0, comma).toLowerCase();

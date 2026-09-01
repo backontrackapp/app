@@ -68,6 +68,16 @@ export function intervalRunnerSessionMenuItems(
   ]
 }
 
+export function programRunnerSessionMenuItems(busy: boolean): RunnerSessionMenuItem[] {
+  return [{
+    action: 'end',
+    title: 'End program',
+    icon: 'mdi-stop-circle-outline',
+    color: 'error',
+    disabled: busy,
+  }]
+}
+
 export function reviewRunnerSessionMenuItems(
   state: ReviewRunnerSessionMenuState,
 ): RunnerSessionMenuItem[] {

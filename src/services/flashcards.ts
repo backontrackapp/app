@@ -851,6 +851,54 @@ export function flashcardBackDurationMs(backSeconds: number, repeatCount: number
   return durationMs * normalizeFlashcardBackSpeechRepeatCount(repeatCount)
 }
 
+type FlashcardReviewTiming = Pick<
+  FlashcardReviewSession,
+  | 'frontSeconds'
+  | 'backSeconds'
+  | 'backSpeechRepeatCount'
+  | 'frontDisplay'
+  | 'backDisplay'
+  | 'speechEnabled'
+  | 'backSpeechRate'
+  | 'frontLanguage'
+  | 'backLanguage'
+>
+
+export function flashcardReviewFaceSpeechDurationMs(
+  review: FlashcardReviewTiming,
+  card: FlashcardReviewQueueCard,
+  side: FlashcardReviewSide,
+) {
+  if (!review.speechEnabled) return 0
+  const displayedValue = side === 'front' ? review.frontDisplay : review.backDisplay
+  const faceValue = flashcardReviewSpeechFaceValue(side, displayedValue)
+  if (!flashcardReviewFaceCanSpeak(faceValue)) return 0
+  const { text } = flashcardReviewFaceSpeech(card, faceValue)
+  const language = side === 'front' ? review.frontLanguage : review.backLanguage
+  const content = text.trim()
+  if (!content || !language) return 0
+  const isChinese = language.toLocaleLowerCase().startsWith('zh')
+  const unitCount = isChinese ? [...content].length : content.split(/\s+/).length
+  const speechRate = side === 'back' ? normalizeFlashcardBackSpeechRate(review.backSpeechRate) : 1
+  return Math.round((isChinese ? 260 : 340) / speechRate * unitCount)
+}
+
+export function flashcardReviewFaceDurationMs(
+  review: FlashcardReviewTiming,
+  card: FlashcardReviewQueueCard,
+  side: FlashcardReviewSide,
+) {
+  const configuredDurationMs = side === 'front'
+    ? Math.max(1000, review.frontSeconds * 1000)
+    : Math.max(1000, review.backSeconds * 1000)
+  const repetitions = side === 'back'
+    ? normalizeFlashcardBackSpeechRepeatCount(review.backSpeechRepeatCount)
+    : 1
+  return repetitions * (
+    configuredDurationMs + flashcardReviewFaceSpeechDurationMs(review, card, side)
+  )
+}
+
 export function flashcardReviewShowsSide(
   _cardSides: FlashcardReviewCardSides,
   _side: FlashcardReviewSide,
@@ -869,12 +917,28 @@ export function otherFlashcardReviewSide(side: FlashcardReviewSide): FlashcardRe
   return side === 'front' ? 'back' : 'front'
 }
 
-function intervalFlashcardCardDurationMs(review: IntervalFlashcardReviewSnapshot) {
+function intervalFlashcardCardDurationMs(
+  review: IntervalFlashcardReviewSnapshot,
+  card: FlashcardReviewQueueCard,
+) {
   const showsFront = flashcardReviewShowsSide(review.cardSides, 'front')
   const showsBack = flashcardReviewShowsSide(review.cardSides, 'back')
-  const frontMs = Math.max(1000, review.frontSeconds * 1000)
-  const backMs = flashcardBackDurationMs(review.backSeconds, review.backSpeechRepeatCount)
+  const frontMs = flashcardReviewFaceDurationMs(review, card, 'front')
+  const backMs = flashcardReviewFaceDurationMs(review, card, 'back')
   return (showsFront ? frontMs : 0) + (showsBack ? backMs : 0)
+}
+
+function intervalFlashcardCycleDurationMs(review: IntervalFlashcardReviewSnapshot) {
+  return review.cards.reduce(
+    (durationMs, card) => durationMs + intervalFlashcardCardDurationMs(review, card),
+    0,
+  )
+}
+
+function intervalFlashcardCardStartMs(review: IntervalFlashcardReviewSnapshot, cardIndex: number) {
+  return review.cards
+    .slice(0, Math.max(0, cardIndex))
+    .reduce((durationMs, card) => durationMs + intervalFlashcardCardDurationMs(review, card), 0)
 }
 
 function intervalFlashcardPlaybackElapsedMs(
@@ -893,17 +957,19 @@ export function intervalFlashcardNavigationOffsetMs(
 ) {
   const currentOffsetMs = Number.isFinite(review.playbackOffsetMs) ? review.playbackOffsetMs! : 0
   if (!review.cards.length) return currentOffsetMs
-
-  const cardDurationMs = intervalFlashcardCardDurationMs(review)
-  const playbackElapsedMs = intervalFlashcardPlaybackElapsedMs(review, elapsedMs)
-  const currentAbsoluteCardIndex = Math.floor(playbackElapsedMs / cardDurationMs)
-  const targetAbsoluteCardIndex = direction === 'next'
-    ? currentAbsoluteCardIndex + 1
-    : currentAbsoluteCardIndex > 0
-      ? currentAbsoluteCardIndex - 1
-      : review.cards.length - 1
-
-  return targetAbsoluteCardIndex * cardDurationMs - elapsedMs
+  const phase = intervalFlashcardPhase(review, elapsedMs)
+  if (!phase) return currentOffsetMs
+  const cycleDurationMs = intervalFlashcardCycleDurationMs(review)
+  const movesPastCycle = direction === 'next'
+    ? phase.cardIndex === review.cards.length - 1
+    : phase.cardIndex === 0
+  const targetCardIndex = direction === 'next'
+    ? (phase.cardIndex + 1) % review.cards.length
+    : (phase.cardIndex - 1 + review.cards.length) % review.cards.length
+  const targetCycle = direction === 'next'
+    ? phase.cycle + (movesPastCycle ? 1 : 0)
+    : Math.max(0, phase.cycle - (movesPastCycle ? 1 : 0))
+  return targetCycle * cycleDurationMs + intervalFlashcardCardStartMs(review, targetCardIndex) - elapsedMs
 }
 
 export function intervalFlashcardEjectionOffsetMs(
@@ -930,7 +996,7 @@ export function intervalFlashcardEjectionOffsetMs(
   const nextCardId = orderedCandidates.find(card => remainingCardIds.has(card.id))?.id
   const nextCardIndex = Math.max(0, remainingCards.findIndex(card => card.id === nextCardId))
   const remainingReview = { ...review, cards: remainingCards }
-  return nextCardIndex * intervalFlashcardCardDurationMs(remainingReview) - elapsedMs
+  return intervalFlashcardCardStartMs(remainingReview, nextCardIndex) - elapsedMs
 }
 
 export function intervalFlashcardSideOffsetMs(
@@ -943,16 +1009,16 @@ export function intervalFlashcardSideOffsetMs(
     return currentOffsetMs
   }
 
-  const cardDurationMs = intervalFlashcardCardDurationMs(review)
-  const playbackElapsedMs = intervalFlashcardPlaybackElapsedMs(review, elapsedMs)
-  const currentAbsoluteCardIndex = Math.floor(playbackElapsedMs / cardDurationMs)
+  const phase = intervalFlashcardPhase(review, elapsedMs)
+  if (!phase) return currentOffsetMs
+  const cycleDurationMs = intervalFlashcardCycleDurationMs(review)
   const firstSide = firstFlashcardReviewSide(review.cardSides, review.invertFaces)
-  const firstSideDurationMs = firstSide === 'front'
-    ? Math.max(1000, review.frontSeconds * 1000)
-    : flashcardBackDurationMs(review.backSeconds, review.backSpeechRepeatCount)
+  const firstSideDurationMs = flashcardReviewFaceDurationMs(review, phase.card, firstSide)
   const sideOffsetMs = side === firstSide ? 0 : firstSideDurationMs
-
-  return currentAbsoluteCardIndex * cardDurationMs + sideOffsetMs - elapsedMs
+  return phase.cycle * cycleDurationMs
+    + intervalFlashcardCardStartMs(review, phase.cardIndex)
+    + sideOffsetMs
+    - elapsedMs
 }
 
 export function intervalFlashcardPhase(
@@ -960,37 +1026,43 @@ export function intervalFlashcardPhase(
   elapsedMs: number,
 ): IntervalFlashcardPhase | undefined {
   if (!review.cards.length) return undefined
-  const frontMs = Math.max(1000, review.frontSeconds * 1000)
-  const baseBackMs = Math.max(1000, review.backSeconds * 1000)
-  const backMs = flashcardBackDurationMs(review.backSeconds, review.backSpeechRepeatCount)
-  const cardDurationMs = intervalFlashcardCardDurationMs(review)
+  const cycleDurationMs = intervalFlashcardCycleDurationMs(review)
+  if (!cycleDurationMs) return undefined
   const safeElapsedMs = intervalFlashcardPlaybackElapsedMs(review, elapsedMs)
-  const absoluteCardIndex = Math.floor(safeElapsedMs / cardDurationMs)
-  const cardIndex = absoluteCardIndex % review.cards.length
-  const elapsedInCard = safeElapsedMs % cardDurationMs
+  const cycle = Math.floor(safeElapsedMs / cycleDurationMs)
+  let elapsedInCycleMs = safeElapsedMs % cycleDurationMs
+  let cardIndex = 0
+  let card = review.cards[cardIndex]
+  while (card && elapsedInCycleMs >= intervalFlashcardCardDurationMs(review, card)) {
+    elapsedInCycleMs -= intervalFlashcardCardDurationMs(review, card)
+    cardIndex += 1
+    card = review.cards[cardIndex]
+  }
+  if (!card) return undefined
   const firstSide = firstFlashcardReviewSide(review.cardSides, review.invertFaces)
-  const firstSideDurationMs = firstSide === 'front' ? frontMs : backMs
-  const side = elapsedInCard < firstSideDurationMs
+  const firstSideDurationMs = flashcardReviewFaceDurationMs(review, card, firstSide)
+  const side = elapsedInCycleMs < firstSideDurationMs
     ? firstSide
     : otherFlashcardReviewSide(firstSide)
-  const sideElapsedMs = side === firstSide ? elapsedInCard : elapsedInCard - firstSideDurationMs
-  const sideDurationMs = side === 'front' ? frontMs : backMs
+  const sideElapsedMs = side === firstSide ? elapsedInCycleMs : elapsedInCycleMs - firstSideDurationMs
+  const sideDurationMs = flashcardReviewFaceDurationMs(review, card, side)
+  const configuredBackDurationMs = Math.max(1000, review.backSeconds * 1000)
+  const speechDurationMs = flashcardReviewFaceSpeechDurationMs(review, card, 'back')
+  const backRepeatDurationMs = configuredBackDurationMs + speechDurationMs
   const backSpeechRepeatIndex = side === 'back'
     ? Math.min(
-        normalizeFlashcardBackSpeechRepeatCount(review.backSpeechRepeatCount) - 1,
-        Math.floor(sideElapsedMs / baseBackMs),
+      normalizeFlashcardBackSpeechRepeatCount(review.backSpeechRepeatCount) - 1,
+        Math.floor(sideElapsedMs / backRepeatDurationMs),
       )
     : 0
-  const card = review.cards[cardIndex]
-  if (!card) return undefined
 
   return {
     card,
     cardIndex,
-    cycle: Math.floor(absoluteCardIndex / review.cards.length),
+    cycle,
     side,
     progress: Math.min(100, Math.max(0, sideElapsedMs / sideDurationMs * 100)),
     remainingMs: Math.max(0, sideDurationMs - sideElapsedMs),
-    key: `${absoluteCardIndex}:${side}:${backSpeechRepeatIndex}`,
+    key: `${cycle}:${cardIndex}:${side}:${backSpeechRepeatIndex}`,
   }
 }

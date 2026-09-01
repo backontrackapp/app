@@ -715,6 +715,7 @@ export interface BackgroundFlashcardReviewState {
   completedCards: number
   side: FlashcardReviewSide
   remainingMs: number
+  durationMs: number
   elapsedMs: number
 }
 

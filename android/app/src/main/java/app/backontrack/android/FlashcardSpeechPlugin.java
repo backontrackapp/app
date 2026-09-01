@@ -22,19 +22,29 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import org.json.JSONException;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
 @CapacitorPlugin(name = "FlashcardSpeech")
 public class FlashcardSpeechPlugin extends Plugin {
 
+    private static final int WORD_ANIMATION_LEAD_MS = 100;
+
+    private static final class SynthesizedSpeechTiming {
+        int sampleRateHz;
+        final List<TtsVolumeBoost.SpeechRange> ranges = new ArrayList<>();
+    }
+
     private static volatile FlashcardSpeechPlugin activeInstance;
 
     private static final int NOTIFICATION_PERMISSION_REQUEST = 9021;
 
     private final List<PluginCall> pendingLanguageCalls = new ArrayList<>();
+    private final Map<String, SynthesizedSpeechTiming> synthesizedSpeechTimings = new HashMap<>();
     private PluginCall pendingSpeechCall;
     private TextToSpeech speech;
     private boolean speechReady;
@@ -51,11 +61,33 @@ public class FlashcardSpeechPlugin extends Plugin {
         volumeBoost = new TtsVolumeBoost(getContext());
         volumeBoost.setPlaybackListener(new TtsVolumeBoost.PlaybackListener() {
             @Override
-            public void onStart(String utteranceId) {
-                JSObject event = new JSObject();
-                event.put("state", "start");
-                event.put("utteranceId", utteranceId);
-                notifyListeners("speechPlayback", event);
+            public void onPrepare(
+                String utteranceId,
+                int durationMs,
+                List<TtsVolumeBoost.SpeechRange> speechRanges
+            ) {
+                notifySpeechPlayback(
+                    "prepare",
+                    utteranceId,
+                    durationMs,
+                    speechRanges,
+                    volumeBoost.playbackStartLeadMs()
+                );
+            }
+
+            @Override
+            public void onStart(
+                String utteranceId,
+                int durationMs,
+                List<TtsVolumeBoost.SpeechRange> speechRanges
+            ) {
+                notifySpeechPlayback(
+                    "start",
+                    utteranceId,
+                    durationMs,
+                    speechRanges,
+                    volumeBoost.playbackStartLeadMs()
+                );
             }
 
             @Override
@@ -82,17 +114,45 @@ public class FlashcardSpeechPlugin extends Plugin {
                     public void onStart(String utteranceId) {}
 
                     @Override
+                    public void onBeginSynthesis(
+                        String utteranceId,
+                        int sampleRateInHz,
+                        int audioFormat,
+                        int channelCount
+                    ) {
+                        synchronized (synthesizedSpeechTimings) {
+                            SynthesizedSpeechTiming timing = synthesizedSpeechTimings.get(utteranceId);
+                            if (timing != null) timing.sampleRateHz = sampleRateInHz;
+                        }
+                    }
+
+                    @Override
+                    public void onRangeStart(String utteranceId, int start, int end, int frame) {
+                        synchronized (synthesizedSpeechTimings) {
+                            SynthesizedSpeechTiming timing = synthesizedSpeechTimings.get(utteranceId);
+                            if (timing == null || timing.sampleRateHz <= 0 || frame < 0) return;
+                            timing.ranges.add(new TtsVolumeBoost.SpeechRange(
+                                start,
+                                end,
+                                (int) Math.round(frame * 1_000d / timing.sampleRateHz)
+                            ));
+                        }
+                    }
+
+                    @Override
                     public void onDone(String utteranceId) {
-                        volumeBoost.playSynthesized(utteranceId);
+                        volumeBoost.playSynthesized(utteranceId, takeSynthesizedSpeechRanges(utteranceId));
                     }
 
                     @Override
                     public void onError(String utteranceId) {
+                        discardSynthesizedSpeechTiming(utteranceId);
                         volumeBoost.finish(utteranceId);
                     }
 
                     @Override
                     public void onStop(String utteranceId, boolean interrupted) {
+                        discardSynthesizedSpeechTiming(utteranceId);
                         volumeBoost.finish(utteranceId);
                     }
                 });
@@ -158,7 +218,11 @@ public class FlashcardSpeechPlugin extends Plugin {
         backgroundIntervalSpeechKey = call.getString("backgroundIntervalSpeechKey", "").trim();
         recordingPlayer.play(
             source,
-            call::resolve,
+            () -> {
+                JSObject result = new JSObject();
+                result.put("durationMs", recordingPlayer.durationMs());
+                call.resolve(result);
+            },
             () -> call.reject("The card recording could not be played."),
             call::resolve,
             MainActivity::isAppVisible
@@ -188,8 +252,20 @@ public class FlashcardSpeechPlugin extends Plugin {
             call.reject("The speech speed could not be applied.");
             return;
         }
+        Integer requestedWordAnimationLeadMs = call.getInt("wordAnimationLeadMs", 0);
+        int wordAnimationLeadMs = Math.max(
+            0,
+            Math.min(
+                WORD_ANIMATION_LEAD_MS,
+                requestedWordAnimationLeadMs == null ? 0 : requestedWordAnimationLeadMs
+            )
+        );
+        volumeBoost.setPlaybackStartLeadMs(wordAnimationLeadMs);
         backgroundIntervalSpeechKey = "";
         String utteranceId = "backontrack-flashcard-" + System.nanoTime();
+        synchronized (synthesizedSpeechTimings) {
+            synthesizedSpeechTimings.put(utteranceId, new SynthesizedSpeechTiming());
+        }
         int result = volumeBoost.speak(
             speech,
             text,
@@ -197,6 +273,7 @@ public class FlashcardSpeechPlugin extends Plugin {
             overAmplificationEnabled
         );
         if (result == TextToSpeech.ERROR) {
+            discardSynthesizedSpeechTiming(utteranceId);
             volumeBoost.finish(utteranceId);
             call.reject("The card could not be spoken.");
             return;
@@ -239,8 +316,48 @@ public class FlashcardSpeechPlugin extends Plugin {
             pendingSpeechCall = null;
         }
         if (speech != null) speech.stop();
+        synchronized (synthesizedSpeechTimings) {
+            synthesizedSpeechTimings.clear();
+        }
         if (volumeBoost != null) volumeBoost.stop();
         if (recordingPlayer != null) recordingPlayer.stop();
+    }
+
+    private void notifySpeechPlayback(
+        String state,
+        String utteranceId,
+        int durationMs,
+        List<TtsVolumeBoost.SpeechRange> speechRanges,
+        int wordAnimationLeadMs
+    ) {
+        JSObject event = new JSObject();
+        event.put("state", state);
+        event.put("utteranceId", utteranceId);
+        event.put("durationMs", durationMs);
+        JSArray ranges = new JSArray();
+        for (TtsVolumeBoost.SpeechRange speechRange : speechRanges) {
+            JSObject range = new JSObject();
+            range.put("start", speechRange.start);
+            range.put("end", speechRange.end);
+            range.put("offsetMs", speechRange.offsetMs);
+            ranges.put(range);
+        }
+        event.put("speechRanges", ranges);
+        if (wordAnimationLeadMs > 0) event.put("wordAnimationLeadMs", wordAnimationLeadMs);
+        notifyListeners("speechPlayback", event);
+    }
+
+    private List<TtsVolumeBoost.SpeechRange> takeSynthesizedSpeechRanges(String utteranceId) {
+        synchronized (synthesizedSpeechTimings) {
+            SynthesizedSpeechTiming timing = synthesizedSpeechTimings.remove(utteranceId);
+            return timing == null ? new ArrayList<>() : new ArrayList<>(timing.ranges);
+        }
+    }
+
+    private void discardSynthesizedSpeechTiming(String utteranceId) {
+        synchronized (synthesizedSpeechTimings) {
+            synthesizedSpeechTimings.remove(utteranceId);
+        }
     }
 
     static boolean isForegroundSpeechActive() {

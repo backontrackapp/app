@@ -231,6 +231,7 @@ let runnerSwipeStart: {
 } | undefined
 let suppressIntervalFlashcardClick = false
 let lastSpokenFlashcardKey = ''
+let flashcardSpeechToFinishAfterIntervalBranch = ''
 let reconcilingVisibilitySpeech = false
 let resumeAfterFlashcardContext = false
 let resumeAfterFlashcardModal = false
@@ -853,14 +854,26 @@ async function speakCurrentFlashcardSide(allowPaused = false) {
     || !phase
     || !key
   ) {
+    const isPausingAfterIntervalBranch = !allowPaused
+      && item?.status === 'running'
+      && review?.speechEnabled
+      && !review.speechPaused
+      && !flashcardReviewPlaybackEnabled.value
+    if (isPausingAfterIntervalBranch && flashcardSpeechToFinishAfterIntervalBranch) return
+
+    flashcardSpeechToFinishAfterIntervalBranch = ''
     if (!item || !review?.speechEnabled || review.speechPaused || !phase || !key) {
       lastSpokenFlashcardKey = ''
     }
     await stopFlashcardSpeech()
     return
   }
-  if (key === lastSpokenFlashcardKey) return
+  if (key === lastSpokenFlashcardKey) {
+    flashcardSpeechToFinishAfterIntervalBranch = ''
+    return
+  }
 
+  flashcardSpeechToFinishAfterIntervalBranch = ''
   lastSpokenFlashcardKey = key
   try {
     const displayedValue = phase.side === 'front'
@@ -880,8 +893,9 @@ async function speakCurrentFlashcardSide(allowPaused = false) {
       }
     })
     const speechRate = phase.side === 'back' ? review.backSpeechRate : 1
-    if (audio) await speakFlashcardText(text, language, phase.key, audio, speechRate)
-    else await speakFlashcardText(text, language, phase.key, '', speechRate)
+    const wordAnimationLeadMs = phase.side === 'back' ? 100 : 0
+    if (audio) await speakFlashcardText(text, language, phase.key, audio, speechRate, undefined, wordAnimationLeadMs)
+    else await speakFlashcardText(text, language, phase.key, '', speechRate, undefined, wordAnimationLeadMs)
   } catch {
     spokenFlashcardWord.value = undefined
     // Speech is optional during intervals; timer playback continues without an inline warning.
@@ -1058,6 +1072,23 @@ function playCurrentStepCue(item: IntervalSession) {
   playIntervalGoCue(item.cues, step.kind, step.name)
 }
 
+function retainCurrentFlashcardSpeechAfterIntervalBranch(item: IntervalSession) {
+  const review = item.flashcardReview
+  const phase = flashcardPhase.value
+  const key = phase ? `${item.id}:${phase.key}` : ''
+  if (
+    review?.speechEnabled
+    && !review.speechPaused
+    && flashcardReviewPlaybackEnabled.value
+    && key
+    && key === lastSpokenFlashcardKey
+  ) {
+    flashcardSpeechToFinishAfterIntervalBranch = key
+  } else {
+    flashcardSpeechToFinishAfterIntervalBranch = ''
+  }
+}
+
 async function syncNativeTimer(item: IntervalSession) {
   try {
     await syncBackgroundInterval(item)
@@ -1155,6 +1186,7 @@ async function tick() {
   if (!result.transitions) return
 
   syncing.value = true
+  retainCurrentFlashcardSpeechAfterIntervalBranch(item)
   store.mirrorRuntime(item.id, result.runtime)
   try {
     if (result.completed) {
@@ -1434,6 +1466,7 @@ async function advanceCurrent(item: IntervalSession) {
   if (syncing.value) return
   syncing.value = true
   const result = reconciled(item)
+  retainCurrentFlashcardSpeechAfterIntervalBranch(item)
   const nextIndex = result.runtime.stepIndex + 1
   const nextStep = resolveIntervalStep(item.definition, nextIndex)
   try {
@@ -2492,7 +2525,7 @@ async function runAgain() {
               Done
             </v-btn>
             <v-btn variant="tonal" size="large" prepend-icon="mdi-replay" :loading="starting" @click="runAgain()">Run again</v-btn>
-            <v-btn variant="outlined" size="large" prepend-icon="mdi-note-plus-outline" @click="openNoteDialog">
+            <v-btn variant="tonal" size="large" prepend-icon="mdi-note-plus-outline" @click="openNoteDialog">
               {{ session.note ? 'Edit note' : 'Add note' }}
             </v-btn>
           </div>

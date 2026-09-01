@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { flashcardSpeechTextParts, pinyinTextParts, pinyinTone } from '@/services/spokenText'
 import type { FlashcardSpeechTextPart } from '@/services/spokenText'
 import type { FlashcardSpeechWord } from '@/types/domain'
@@ -118,6 +118,14 @@ const partGroups = computed(() => {
 })
 const toneSourceWords = computed(() => pinyinTextParts(props.toneSource)
   .filter(part => part.wordIndex !== undefined))
+const WORD_PULSE_ZOOM_IN_DURATION_MS = 160
+const WORD_PULSE_ZOOM_OUT_DURATION_MS = 240
+const pulsingPartStarts = ref(new Set<number>())
+const returningPartStarts = ref(new Set<number>())
+const wordPulseTimers = new Map<number, {
+  zoomOutTimer: ReturnType<typeof setTimeout>
+  completeTimer?: ReturnType<typeof setTimeout>
+}>()
 
 function partTone(part: (typeof parts.value)[number]) {
   if (!props.colorizePinyin || part.wordIndex === undefined) return undefined
@@ -140,6 +148,63 @@ function partIsActive(part: (typeof parts.value)[number]) {
     && part.wordIndex >= props.activeWordStart
     && part.wordIndex < props.activeWordEnd
 }
+
+function clearWordPulses() {
+  wordPulseTimers.forEach(({ zoomOutTimer, completeTimer }) => {
+    clearTimeout(zoomOutTimer)
+    if (completeTimer) clearTimeout(completeTimer)
+  })
+  wordPulseTimers.clear()
+  pulsingPartStarts.value = new Set()
+  returningPartStarts.value = new Set()
+}
+
+function pulseActiveParts() {
+  const activeParts = parts.value.filter(partIsActive)
+  if (!activeParts.length) {
+    clearWordPulses()
+    return
+  }
+
+  activeParts.forEach((part) => {
+    if (wordPulseTimers.has(part.start)) return
+    pulsingPartStarts.value = new Set(pulsingPartStarts.value).add(part.start)
+    const zoomOutTimer = setTimeout(() => {
+      const nextPulsingParts = new Set(pulsingPartStarts.value)
+      nextPulsingParts.delete(part.start)
+      pulsingPartStarts.value = nextPulsingParts
+      returningPartStarts.value = new Set(returningPartStarts.value).add(part.start)
+      const completeTimer = setTimeout(() => {
+        wordPulseTimers.delete(part.start)
+        const nextReturningParts = new Set(returningPartStarts.value)
+        nextReturningParts.delete(part.start)
+        returningPartStarts.value = nextReturningParts
+      }, WORD_PULSE_ZOOM_OUT_DURATION_MS)
+      wordPulseTimers.set(part.start, { zoomOutTimer, completeTimer })
+    }, WORD_PULSE_ZOOM_IN_DURATION_MS)
+    wordPulseTimers.set(part.start, { zoomOutTimer })
+  })
+}
+
+function partIsPulsing(part: (typeof parts.value)[number]) {
+  return part.wordIndex !== undefined && pulsingPartStarts.value.has(part.start)
+}
+
+function partIsReturning(part: (typeof parts.value)[number]) {
+  return part.wordIndex !== undefined && returningPartStarts.value.has(part.start)
+}
+
+watch(
+  [
+    () => props.activeStart,
+    () => props.activeEnd,
+    () => props.activeWordStart,
+    () => props.activeWordEnd,
+  ],
+  pulseActiveParts,
+)
+watch(parts, clearWordPulses)
+onBeforeUnmount(clearWordPulses)
 
 function pressWord(event: MouseEvent, part: (typeof parts.value)[number]) {
   if (!props.wordsPressable || part.wordIndex === undefined) return
@@ -169,7 +234,8 @@ function pressWord(event: MouseEvent, part: (typeof parts.value)[number]) {
             'spoken-text__part--word': part.wordIndex !== undefined,
             'spoken-text__part--pressable': wordsPressable && part.wordIndex !== undefined,
             'spoken-text__part--punctuation': partIsPunctuation(part),
-            'spoken-text__part--active': partIsActive(part),
+            'spoken-text__part--active': partIsPulsing(part),
+            'spoken-text__part--returning': partIsReturning(part),
             [`spoken-text__part--tone-${partTone(part)}`]: partTone(part) !== undefined,
           },
         ]"
@@ -207,6 +273,11 @@ function pressWord(event: MouseEvent, part: (typeof parts.value)[number]) {
   transform: scale(1.16);
 }
 
+.spoken-text__part--returning {
+  z-index: 1;
+  transition: transform 240ms cubic-bezier(.22, 1, .36, 1), color 160ms ease;
+}
+
 .spoken-text__part--tone-1 { color: rgb(var(--v-theme-info)); }
 .spoken-text__part--tone-2 { color: rgb(var(--v-theme-success)); }
 .spoken-text__part--tone-3 { color: rgb(var(--v-theme-warning)); }
@@ -216,7 +287,8 @@ function pressWord(event: MouseEvent, part: (typeof parts.value)[number]) {
 
 @media (prefers-reduced-motion: reduce) {
   .spoken-text__part--word { transition: color 160ms ease; }
-  .spoken-text__part--active {
+  .spoken-text__part--active,
+  .spoken-text__part--returning {
     transform: none;
     text-decoration: underline;
     text-decoration-thickness: .12em;

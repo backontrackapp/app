@@ -21,6 +21,7 @@ import {
   stopFlashcardSpeech,
   syncBackgroundFlashcardReview,
   toggleFlashcardSpeechOverAmplification,
+  waitForFlashcardSpeechCompletion,
   waitForFlashcardSpeechHandoff,
 } from '@/services/flashcardSpeech'
 import {
@@ -41,6 +42,7 @@ import {
   FLASHCARD_SETTINGS_APPLY_MENU_ITEMS,
   firstFlashcardReviewSide,
   flashcardBackDurationMs,
+  flashcardReviewFaceDurationMs,
   flashcardReviewFaceCanSpeak,
   flashcardReviewFaceSpeech,
   flashcardReviewSpeechFaceValue,
@@ -286,10 +288,8 @@ const backSpeechRepeatCount = computed(() => session.value?.mode === 'passive'
   ? normalizeFlashcardBackSpeechRepeatCount(session.value.backSpeechRepeatCount)
   : 1)
 const passiveDurationMs = computed(() => {
-  if (!session.value) return 1000
-  return passiveSide.value === 'front'
-    ? session.value.frontSeconds * 1000
-    : flashcardBackDurationMs(session.value.backSeconds, backSpeechRepeatCount.value)
+  if (!session.value || !currentCard.value) return 1000
+  return flashcardReviewFaceDurationMs(session.value, currentCard.value, passiveSide.value)
 })
 const passiveSpeechRepeatIndex = computed(() => {
   if (
@@ -297,12 +297,9 @@ const passiveSpeechRepeatIndex = computed(() => {
     || passiveSide.value !== 'back'
     || backSpeechRepeatCount.value === 1
   ) return 0
-  const baseBackDurationMs = Math.max(1000, session.value.backSeconds * 1000)
+  const repeatDurationMs = passiveDurationMs.value / backSpeechRepeatCount.value
   const elapsedBackMs = Math.max(0, passiveDurationMs.value - passiveRemainingMs.value)
-  return Math.min(
-    backSpeechRepeatCount.value - 1,
-    Math.floor(elapsedBackMs / baseBackDurationMs),
-  )
+  return Math.min(backSpeechRepeatCount.value - 1, Math.floor(elapsedBackMs / repeatDurationMs))
 })
 const passiveProgress = computed(() => {
   tickVersion.value
@@ -1024,8 +1021,9 @@ async function speakCurrentSide(allowPaused = false) {
       if (request === speechRequest && speechKey(true) === key) spokenWord.value = word
     })
     const speechRate = side === 'back' ? value.backSpeechRate : 1
-    if (audio) await speakFlashcardText(text, language, '', audio, speechRate)
-    else await speakFlashcardText(text, language, '', '', speechRate)
+    const wordAnimationLeadMs = side === 'back' ? 100 : 0
+    if (audio) await speakFlashcardText(text, language, '', audio, speechRate, undefined, wordAnimationLeadMs)
+    else await speakFlashcardText(text, language, '', '', speechRate, undefined, wordAnimationLeadMs)
     if (request === speechRequest) speechPlaybackWarning.value = ''
   } catch {
     if (request === speechRequest) spokenWord.value = undefined
@@ -1073,6 +1071,7 @@ async function speakPressedWord(word: string, pressedWord: FlashcardSpeechWord) 
   speechPlaybackWarning.value = ''
   try {
     await speakFlashcardText(text, currentSpeechLanguage.value, '', '', value.backSpeechRate)
+    await waitForFlashcardSpeechCompletion()
     if (request === speechRequest) speechPlaybackWarning.value = ''
   } catch {
     if (request === speechRequest && !speechFailureWarnedSessionIds.has(value.id)) {
@@ -1352,9 +1351,13 @@ function applyBackgroundProgressSnapshot(
   backgroundViewedTarget.value = value.viewedCount + Math.max(0, state.completedCards)
   localElapsedMs.value = Math.max(localElapsedMs.value, state.elapsedMs)
   backgroundPassiveRemainingMs.value = Math.max(0, state.remainingMs)
-  backgroundPassiveDurationMs.value = state.side === 'front'
+  const configuredDurationMs = state.side === 'front'
     ? Math.max(1000, value.frontSeconds * 1000)
     : flashcardBackDurationMs(value.backSeconds, value.backSpeechRepeatCount)
+  backgroundPassiveDurationMs.value = Math.max(
+    1000,
+    Number.isFinite(state.durationMs) ? state.durationMs : configuredDurationMs,
+  )
   lastTickAt = Date.now()
   backgroundVisualSnapshotReady.value = true
   tickVersion.value++

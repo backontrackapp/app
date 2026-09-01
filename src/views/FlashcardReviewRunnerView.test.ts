@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   stopBackgroundFlashcardReview: vi.fn(),
   syncBackgroundFlashcardReview: vi.fn(),
   toggleSpeechOverAmplification: vi.fn(),
+  waitForFlashcardSpeechCompletion: vi.fn().mockResolvedValue(undefined),
   store: {
     loaded: true,
     reviewSets: [] as FlashcardReviewSet[],
@@ -49,6 +50,7 @@ vi.mock('@/services/flashcardSpeech', () => ({
   stopFlashcardSpeech: vi.fn().mockResolvedValue(undefined),
   syncBackgroundFlashcardReview: mocks.syncBackgroundFlashcardReview,
   toggleFlashcardSpeechOverAmplification: mocks.toggleSpeechOverAmplification,
+  waitForFlashcardSpeechCompletion: mocks.waitForFlashcardSpeechCompletion,
 }))
 vi.mock('@/services/intervalCues', () => ({
   playFlashcardEjectCue: vi.fn(),

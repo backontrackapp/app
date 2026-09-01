@@ -2,18 +2,28 @@
 import { computed, onMounted, ref, shallowRef } from 'vue'
 import { parseISO } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import ContentIcon from '@/components/ContentIcon.vue'
 import ExerciseDetailsPanel from '@/components/ExerciseDetailsPanel.vue'
 import ExerciseSetEditor from '@/components/ExerciseSetEditor.vue'
+import ProgramRequirementList from '@/components/ProgramRequirementList.vue'
 import RunnerStartScreen from '@/components/RunnerStartScreen.vue'
+import RunnerSessionActions from '@/components/RunnerSessionActions.vue'
 import { exercisePresentationById } from '@/services/exercisePresentations'
 import { loadExerciseOptions } from '@/services/exercises'
 import { formatIntervalDuration, intervalDuration, intervalStepKindCount } from '@/services/intervals'
 import { programStepRequirementName } from '@/services/programStepCompletions'
+import { programRunnerSessionMenuItems } from '@/services/runnerSessionActions'
+import { TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
-import type { ProgramStepCompletionProgress, TaskProgress } from '@/types/domain'
+import type {
+  ProgramStepCompletionProgress,
+  ProgramStepRequirementListItem,
+  RunnerSessionAction,
+  TaskProgress,
+} from '@/types/domain'
 import type { ExerciseOption, ExerciseSet } from '@/types/exercise'
 
 const route = useRoute()
@@ -23,9 +33,11 @@ const intervalStore = useIntervalStore()
 const flashcardStore = useFlashcardStore()
 const loading = ref(true)
 const error = ref('')
-const screen = ref<'start' | 'requirement' | 'finished'>('start')
+const screen = ref<'start' | 'list' | 'requirement' | 'finished'>('start')
 const activeIndex = ref(0)
 const working = ref(false)
+const sessionActionsSheet = ref(false)
+const endDialog = ref(false)
 const amount = ref(0)
 const sets = ref<ExerciseSet[]>([])
 const exercise = shallowRef<ExerciseOption>()
@@ -83,6 +95,92 @@ const attachedInterval = computed(() => intervalStore.templates.find(
 const attachedReviewSet = computed(() => flashcardStore.reviewSets.find(
   item => item.id === current.value?.flashcardReviewSet,
 ))
+const requirementListItems = computed<ProgramStepRequirementListItem[]>(() => requirements.value.map((item, index) => {
+  const exercisePresentation = exercisePresentationById(item.exercise)
+  const exercise = exercisePresentation
+    ? { image: exercisePresentation.imageUrl, imageAlt: exercisePresentation.name }
+    : {}
+  const title = requirements.value.length > 1
+    ? `${index + 1}. ${programStepRequirementName(item, exercisePresentation?.name, item.type === 'workout' ? 'Workout' : 'Requirement')}`
+    : programStepRequirementName(item, exercisePresentation?.name, item.type === 'workout' ? 'Workout' : 'Requirement')
+
+  if (item.type === 'check') {
+    return {
+      id: item.id,
+      title,
+      subtitle: item.complete ? 'Checked off' : 'Not checked off',
+      icon: item.complete ? 'mdi-check-circle' : 'mdi-check-circle-outline',
+      ...exercise,
+      complete: item.complete,
+      disabled: Boolean(progress.value?.locked),
+    }
+  }
+
+  if (item.type === 'workout') {
+    const interval = intervalStore.templates.find(template => template.id === item.intervalTemplate)
+    return {
+      id: item.id,
+      title,
+      subtitle: [
+        item.complete ? 'Complete' : '',
+        exercisePresentation ? 'Confirm reps and weight' : 'Exercise optional',
+        interval ? `${formatIntervalDuration(intervalDuration(interval.definition))} interval` : '',
+      ].filter(Boolean).join(' · '),
+      icon: item.complete ? 'mdi-check-circle' : 'mdi-dumbbell',
+      ...exercise,
+      color: TASK_TYPE_PRESENTATION.program.color,
+      complete: item.complete,
+      disabled: Boolean(progress.value?.locked),
+    }
+  }
+
+  if (item.type === 'quantity') {
+    const unit = item.customUnit || item.unit || ''
+    return {
+      id: item.id,
+      title,
+      subtitle: `${Number(item.value.toFixed(2))} of ${item.targetValue ?? 0}${unit ? ` ${unit}` : ''}`,
+      icon: 'mdi-plus-minus-variant',
+      ...exercise,
+      complete: item.complete,
+      disabled: Boolean(progress.value?.locked),
+    }
+  }
+
+  if (item.type === 'interval') {
+    const interval = intervalStore.templates.find(template => template.id === item.intervalTemplate)
+    return {
+      id: item.id,
+      title,
+      subtitle: [
+        item.complete ? 'Complete' : '',
+        interval ? `${formatIntervalDuration(intervalDuration(interval.definition))} total` : 'Saved interval unavailable',
+      ].filter(Boolean).join(' · '),
+      icon: item.complete ? 'mdi-check-circle' : interval?.icon || 'mdi-timer-play-outline',
+      ...exercise,
+      color: interval?.color || TASK_TYPE_PRESENTATION.interval.color,
+      complete: item.complete,
+      disabled: Boolean(progress.value?.locked) || (!item.complete && !interval),
+    }
+  }
+
+  const reviewSet = flashcardStore.reviewSets.find(set => set.id === item.flashcardReviewSet)
+  const cardLabel = reviewSet?.matchingCardCount === 1 ? 'card' : 'cards'
+  return {
+    id: item.id,
+    title,
+    subtitle: [
+      item.complete ? 'Complete' : '',
+      reviewSet ? `${reviewSet.mode === 'passive' ? 'Passive' : 'Manual'} · ${reviewSet.matchingCardCount} ${cardLabel}` : 'Review set unavailable',
+    ].filter(Boolean).join(' · '),
+    icon: item.complete ? 'mdi-check-circle' : 'mdi-cards-playing-outline',
+    ...exercise,
+    color: TASK_TYPE_PRESENTATION.flashcards.color,
+    complete: item.complete,
+    disabled: Boolean(progress.value?.locked) || (!item.complete && !reviewSet?.matchingCardCount),
+  }
+}))
+const sessionActionItems = computed(() => programRunnerSessionMenuItems(working.value))
 const workoutIntervalPending = computed(() => (
   current.value?.type === 'workout'
   && Boolean(current.value.intervalTemplate)
@@ -154,6 +252,12 @@ async function start() {
     screen.value = 'finished'
     return
   }
+  screen.value = 'list'
+}
+
+async function openRequirement(completionId: string) {
+  const index = requirements.value.findIndex(item => item.id === completionId)
+  if (index < 0 || requirements.value[index]?.complete) return
   activeIndex.value = index
   if (
     current.value?.type === 'interval'
@@ -166,20 +270,8 @@ async function start() {
   await showRequirement(index)
 }
 
-async function next() {
-  const nextIndex = requirements.value.findIndex((item, index) => (
-    index > activeIndex.value && !item.complete
-  ))
-  if (nextIndex >= 0) {
-    await showRequirement(nextIndex)
-    return
-  }
-  const firstIndex = firstOpenRequirementIndex()
-  if (firstIndex >= 0 && firstIndex !== activeIndex.value) {
-    await showRequirement(firstIndex)
-    return
-  }
-  screen.value = 'finished'
+function next() {
+  screen.value = firstOpenRequirementIndex() < 0 ? 'finished' : 'list'
 }
 
 async function continueRequirement() {
@@ -194,7 +286,7 @@ async function continueRequirement() {
     } else {
       await taskStore.setProgramStepCompletion(currentProgress, item.id, true)
     }
-    await next()
+    next()
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not save this requirement.'
   } finally {
@@ -212,7 +304,20 @@ async function completePrimaryAction() {
 
 async function skipRequirement() {
   if (working.value) return
-  await next()
+  next()
+}
+
+function minimizeProgram() {
+  void router.replace('/tasks')
+}
+
+function handleRunnerSessionAction(action: RunnerSessionAction) {
+  if (action === 'end') endDialog.value = true
+}
+
+function endProgram() {
+  endDialog.value = false
+  minimizeProgram()
 }
 
 async function runInterval() {
@@ -303,19 +408,74 @@ onMounted(async () => {
             <div class="program-runner__finish-icon" :style="{ background: task.color || '#C7F464' }">
               <ContentIcon :icon="task.icon || 'mdi-repeat-variant'" size="2.75rem" />
             </div>
-            <h1 class="display-title">Program complete<span class="text-secondary">.</span></h1>
+            <h1 class="display-title">Program <span class="text-secondary">complete.</span></h1>
             <p class="muted">{{ completedCount }} of {{ requirements.length }} requirements completed.</p>
             <v-btn color="secondary" size="x-large" prepend-icon="mdi-check-bold" to="/tasks">Done</v-btn>
           </section>
 
+          <section v-else-if="screen === 'list'" key="list" class="program-runner__requirement runner-screen">
+            <header class="program-runner__header">
+              <span aria-hidden="true" />
+              <div class="program-runner__header-title min-width-0 text-center">
+                <strong class="text-truncate d-block">{{ task.name }}</strong>
+                <span>{{ progress.programStep?.name }} · {{ completedCount }} of {{ requirements.length }} complete</span>
+              </div>
+              <div class="program-runner__header-actions">
+                <v-btn
+                  icon="mdi-chevron-down"
+                  variant="text"
+                  aria-label="Minimize program"
+                  @click="minimizeProgram"
+                />
+                <v-btn
+                  icon="mdi-dots-vertical"
+                  variant="text"
+                  aria-label="Program actions"
+                  @touchstart.stop
+                  @click.stop="sessionActionsSheet = true"
+                />
+              </div>
+            </header>
+            <v-progress-linear
+              :model-value="requirements.length ? completedCount / requirements.length * 100 : 0"
+              color="secondary"
+              bg-color="white"
+              :bg-opacity=".14"
+              height=".3125rem"
+            />
+            <div class="program-runner__list">
+              <ProgramRequirementList
+                :items="requirementListItems"
+                :color="task.color || TASK_TYPE_PRESENTATION.program.color"
+                :busy="working"
+                :aria-label="`${progress.programStep?.name || task.name} requirements`"
+                @select="openRequirement"
+              />
+            </div>
+          </section>
+
           <section v-else-if="current" :key="current.id" class="program-runner__requirement runner-screen">
             <header class="program-runner__header">
-              <v-btn icon="mdi-chevron-down" variant="text" aria-label="Leave program" to="/tasks" />
-              <div class="min-width-0 text-center">
-                <p>Requirement {{ activeIndex + 1 }} of {{ requirements.length }}</p>
-                <strong class="text-truncate d-block">{{ progress.programStep?.name }}</strong>
+              <span aria-hidden="true" />
+              <div class="program-runner__header-title min-width-0 text-center">
+                <strong class="text-truncate d-block">{{ task.name }}</strong>
+                <span>Requirement {{ activeIndex + 1 }} of {{ requirements.length }}</span>
               </div>
-              <span class="program-runner__header-spacer" aria-hidden="true" />
+              <div class="program-runner__header-actions">
+                <v-btn
+                  icon="mdi-chevron-down"
+                  variant="text"
+                  aria-label="Minimize program"
+                  @click="minimizeProgram"
+                />
+                <v-btn
+                  icon="mdi-dots-vertical"
+                  variant="text"
+                  aria-label="Program actions"
+                  @touchstart.stop
+                  @click.stop="sessionActionsSheet = true"
+                />
+              </div>
             </header>
             <v-progress-linear
               :model-value="requirements.length ? completedCount / requirements.length * 100 : 0"
@@ -402,6 +562,26 @@ onMounted(async () => {
         </transition>
       </div>
     </template>
+
+    <RunnerSessionActions
+      v-if="progress && task && screen !== 'start' && screen !== 'finished'"
+      v-model="sessionActionsSheet"
+      title="Program actions"
+      aria-label="Program session actions"
+      :items="sessionActionItems"
+      @action="handleRunnerSessionAction"
+    />
+
+    <ConfirmDialog
+      v-model="endDialog"
+      title="End this program?"
+      message="Completed requirements will be kept, but unfinished requirements will remain incomplete."
+      confirm-text="End program"
+      confirm-color="error"
+      icon="mdi-stop-circle-outline"
+      :loading="working"
+      @confirm="endProgram"
+    />
   </main>
 </template>
 
@@ -411,10 +591,13 @@ onMounted(async () => {
 .program-runner__alert { margin: 1rem; }
 .program-runner__stage { min-height: 0; grid-template-rows: minmax(0, 1fr); }
 .program-runner__requirement { display: flex; height: 100%; min-height: 0; flex-direction: column; }
-.program-runner__header { display: grid; min-height: 4rem; grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem; align-items: center; padding: 0 .75rem; gap: .5rem; }
-.program-runner__header p, .program-runner__identity p { margin: 0; color: rgb(var(--v-theme-on-surface) / .54); font-size: .68rem; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
-.program-runner__header strong { font-size: .875rem; }
+.program-runner__header { display: grid; min-height: calc(4rem + max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem))); padding: max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem)) .75rem 0; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); align-items: center; }
+.program-runner__header-title { display: flex; min-width: 0; align-items: center; flex-direction: column; }
+.program-runner__header-title strong { max-width: 100%; font-size: .875rem; }
+.program-runner__header-title span, .program-runner__identity p { margin: 0; color: rgb(var(--v-theme-on-surface) / .54); font-size: .68rem; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+.program-runner__header-actions { display: flex; justify-self: end; }
 .program-runner__body { display: flex; width: min(100%, 48rem); min-height: 0; margin: 0 auto; padding: 1.25rem 0 0; flex: 1; flex-direction: column; overscroll-behavior: contain; touch-action: pan-y; }
+.program-runner__list { width: min(100%, 48rem); min-height: 0; margin: 0 auto; padding: 1rem; flex: 1; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
 .program-runner__identity { display: flex; min-width: 0; align-items: center; gap: .875rem; padding-inline: 1rem; }
 .program-runner__body > .program-runner__exercise-details { height: auto; min-height: 0; flex: 1 1 0; }
 .program-runner__icon, .program-runner__finish-icon { display: grid; width: 3.25rem; height: 3.25rem; overflow: hidden; flex: 0 0 auto; place-items: center; border-radius: 1rem; color: rgb(var(--v-theme-on-secondary)); }

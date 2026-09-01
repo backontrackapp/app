@@ -32,7 +32,13 @@ interface NativeSpeechSupport {
 interface FlashcardSpeechPlugin {
   addListener?(
     eventName: 'speechPlayback',
-    listener: (event: { state: 'start' | 'end'; utteranceId: string }) => void,
+    listener: (event: {
+      state: 'prepare' | 'start' | 'end'
+      utteranceId: string
+      durationMs?: number
+      speechRanges?: Array<{ start: number; end: number; offsetMs: number }>
+      wordAnimationLeadMs?: number
+    }) => void,
   ): Promise<PluginListenerHandle>
   getLanguages(): Promise<NativeSpeechSupport>
   speak(options: {
@@ -45,7 +51,7 @@ interface FlashcardSpeechPlugin {
   playRecording(options: {
     url: string
     backgroundIntervalSpeechKey?: string
-  }): Promise<void>
+  }): Promise<{ durationMs?: number }>
   setOverAmplification(options: { enabled: boolean }): Promise<void>
   isSpeechActive?(): Promise<{ active: boolean }>
   stopSpeaking(): Promise<void>
@@ -95,10 +101,25 @@ let activeNativeSpeechText = ''
 let activeNativeSpeechLanguage = ''
 let activeNativeSpeechRate = 1
 let activeNativeSpeechUtteranceId = ''
+let activeNativeSpeechPlaybackStart: ((durationMs: number) => void) | undefined
+const NATIVE_WORD_ANIMATION_LEAD_MS = 100
 
 function speechWordRanges(text: string, language: string) {
   return flashcardSpeechTextParts(text, language)
     .filter((part): part is FlashcardSpeechTextPart & { wordIndex: number } => part.wordIndex !== undefined)
+}
+
+export function estimatedFlashcardSpeechDurationMs(
+  text: string,
+  language: string,
+  speechRate = 1,
+) {
+  const wordCount = speechWordRanges(text, language).length
+  if (!wordCount) return 0
+  return Math.round(
+    (speechLanguageUsesPinyin(language) ? 260 : 340)
+      / normalizeFlashcardBackSpeechRate(speechRate) * wordCount,
+  )
 }
 
 function clearEstimatedSpeech() {
@@ -126,12 +147,40 @@ function speechWordForRange(
   }
 }
 
-function startEstimatedSpeech(text: string, language: string, speechRate = 1) {
+function startEstimatedSpeech(
+  text: string,
+  language: string,
+  speechRate = 1,
+  playbackDurationMs?: number,
+  speechRanges?: Array<{ start: number; end: number; offsetMs: number }>,
+  playbackLeadMs = 0,
+) {
   clearEstimatedSpeech()
   const words = speechWordRanges(text, language)
   if (!flashcardSpeechWordTrackingIsActive() || !words.length || typeof window === 'undefined') return
-  const millisecondsPerWord = (speechLanguageUsesPinyin(language) ? 260 : 340)
-    / normalizeFlashcardBackSpeechRate(speechRate)
+  const timedWords = (speechRanges || [])
+    .map(range => ({
+      word: speechWordForRange(words, range.start, range.end - range.start),
+      offsetMs: range.offsetMs,
+    }))
+    .filter((timing): timing is { word: FlashcardSpeechWord; offsetMs: number } => (
+      Boolean(timing.word)
+      && Number.isFinite(timing.offsetMs)
+      && timing.offsetMs >= 0
+    ))
+  if (timedWords.length) {
+    timedWords.forEach(({ word, offsetMs }) => {
+      estimatedSpeechTimers.push(window.setTimeout(() => {
+        updateFlashcardSpeechWord(word)
+      }, offsetMs))
+    })
+    return
+  }
+  const estimatedDurationMs = (speechLanguageUsesPinyin(language) ? 260 : 340)
+    / normalizeFlashcardBackSpeechRate(speechRate) * words.length
+  const durationMs = Number.isFinite(playbackDurationMs) && playbackDurationMs! > 0
+    ? playbackDurationMs!
+    : estimatedDurationMs
   words.forEach((word, index) => {
     estimatedSpeechTimers.push(window.setTimeout(() => {
       updateFlashcardSpeechWord({
@@ -140,11 +189,11 @@ function startEstimatedSpeech(text: string, language: string, speechRate = 1) {
         wordStart: word.wordIndex,
         wordEnd: word.wordIndex + 1,
       })
-    }, index * millisecondsPerWord))
+    }, index * durationMs / words.length))
   })
   estimatedSpeechTimers.push(window.setTimeout(() => {
     updateFlashcardSpeechWord(undefined)
-  }, words.length * millisecondsPerWord))
+  }, durationMs + playbackLeadMs))
 }
 
 async function ensureNativeSpeechPlaybackListener() {
@@ -152,8 +201,26 @@ async function ensureNativeSpeechPlaybackListener() {
   if (!NativeFlashcardSpeech.addListener) return undefined
   nativeSpeechPlaybackListener = NativeFlashcardSpeech.addListener('speechPlayback', event => {
     if (!activeNativeSpeechUtteranceId || event.utteranceId !== activeNativeSpeechUtteranceId) return
-    if (event.state === 'start') {
-      startEstimatedSpeech(activeNativeSpeechText, activeNativeSpeechLanguage, activeNativeSpeechRate)
+    if (event.state === 'prepare' && event.wordAnimationLeadMs) {
+      startEstimatedSpeech(
+        activeNativeSpeechText,
+        activeNativeSpeechLanguage,
+        activeNativeSpeechRate,
+        event.durationMs,
+        event.speechRanges,
+        event.wordAnimationLeadMs,
+      )
+    } else if (event.state === 'start') {
+      activeNativeSpeechPlaybackStart?.(event.durationMs || 0)
+      if (!event.wordAnimationLeadMs) {
+        startEstimatedSpeech(
+          activeNativeSpeechText,
+          activeNativeSpeechLanguage,
+          activeNativeSpeechRate,
+          event.durationMs,
+          event.speechRanges,
+        )
+      }
     } else {
       clearEstimatedSpeech()
       clearFlashcardSpeechWordTracking()
@@ -323,6 +390,8 @@ export async function speakFlashcardText(
   backgroundIntervalSpeechKey = '',
   audioUrl = '',
   speechRate = 1,
+  onPlaybackStart?: (durationMs: number) => void,
+  wordAnimationLeadMs = 0,
 ) {
   const wordHandler = takePreparedFlashcardSpeechWordTracking()
   const content = text.trim()
@@ -332,15 +401,17 @@ export async function speakFlashcardText(
   activeNativeSpeechLanguage = ''
   activeNativeSpeechRate = 1
   activeNativeSpeechUtteranceId = ''
+  activeNativeSpeechPlaybackStart = undefined
   if (recording) {
     try {
       if (isNativeAndroid()) {
-        await NativeFlashcardSpeech.playRecording({
+        const result = await NativeFlashcardSpeech.playRecording({
           url: resolveFlashcardAudioPlaybackUrl(recording),
           ...(backgroundIntervalSpeechKey ? { backgroundIntervalSpeechKey } : {}),
         })
+        onPlaybackStart?.(result?.durationMs || 0)
       } else {
-        await playFlashcardRecording(recording)
+        onPlaybackStart?.(await playFlashcardRecording(recording))
       }
       clearFlashcardSpeechWordTracking()
       return
@@ -357,6 +428,7 @@ export async function speakFlashcardText(
     activeNativeSpeechText = content
     activeNativeSpeechLanguage = language
     activeNativeSpeechRate = normalizeFlashcardBackSpeechRate(speechRate)
+    activeNativeSpeechPlaybackStart = onPlaybackStart
     try {
       await ensureNativeSpeechPlaybackListener()
       const result = await NativeFlashcardSpeech.speak({
@@ -364,6 +436,9 @@ export async function speakFlashcardText(
         language,
         overAmplified: speechOverAmplificationEnabled,
         ...(activeNativeSpeechRate === 1 ? {} : { speechRate: activeNativeSpeechRate }),
+        ...(wordAnimationLeadMs > 0
+          ? { wordAnimationLeadMs: Math.min(NATIVE_WORD_ANIMATION_LEAD_MS, wordAnimationLeadMs) }
+          : {}),
         ...(backgroundIntervalSpeechKey ? { backgroundIntervalSpeechKey } : {}),
       })
       activeNativeSpeechUtteranceId = result?.utteranceId || ''
@@ -419,6 +494,7 @@ export async function speakFlashcardText(
       settle(new Error('The browser did not start speech synthesis.'))
     }, 2000)
     utterance.onstart = () => {
+      onPlaybackStart?.(estimatedFlashcardSpeechDurationMs(content, language, speechRate))
       startEstimatedSpeech(content, language, speechRate)
       settle()
     }
@@ -465,7 +541,7 @@ async function playFlashcardRecording(url: string) {
   const audio = new Audio(url)
   audio.preload = 'auto'
   activeRecordedAudio = audio
-  await new Promise<void>((resolve, reject) => {
+  return new Promise<number>((resolve, reject) => {
     let settled = false
     const cleanupStartListeners = () => {
       window.clearTimeout(startTimeout)
@@ -476,7 +552,7 @@ async function playFlashcardRecording(url: string) {
       if (settled) return
       settled = true
       cleanupStartListeners()
-      resolve()
+      resolve(Math.max(0, Math.round(audio.duration * 1000)))
     }
     const handleError = () => {
       if (settled) return
@@ -505,6 +581,7 @@ export async function stopFlashcardSpeech() {
   activeNativeSpeechLanguage = ''
   activeNativeSpeechRate = 1
   activeNativeSpeechUtteranceId = ''
+  activeNativeSpeechPlaybackStart = undefined
   if (activeRecordedAudio) {
     activeRecordedAudio.pause()
     activeRecordedAudio.removeAttribute('src')

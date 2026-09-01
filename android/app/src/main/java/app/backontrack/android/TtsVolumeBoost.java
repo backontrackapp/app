@@ -10,6 +10,9 @@ import android.speech.tts.TextToSpeech;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Plays synthesized speech through an app-owned audio session so loudness enhancement remains
@@ -17,8 +20,21 @@ import java.io.IOException;
  */
 final class TtsVolumeBoost {
 
+    static final class SpeechRange {
+        final int start;
+        final int end;
+        final int offsetMs;
+
+        SpeechRange(int start, int end, int offsetMs) {
+            this.start = start;
+            this.end = end;
+            this.offsetMs = offsetMs;
+        }
+    }
+
     interface PlaybackListener {
-        void onStart(String utteranceId);
+        default void onPrepare(String utteranceId, int durationMs, List<SpeechRange> speechRanges) {}
+        void onStart(String utteranceId, int durationMs, List<SpeechRange> speechRanges);
         void onDone(String utteranceId);
     }
 
@@ -29,7 +45,9 @@ final class TtsVolumeBoost {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private String activeUtteranceId = "";
     private boolean amplificationEnabled;
+    private int playbackStartLeadMs;
     private File synthesizedAudio;
+    private List<SpeechRange> synthesizedSpeechRanges = Collections.emptyList();
     private MediaPlayer mediaPlayer;
     private LoudnessEnhancer loudnessEnhancer;
     private TransientAudioFocus.Lease audioFocusLease;
@@ -61,10 +79,15 @@ final class TtsVolumeBoost {
         return result;
     }
 
-    synchronized void playSynthesized(String utteranceId) {
+    synchronized void playSynthesized(String utteranceId, List<SpeechRange> speechRanges) {
         if (!activeUtteranceId.equals(utteranceId) || synthesizedAudio == null) return;
+        synthesizedSpeechRanges = new ArrayList<>(speechRanges);
         File audio = synthesizedAudio;
         mainHandler.post(() -> preparePlayback(utteranceId, audio));
+    }
+
+    synchronized void playSynthesized(String utteranceId) {
+        playSynthesized(utteranceId, Collections.emptyList());
     }
 
     synchronized void setEnabled(boolean enabled) {
@@ -72,6 +95,14 @@ final class TtsVolumeBoost {
         if (mediaPlayer == null) return;
         if (enabled) attachLoudnessEnhancer();
         else releaseLoudnessEnhancer();
+    }
+
+    synchronized void setPlaybackStartLeadMs(int leadMs) {
+        playbackStartLeadMs = Math.max(0, leadMs);
+    }
+
+    synchronized int playbackStartLeadMs() {
+        return playbackStartLeadMs;
     }
 
     synchronized void setPlaybackListener(PlaybackListener listener) {
@@ -121,11 +152,41 @@ final class TtsVolumeBoost {
             releasePlayer(player);
             return;
         }
+        int durationMs = Math.max(0, player.getDuration());
+        if (playbackListener != null) {
+            playbackListener.onPrepare(
+                utteranceId,
+                durationMs,
+                new ArrayList<>(synthesizedSpeechRanges)
+            );
+        }
+        if (playbackStartLeadMs > 0) {
+            mainHandler.postDelayed(
+                () -> startPreparedAudio(utteranceId, player, durationMs),
+                playbackStartLeadMs
+            );
+            return;
+        }
+        startPreparedAudio(utteranceId, player, durationMs);
+    }
+
+    private synchronized void startPreparedAudio(
+        String utteranceId,
+        MediaPlayer player,
+        int durationMs
+    ) {
+        if (!activeUtteranceId.equals(utteranceId) || mediaPlayer != player) return;
         if (amplificationEnabled) attachLoudnessEnhancer();
         audioFocusLease = TransientAudioFocus.acquire(context, speechAudioAttributes());
         try {
             player.start();
-            if (playbackListener != null) playbackListener.onStart(utteranceId);
+            if (playbackListener != null) {
+                playbackListener.onStart(
+                    utteranceId,
+                    durationMs,
+                    new ArrayList<>(synthesizedSpeechRanges)
+                );
+            }
         } catch (RuntimeException error) {
             finish(utteranceId);
         }
@@ -160,6 +221,7 @@ final class TtsVolumeBoost {
     private void clearPlayback() {
         String finishedUtteranceId = activeUtteranceId;
         activeUtteranceId = "";
+        synthesizedSpeechRanges = Collections.emptyList();
         mainHandler.removeCallbacksAndMessages(null);
         releaseLoudnessEnhancer();
         if (mediaPlayer != null) {

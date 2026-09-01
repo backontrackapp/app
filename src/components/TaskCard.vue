@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import ContentIcon from '@/components/ContentIcon.vue'
+import ProgramRequirementList from '@/components/ProgramRequirementList.vue'
 import { formatIntervalDuration } from '@/services/intervals'
 import { goalState } from '@/services/schedule'
 import { taskDisplayIcon, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
@@ -418,55 +419,15 @@ onBeforeUnmount(() => {
         :class="isTracking || hasMultipleStepCompletions ? 'mt-4' : 'mt-2'"
       />
 
-      <v-list
+      <ProgramRequirementList
         v-if="step && programStepRequirements?.length"
-        class="task-detail-list pa-0 mt-3"
-        bg-color="transparent"
+        class="mt-3"
+        :items="programStepRequirements"
+        :color="taskColor"
+        :busy="busy"
         :aria-label="`${title} completion requirements`"
-        @touchstart.stop
-        @click.stop
-      >
-        <v-list-item
-          v-for="requirement in programStepRequirements"
-          :key="requirement.id"
-          class="task-detail-item"
-          :class="{ 'task-detail-item--done': requirement.complete }"
-          :title="requirement.title"
-          :subtitle="requirement.subtitle"
-          :disabled="busy || (!requirement.complete && requirement.disabled)"
-          rounded="lg"
-          @click="emit('runProgramStepRequirement', progress, requirement.id)"
-        >
-          <template #prepend>
-            <span
-              class="task-detail-item__icon"
-              :class="{ 'task-detail-item__icon--image': requirement.image }"
-              :style="{ background: requirement.color || taskColor }"
-            >
-              <v-img
-                v-if="requirement.image"
-                class="task-detail-item__image"
-                :src="requirement.image"
-                :alt="requirement.imageAlt || requirement.title"
-                cover
-                eager
-              >
-                <template #error>
-                  <ContentIcon icon="mdi-dumbbell" size="1.125rem" />
-                </template>
-              </v-img>
-              <ContentIcon
-                v-else
-                :icon="requirement.complete ? 'mdi-check-bold' : requirement.icon"
-                size="1.125rem"
-              />
-              <span v-if="requirement.image && requirement.complete" class="task-detail-item__complete-badge">
-                <ContentIcon icon="mdi-check-bold" size=".625rem" />
-              </span>
-            </span>
-          </template>
-        </v-list-item>
-      </v-list>
+        @select="emit('runProgramStepRequirement', progress, $event)"
+      />
 
       <v-list
         v-if="isTracking && trackers?.length"
@@ -656,16 +617,10 @@ onBeforeUnmount(() => {
 .metric-value--updated { animation: metric-value-pulse 560ms cubic-bezier(.22, 1, .36, 1); }
 .metric-target { color: rgb(var(--v-theme-on-surface) / .52); font-size: .72rem; }
 
-.task-detail-list { display: grid; gap: .4rem; }
 .task-detail-item {
   min-height: 2.75rem;
   background: rgba(var(--v-theme-on-surface), .04);
   transition: background-color .18s ease, opacity .18s ease;
-}
-.task-detail-item--done {
-  background: rgba(var(--v-theme-on-surface), .02);
-  filter: grayscale(1);
-  opacity: .5;
 }
 .task-detail-item__icon {
   position: relative;
@@ -676,31 +631,6 @@ onBeforeUnmount(() => {
   place-items: center;
   border-radius: .65rem;
   color: #17200f;
-}
-.task-detail-item__icon--image {
-  overflow: hidden;
-  background: rgb(var(--v-theme-surface-variant)) !important;
-  border: .0625rem solid rgb(var(--v-theme-on-surface) / .12);
-}
-.task-detail-item__image {
-  width: 100% !important;
-  height: 100% !important;
-}
-.task-detail-item__image :deep(.v-img__img) {
-  object-fit: cover;
-}
-.task-detail-item__complete-badge {
-  position: absolute;
-  right: .1rem;
-  bottom: .1rem;
-  display: grid;
-  width: .9rem;
-  height: .9rem;
-  place-items: center;
-  border: .0625rem solid rgb(var(--v-theme-surface));
-  border-radius: 999px;
-  background: rgb(var(--v-theme-secondary));
-  color: rgb(var(--v-theme-on-secondary));
 }
 .tracking-duration-actions { display: grid; margin-top: -.2rem; padding: .2rem .4rem .5rem; gap: .5rem; }
 .tracking-duration-actions .v-btn { min-height: 2.75rem; }

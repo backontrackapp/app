@@ -5,6 +5,10 @@ description: Preserve and extend the BackOnTrack application's established UI di
 
 # BackOnTrack UI Direction
 
+## Assumptions
+
+- Unless otherwise specified, whenever I talk about review set, I mean the shared component.
+
 ## Data updates
 
 - Always update immediately through optimistic local state, including when no occurrence exists yet. App is offline-first, always.

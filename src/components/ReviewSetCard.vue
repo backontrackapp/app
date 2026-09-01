@@ -388,7 +388,10 @@ defineExpose({ refitContent })
             v-for="(buffer, index) in cardBuffers"
             :key="`dense-content-${index}`"
             class="review-card-buffer interval-review-card__faces"
-            :class="bufferClasses(index)"
+            :class="[
+              bufferClasses(index),
+              { 'review-card__value-buffer--front': buffer.side === 'front' },
+            ]"
             :aria-hidden="bufferIsHidden(index)"
           >
               <FlashcardReviewFace
@@ -508,7 +511,10 @@ defineExpose({ refitContent })
               v-for="(buffer, index) in cardBuffers"
               :key="`manual-content-${index}`"
               class="review-card-buffer review-card__value-buffer"
-              :class="bufferClasses(index)"
+              :class="[
+                bufferClasses(index),
+                { 'review-card__value-buffer--front': buffer.side === 'front' },
+              ]"
               :aria-hidden="bufferIsHidden(index)"
             >
               <FlashcardReviewFace
@@ -562,7 +568,10 @@ defineExpose({ refitContent })
                 v-for="(buffer, index) in cardBuffers"
                 :key="`passive-content-${index}`"
                 class="review-card-buffer review-card__value-buffer"
-                :class="bufferClasses(index)"
+                :class="[
+                  bufferClasses(index),
+                  { 'review-card__value-buffer--front': buffer.side === 'front' },
+                ]"
                 :aria-hidden="bufferIsHidden(index)"
               >
                 <FlashcardReviewFace
@@ -667,6 +676,7 @@ defineExpose({ refitContent })
 .review-card__content-window { position: relative; width: 100%; height: 0; min-height: 0; flex: 1 1 0; }
 .review-card__value-buffer { position: absolute; display: grid; inset: 0; width: 100%; height: 100%; min-height: 0; }
 .review-card__value-buffer > * { grid-area: 1 / 1; }
+.review-card__value-buffer--front :deep(.spoken-text__part--active) { transform: none; }
 .review-card__content { position: absolute; display: flex; inset: 0; width: 100%; height: 100%; min-height: 0; max-height: 100%; align-items: center; align-self: stretch; justify-content: center; flex-direction: column; font-size: var(--fit-review-content-size, 3.6rem); }
 .review-card__hint { display: flex; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .48); font-size: .72rem; font-weight: 800; transition: opacity 200ms ease; }
 .review-card__hint.text-disabled { opacity: .2; }
