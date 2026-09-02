@@ -274,7 +274,7 @@ async function start() {
     return
   }
   if (route.query.advance === '1') {
-    await openRequirement(requirements.value[index]!.id)
+    await openNextRequirement()
     return
   }
   screen.value = 'list'
@@ -299,6 +299,18 @@ async function openNextRequirement() {
   const index = firstOpenRequirementIndex()
   if (index < 0) {
     screen.value = 'finished'
+    return
+  }
+  activeIndex.value = index
+  if (current.value?.type === 'interval' && attachedInterval.value) {
+    await runInterval()
+    return
+  }
+  if (
+    current.value?.type === 'flashcards'
+    && attachedReviewSet.value?.matchingCardCount
+  ) {
+    await runReviewSet()
     return
   }
   await openRequirement(requirements.value[index]!.id)
@@ -453,18 +465,18 @@ onMounted(async () => {
 
           <section v-else-if="screen === 'list'" key="list" class="program-runner__requirement runner-screen">
             <header class="program-runner__header">
-              <span aria-hidden="true" />
+              <v-btn
+                class="program-runner__minimize"
+                icon="mdi-chevron-down"
+                variant="text"
+                aria-label="Minimize program"
+                @click="minimizeProgram"
+              />
               <div class="program-runner__header-title min-width-0 text-center">
                 <strong class="text-truncate d-block">{{ task.name }}</strong>
                 <span>{{ progress.programStep?.name }} · {{ completedCount }} of {{ requirements.length }} complete</span>
               </div>
               <div class="program-runner__header-actions">
-                <v-btn
-                  icon="mdi-chevron-down"
-                  variant="text"
-                  aria-label="Minimize program"
-                  @click="minimizeProgram"
-                />
                 <v-btn
                   icon="mdi-dots-vertical"
                   variant="text"
@@ -504,18 +516,18 @@ onMounted(async () => {
 
           <section v-else-if="current" :key="current.id" class="program-runner__requirement runner-screen">
             <header class="program-runner__header">
-              <span aria-hidden="true" />
+              <v-btn
+                class="program-runner__minimize"
+                icon="mdi-chevron-down"
+                variant="text"
+                aria-label="Minimize program"
+                @click="minimizeProgram"
+              />
               <div class="program-runner__header-title min-width-0 text-center">
                 <strong class="text-truncate d-block">{{ task.name }}</strong>
                 <span>Requirement {{ activeIndex + 1 }} of {{ requirements.length }}</span>
               </div>
               <div class="program-runner__header-actions">
-                <v-btn
-                  icon="mdi-chevron-down"
-                  variant="text"
-                  aria-label="Minimize program"
-                  @click="minimizeProgram"
-                />
                 <v-btn
                   icon="mdi-dots-vertical"
                   variant="text"
@@ -639,10 +651,11 @@ onMounted(async () => {
 .program-runner__alert { margin: 1rem; }
 .program-runner__stage { min-height: 0; grid-template-rows: minmax(0, 1fr); }
 .program-runner__requirement { display: flex; height: 100%; min-height: 0; flex-direction: column; }
-.program-runner__header { display: grid; min-height: calc(4rem + max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem))); padding: max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem)) .75rem 0; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); align-items: center; }
+.program-runner__header { display: grid; min-height: calc(4rem + max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem))); padding: max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem)) .75rem 0; grid-template-columns: minmax(0, 1fr) minmax(0, 4fr) minmax(0, 1fr); align-items: center; }
 .program-runner__header-title { display: flex; min-width: 0; align-items: center; flex-direction: column; }
 .program-runner__header-title strong { max-width: 100%; font-size: .875rem; }
 .program-runner__header-title span, .program-runner__identity p { margin: 0; color: rgb(var(--v-theme-on-surface) / .54); font-size: .68rem; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+.program-runner__minimize { justify-self: start; }
 .program-runner__header-actions { display: flex; justify-self: end; }
 .program-runner__body { display: flex; width: min(100%, 48rem); min-height: 0; margin: 0 auto; padding: 1.25rem 0 0; flex: 1; flex-direction: column; overscroll-behavior: contain; touch-action: pan-y; }
 .program-runner__list { width: min(100%, 48rem); min-height: 0; margin: 0 auto; padding: 1rem; flex: 1; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }

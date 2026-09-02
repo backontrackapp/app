@@ -390,7 +390,12 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
   const locked = Boolean(progress.locked)
   if (progress.programStep) {
     if (!taskActionCompletionId.value && !progress.complete) {
-      items.push({ id: 'start-program', title: 'Start program', icon: 'mdi-play', disabled: locked })
+      items.push({
+        id: 'start-program',
+        title: progress.occurrence ? 'Continue program' : 'Start program',
+        icon: 'mdi-play',
+        disabled: locked,
+      })
     }
     const canMarkIncomplete = progress.complete && (
       progress.sealed
@@ -1067,6 +1072,7 @@ function runTaskMainAction(action: TaskMainActionItem) {
       query: {
         date: progress.scheduledDate,
         step: progress.programStep?.id || '',
+        ...(progress.occurrence ? { resume: '1', advance: '1' } : {}),
       },
     })
     return
