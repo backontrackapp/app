@@ -545,9 +545,11 @@ const runnerIdentityTitle = computed(() => programStepRequirementName(
   attributedExercise.value?.name,
   session.value?.name || 'Interval',
 ))
-const completionIdentityTitle = computed(() => attributedExercise.value
-  ? runnerIdentityTitle.value
-  : session.value?.name || 'Interval')
+const completionIdentityTitle = computed(() => (
+  attributedProgramStepCompletion.value?.label?.trim()
+  || session.value?.name
+  || 'Interval'
+))
 const runnerIdentityImage = computed(() => attributedExercise.value?.imageUrl)
 const runnerIdentitySummary = computed(() => {
   if (!session.value) return ''

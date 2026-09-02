@@ -34,7 +34,7 @@ Runs created from an interval that has since been archived remain in recent hist
 
 Selecting a recent run opens its action menu. **See details** reopens the saved completion summary; **Delete** asks for confirmation and removes the run from history immediately. Deleting a run also removes any Review history derived from that Interval, but does not reverse task progress already recorded by the completed session.
 
-When a completed or ended interval is not attributed to an exercise, the interval name remains the standalone completion title in both portrait and landscape. Exercise-attributed runs use the exercise identity as the title and keep the interval name as supporting source context.
+When a completed or ended interval was launched from a labeled program requirement, that requirement label is the completion title in both portrait and landscape, with the interval name retained as supporting source context. Unlabeled requirements and standalone runs use the interval name as the completion title.
 
 ## Exercise details in the runner
 
