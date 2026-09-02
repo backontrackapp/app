@@ -5756,10 +5756,10 @@ final class Api
             'maxCards' => (int) $reviewSet['max_cards'],
             'cardSides' => (string) $reviewSet['card_sides'],
             'invertFaces' => (bool) ($reviewSet['invert_faces'] ?? false),
-            'frontSeconds' => $isPassive ? (int) $reviewSet['front_seconds'] : 5,
-            'backSeconds' => $isPassive ? (int) $reviewSet['back_seconds'] : 5,
+            'frontSeconds' => $isPassive ? min(10, max(1, (int) $reviewSet['front_seconds'])) : 5,
+            'backSeconds' => $isPassive ? min(10, max(1, (int) $reviewSet['back_seconds'])) : 5,
             'backSpeechRepeatCount' => $isPassive && (bool) $reviewSet['speech_enabled']
-                ? (int) $reviewSet['back_speech_repeat_count']
+                ? min(5, max(1, (int) $reviewSet['back_speech_repeat_count']))
                 : 1,
             'frontDisplay' => (string) ($reviewSet['front_display'] ?? 'front'),
             'backDisplay' => (string) ($reviewSet['back_display'] ?? 'back'),

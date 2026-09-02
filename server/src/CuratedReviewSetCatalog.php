@@ -310,8 +310,8 @@ final class CuratedReviewSetCatalog
             'maxCards' => max(1, min(100, $integer('max_cards', 12))),
             'ejectBehavior' => in_array($row['eject_behavior'] ?? '', ['remove', 'replace', 'exclude', 'replace_exclude'], true) ? $row['eject_behavior'] : 'replace_exclude',
             'ejectExcludeAfter' => max(1, min(20, $integer('eject_exclude_after', 3))),
-            'frontSeconds' => max(1, min(60, $integer('front_seconds', 5))),
-            'backSeconds' => max(1, min(60, $integer('back_seconds', 5))),
+            'frontSeconds' => max(1, min(10, $integer('front_seconds', 5))),
+            'backSeconds' => max(1, min(10, $integer('back_seconds', 5))),
             'backSpeechRepeatCount' => max(1, min(5, $integer('back_speech_repeat_count', 1))),
             'frontDisplay' => in_array(
                 $row['front_display'] ?? '',

@@ -8,12 +8,14 @@ import {
   FLASHCARD_REVIEW_FACE_VALUE_OPTIONS,
   FLASHCARD_REVIEW_SORT_OPTIONS,
   MAX_FLASHCARD_BACK_SPEECH_REPEATS,
+  MAX_FLASHCARD_FACE_DURATION_SECONDS,
   MAX_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
   MAX_FLASHCARD_SESSION_CARDS,
   MAX_FLASHCARD_BACK_SPEECH_RATE,
   MAX_FLASHCARD_EJECT_EXCLUDE_AFTER,
   MIN_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
   MIN_FLASHCARD_BACK_SPEECH_REPEATS,
+  MIN_FLASHCARD_FACE_DURATION_SECONDS,
   MIN_FLASHCARD_EJECT_EXCLUDE_AFTER,
   MIN_FLASHCARD_BACK_SPEECH_RATE,
   flashcardEjectBehavior,
@@ -53,7 +55,7 @@ const props = withDefaults(defineProps<{
   elapsedSeconds: 0,
 })
 
-const CUSTOM_MAX_CARDS_THRESHOLD = 50
+const CUSTOM_MAX_CARDS_THRESHOLD = 25
 const settings = computed(() => props.modelValue)
 const frontDisplay = computed({
   get: () => flashcardReviewFaceValue(settings.value, 'front'),
@@ -319,23 +321,23 @@ function updateSpeechEnabled(enabled: boolean | null) {
             <LabeledSlider
               v-model="settings.frontSeconds"
               title="Front duration"
-              :min="1"
-              :max="20"
+              :min="MIN_FLASHCARD_FACE_DURATION_SECONDS"
+              :max="MAX_FLASHCARD_FACE_DURATION_SECONDS"
               :step="1"
               :value-label="`${settings.frontSeconds} ${settings.frontSeconds === 1 ? 'second' : 'seconds'}`"
-              min-label="1 second"
-              max-label="20 seconds"
+              :min-label="`${MIN_FLASHCARD_FACE_DURATION_SECONDS} second`"
+              :max-label="`${MAX_FLASHCARD_FACE_DURATION_SECONDS} seconds`"
               aria-label="Front duration in seconds"
             />
             <LabeledSlider
               v-model="settings.backSeconds"
               title="Back duration"
-              :min="1"
-              :max="20"
+              :min="MIN_FLASHCARD_FACE_DURATION_SECONDS"
+              :max="MAX_FLASHCARD_FACE_DURATION_SECONDS"
               :step="1"
               :value-label="`${settings.backSeconds} ${settings.backSeconds === 1 ? 'second' : 'seconds'}`"
-              min-label="1 second"
-              max-label="20 seconds"
+              :min-label="`${MIN_FLASHCARD_FACE_DURATION_SECONDS} second`"
+              :max-label="`${MAX_FLASHCARD_FACE_DURATION_SECONDS} seconds`"
               aria-label="Back duration in seconds"
             />
           </div>

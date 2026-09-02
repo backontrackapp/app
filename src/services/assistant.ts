@@ -4,6 +4,8 @@ import {
   DEFAULT_FLASHCARD_SESSION_CARDS,
   DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
   DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
+  MAX_FLASHCARD_FACE_DURATION_SECONDS,
+  MIN_FLASHCARD_FACE_DURATION_SECONDS,
   flashcardEjectBehavior,
   flashcardEjectExcludes,
   flashcardEjectLoadsNext,
@@ -463,9 +465,19 @@ export function assistantWritePlan(
       loadNext ?? flashcardEjectLoadsNext(draft.ejectBehavior),
       exclude ?? flashcardEjectExcludes(draft.ejectBehavior),
     )
-    draft.frontSeconds = nullableInteger(call.arguments.front_seconds, 1, 60, 'Front duration')
+    draft.frontSeconds = nullableInteger(
+      call.arguments.front_seconds,
+      MIN_FLASHCARD_FACE_DURATION_SECONDS,
+      MAX_FLASHCARD_FACE_DURATION_SECONDS,
+      'Front duration',
+    )
       ?? draft.frontSeconds
-    draft.backSeconds = nullableInteger(call.arguments.back_seconds, 1, 60, 'Back duration')
+    draft.backSeconds = nullableInteger(
+      call.arguments.back_seconds,
+      MIN_FLASHCARD_FACE_DURATION_SECONDS,
+      MAX_FLASHCARD_FACE_DURATION_SECONDS,
+      'Back duration',
+    )
       ?? draft.backSeconds
     draft.backSpeechRepeatCount = nullableInteger(
       call.arguments.back_speech_repeat_count, 1, 5, 'Back speech repeat count',

@@ -23,6 +23,8 @@ export const DEFAULT_FLASHCARD_SESSION_CARDS = 12
 export const DEFAULT_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS = 60 * 60
 export const MIN_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS = 60
 export const MAX_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS = 23 * 3600 + 59 * 60
+export const MIN_FLASHCARD_FACE_DURATION_SECONDS = 1
+export const MAX_FLASHCARD_FACE_DURATION_SECONDS = 10
 export const MIN_FLASHCARD_BACK_SPEECH_REPEATS = 1
 export const MAX_FLASHCARD_BACK_SPEECH_REPEATS = 5
 export const DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS = 1
@@ -344,6 +346,12 @@ export function flashcardReviewSettingsAreValid(
     && Number.isInteger(settings.ejectExcludeAfter)
     && settings.ejectExcludeAfter >= MIN_FLASHCARD_EJECT_EXCLUDE_AFTER
     && settings.ejectExcludeAfter <= MAX_FLASHCARD_EJECT_EXCLUDE_AFTER
+    && Number.isInteger(settings.frontSeconds)
+    && settings.frontSeconds >= MIN_FLASHCARD_FACE_DURATION_SECONDS
+    && settings.frontSeconds <= MAX_FLASHCARD_FACE_DURATION_SECONDS
+    && Number.isInteger(settings.backSeconds)
+    && settings.backSeconds >= MIN_FLASHCARD_FACE_DURATION_SECONDS
+    && settings.backSeconds <= MAX_FLASHCARD_FACE_DURATION_SECONDS
     && Number.isInteger(settings.backSpeechRepeatCount)
     && settings.backSpeechRepeatCount >= MIN_FLASHCARD_BACK_SPEECH_REPEATS
     && settings.backSpeechRepeatCount <= MAX_FLASHCARD_BACK_SPEECH_REPEATS
@@ -746,8 +754,8 @@ export function createFlashcardReviewPreviewSession(
     sortDirection: reviewSet.sortDirection,
     tags: [...reviewSet.tags],
     excludedCards: [...(reviewSet.excludedCards || [])],
-    frontSeconds: reviewSet.frontSeconds,
-    backSeconds: reviewSet.backSeconds,
+    frontSeconds: normalizeFlashcardFaceDurationSeconds(reviewSet.frontSeconds),
+    backSeconds: normalizeFlashcardFaceDurationSeconds(reviewSet.backSeconds),
     backSpeechRepeatCount: reviewSet.mode === 'passive' && reviewSet.speechEnabled
       ? normalizeFlashcardBackSpeechRepeatCount(reviewSet.backSpeechRepeatCount)
       : DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
@@ -784,7 +792,10 @@ export function createIntervalFlashcardReviewSnapshot(
   const { queue, reserveCardIds } = flashcardReviewQueueState(reviewSet, cards, random)
   if (!queue.length) return undefined
   const effectiveSeconds = reviewSet.mode === 'passive'
-    ? { front: reviewSet.frontSeconds, back: reviewSet.backSeconds }
+    ? {
+        front: normalizeFlashcardFaceDurationSeconds(reviewSet.frontSeconds),
+        back: normalizeFlashcardFaceDurationSeconds(reviewSet.backSeconds),
+      }
     : { front: 5, back: 5 }
 
   return {
@@ -838,6 +849,14 @@ export function normalizeFlashcardBackSpeechRepeatCount(value: number) {
   )
 }
 
+export function normalizeFlashcardFaceDurationSeconds(value: number) {
+  if (!Number.isFinite(value)) return 5
+  return Math.min(
+    MAX_FLASHCARD_FACE_DURATION_SECONDS,
+    Math.max(MIN_FLASHCARD_FACE_DURATION_SECONDS, Math.round(value)),
+  )
+}
+
 export function normalizeFlashcardBackSpeechRate(value: number) {
   if (!Number.isFinite(value)) return DEFAULT_FLASHCARD_BACK_SPEECH_RATE
   return Math.min(
@@ -847,7 +866,7 @@ export function normalizeFlashcardBackSpeechRate(value: number) {
 }
 
 export function flashcardBackDurationMs(backSeconds: number, repeatCount: number) {
-  const durationMs = Math.max(1000, backSeconds * 1000)
+  const durationMs = normalizeFlashcardFaceDurationSeconds(backSeconds) * 1000
   return durationMs * normalizeFlashcardBackSpeechRepeatCount(repeatCount)
 }
 
@@ -888,9 +907,9 @@ export function flashcardReviewFaceDurationMs(
   card: FlashcardReviewQueueCard,
   side: FlashcardReviewSide,
 ) {
-  const configuredDurationMs = side === 'front'
-    ? Math.max(1000, review.frontSeconds * 1000)
-    : Math.max(1000, review.backSeconds * 1000)
+  const configuredDurationMs = normalizeFlashcardFaceDurationSeconds(
+    side === 'front' ? review.frontSeconds : review.backSeconds,
+  ) * 1000
   const repetitions = side === 'back'
     ? normalizeFlashcardBackSpeechRepeatCount(review.backSpeechRepeatCount)
     : 1
@@ -1046,7 +1065,7 @@ export function intervalFlashcardPhase(
     : otherFlashcardReviewSide(firstSide)
   const sideElapsedMs = side === firstSide ? elapsedInCycleMs : elapsedInCycleMs - firstSideDurationMs
   const sideDurationMs = flashcardReviewFaceDurationMs(review, card, side)
-  const configuredBackDurationMs = Math.max(1000, review.backSeconds * 1000)
+  const configuredBackDurationMs = normalizeFlashcardFaceDurationSeconds(review.backSeconds) * 1000
   const speechDurationMs = flashcardReviewFaceSpeechDurationMs(review, card, 'back')
   const backRepeatDurationMs = configuredBackDurationMs + speechDurationMs
   const backSpeechRepeatIndex = side === 'back'

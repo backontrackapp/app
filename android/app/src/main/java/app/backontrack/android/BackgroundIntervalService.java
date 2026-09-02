@@ -333,8 +333,8 @@ public class BackgroundIntervalService extends Service {
                 card.optString("backAudio", "")
             ));
         }
-        reviewFrontDurationMs = Math.max(1000L, review.optLong("frontSeconds", 5L) * 1000L);
-        reviewBaseBackDurationMs = Math.max(1000L, review.optLong("backSeconds", 5L) * 1000L);
+        reviewFrontDurationMs = Math.max(1000L, Math.min(10000L, review.optLong("frontSeconds", 5L) * 1000L));
+        reviewBaseBackDurationMs = Math.max(1000L, Math.min(10000L, review.optLong("backSeconds", 5L) * 1000L));
         reviewBackSpeechRepeatCount = Math.max(
             1,
             Math.min(5, review.optInt("backSpeechRepeatCount", 1))

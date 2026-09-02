@@ -242,8 +242,8 @@ public class BackgroundFlashcardService extends Service {
         if (!"both".equals(cardSides)) side = cardSides;
         frontDisplay = reviewFaceValue(config.optString("frontDisplay", "front"), "front");
         backDisplay = reviewFaceValue(config.optString("backDisplay", "back"), "back");
-        frontDurationMs = Math.max(1000L, config.optLong("frontSeconds", 5L) * 1000L);
-        baseBackDurationMs = Math.max(1000L, config.optLong("backSeconds", 5L) * 1000L);
+        frontDurationMs = Math.max(1000L, Math.min(10000L, config.optLong("frontSeconds", 5L) * 1000L));
+        baseBackDurationMs = Math.max(1000L, Math.min(10000L, config.optLong("backSeconds", 5L) * 1000L));
         backSpeechRepeatCount = Math.max(1, Math.min(5, config.optInt("backSpeechRepeatCount", 1)));
         backDurationMs = baseBackDurationMs * backSpeechRepeatCount;
         backSpeechDurationMs.clear();

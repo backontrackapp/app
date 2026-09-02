@@ -21,7 +21,9 @@ import {
   flashcardEjectReachesExclusionThreshold,
   flashcardEjectLoadsNext,
   flashcardReviewQueueState,
+  normalizeFlashcardBackSpeechRepeatCount,
   normalizeFlashcardBackSpeechRate,
+  normalizeFlashcardFaceDurationSeconds,
   normalizeFlashcardReviewFaceValue,
   flashcardSwapColumnsError,
   swapFlashcardColumns,
@@ -127,10 +129,10 @@ function mapReviewSet(record: Record<string, any>): FlashcardReviewSet {
     ejectExcludeAfter: Number(
       record.eject_exclude_after || DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
     ),
-    frontSeconds: Number(record.front_seconds || 5),
-    backSeconds: Number(record.back_seconds || 5),
-    backSpeechRepeatCount: Number(
-      record.back_speech_repeat_count || DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
+    frontSeconds: normalizeFlashcardFaceDurationSeconds(Number(record.front_seconds || 5)),
+    backSeconds: normalizeFlashcardFaceDurationSeconds(Number(record.back_seconds || 5)),
+    backSpeechRepeatCount: normalizeFlashcardBackSpeechRepeatCount(
+      Number(record.back_speech_repeat_count || DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS),
     ),
     frontDisplay: normalizeFlashcardReviewFaceValue(
       record.front_display,
@@ -193,10 +195,16 @@ function mapSession(record: Record<string, any>): FlashcardReviewSession {
     reserveCardIds: Array.isArray(record.reserve_card_ids)
       ? record.reserve_card_ids.filter((id: unknown): id is string => typeof id === 'string')
       : [],
-    frontSeconds: Number(record.front_seconds_snapshot || 5),
-    backSeconds: Number(record.back_seconds_snapshot || 5),
-    backSpeechRepeatCount: Number(
-      record.back_speech_repeat_count_snapshot || DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
+    frontSeconds: normalizeFlashcardFaceDurationSeconds(
+      Number(record.front_seconds_snapshot || 5),
+    ),
+    backSeconds: normalizeFlashcardFaceDurationSeconds(
+      Number(record.back_seconds_snapshot || 5),
+    ),
+    backSpeechRepeatCount: normalizeFlashcardBackSpeechRepeatCount(
+      Number(
+        record.back_speech_repeat_count_snapshot || DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
+      ),
     ),
     frontDisplay: normalizeFlashcardReviewFaceValue(
       record.front_display_snapshot,
