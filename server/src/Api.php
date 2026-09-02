@@ -65,7 +65,7 @@ final class Api
     ) {
         $this->mailer = new Mailer($config);
         $this->syncService = new SyncService($database, $config);
-        $this->assistantService = new AssistantService($config);
+        $this->assistantService = new AssistantService($database, $config);
         $this->curatedReviewSets = new CuratedReviewSetCatalog($config);
     }
 

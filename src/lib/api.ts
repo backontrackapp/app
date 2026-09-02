@@ -536,6 +536,7 @@ class ApiClient {
   assistantRespond(
     items: AssistantConversationItem[],
     onTextDelta: (delta: string) => void,
+    onActivity: (event: Extract<AssistantResponseStreamEvent, { type: 'activity_delta' | 'activity' }>) => void,
     signal?: AbortSignal,
   ) {
     return requestAssistantStream(
@@ -543,6 +544,7 @@ class ApiClient {
       { method: 'POST', body: { items } },
       this.authStore,
       onTextDelta,
+      onActivity,
       signal,
     )
   }
@@ -553,6 +555,7 @@ class ApiClient {
     existingCardIds: string[]
     reviewSetId?: string
     name?: string
+    icon?: string
     reviewSetTags?: string[]
     maxCards?: number
     settings?: FlashcardReviewSettings
@@ -578,6 +581,7 @@ class ApiClient {
       review_set_id: requestedReviewSetId,
       review_set_tags: [...new Set(input.reviewSetTags || [])],
       name: input.name || '',
+      icon: input.icon || '',
       max_cards: input.maxCards || 20,
       source: input.source || 'assistant',
       ...(input.settings ? { settings: flashcardReviewSettingsBody(input.settings) } : {}),
@@ -613,6 +617,7 @@ class ApiClient {
         id: requestedReviewSetId,
         owner: accountId,
         name,
+        icon: body.icon,
         tags: body.review_set_tags,
         assigned_cards: [...new Set([...body.existing_card_ids, ...cards.map(card => card.id)])],
         excluded_cards: [],
@@ -1972,6 +1977,7 @@ async function requestAssistantStream(
   options: { method: string; body: unknown },
   authStore: AuthStore,
   onTextDelta: (delta: string) => void,
+  onActivity: (event: Extract<AssistantResponseStreamEvent, { type: 'activity_delta' | 'activity' }>) => void,
   signal?: AbortSignal,
 ): Promise<AssistantResponsePayload> {
   const headers = new Headers({
@@ -2011,6 +2017,14 @@ async function requestAssistantStream(
     const event = parsed as AssistantResponseStreamEvent
     if (event.type === 'text_delta' && typeof event.delta === 'string') {
       onTextDelta(event.delta)
+      return
+    }
+    if (event.type === 'activity_delta' && typeof event.delta === 'string') {
+      onActivity(event)
+      return
+    }
+    if (event.type === 'activity' && typeof event.label === 'string') {
+      onActivity(event)
       return
     }
     if (event.type === 'response' && Array.isArray(event.items)) {

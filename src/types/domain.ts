@@ -782,6 +782,8 @@ export interface AssistantResponsePayload {
 
 export type AssistantResponseStreamEvent =
   | { type: 'text_delta'; delta: string }
+  | { type: 'activity_delta'; delta: string }
+  | { type: 'activity'; label: string }
   | { type: 'response'; items: AssistantConversationItem[] }
   | { type: 'error'; message: string }
 
@@ -790,6 +792,7 @@ export interface AssistantFlashcardDraft {
   back: string
   transliteration: string
   note: string
+  image?: string
 }
 
 export interface AssistantWritePlan {
@@ -802,6 +805,7 @@ export interface AssistantWritePlan {
   reusedCardIds: string[]
   convertsTagSelection: boolean
   maxCards: number
+  icon?: string
   updatedReviewSet?: FlashcardReviewSetDraft
   updatedCards?: AssistantCardUpdate[]
   changes?: AssistantReviewSetChange[]

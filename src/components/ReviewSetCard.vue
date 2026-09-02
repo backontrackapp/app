@@ -461,6 +461,7 @@ defineExpose({ refitContent })
         v-for="position in progressTickPositions"
         :key="position"
         class="review-set-card__progress-tick"
+        :class="{ 'review-set-card__progress-tick--complete': progress >= position }"
         :style="{ '--progress-tick-position': `${position}%` }"
         aria-hidden="true"
       />
@@ -603,6 +604,7 @@ defineExpose({ refitContent })
               v-for="position in progressTickPositions"
               :key="position"
               class="review-set-card__progress-tick"
+              :class="{ 'review-set-card__progress-tick--complete': progress >= position }"
               :style="{ '--progress-tick-position': `${position}%` }"
               aria-hidden="true"
             />
@@ -688,7 +690,8 @@ defineExpose({ refitContent })
 .review-set-card__progress { position: relative; z-index: 5; flex: 0 0 auto; transition: none; }
 .review-set-card__progress :deep(.v-progress-linear__determinate) { transition: none; }
 .passive-card .review-set-card__progress { width: min(20rem, 100%); }
-.review-set-card__progress-tick { position: absolute; z-index: 1; top: 50%; left: var(--progress-tick-position); height: calc(100% + .1875rem); aspect-ratio: 1; border-radius: 50%; background: rgb(var(--v-theme-secondary)); pointer-events: none; transform: translate(-50%, -50%); }
+.review-set-card__progress-tick { position: absolute; z-index: 1; top: 50%; left: var(--progress-tick-position); height: calc(100% + .5rem); aspect-ratio: 1; border-radius: 50%; background: rgba(255, 255, 255, .14); -webkit-mask-image: linear-gradient(to bottom, #000 0 .25rem, transparent .25rem calc(100% - .25rem), #000 calc(100% - .25rem) 100%); mask-image: linear-gradient(to bottom, #000 0 .25rem, transparent .25rem calc(100% - .25rem), #000 calc(100% - .25rem) 100%); pointer-events: none; transform: translate(-50%, -50%); transition: background-color 100ms ease; }
+.review-set-card__progress-tick--complete { background: rgb(var(--v-theme-secondary)); }
 .review-card__tag-actions { position: absolute; z-index: 3; right: 1.5rem; bottom: 1.25rem; left: 1.5rem; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: .5rem; }
 .review-card__tag-control { min-height: 2.75rem; }
 .review-card__eject-button { min-width: 0; grid-column: 1; justify-self: start; }
@@ -784,6 +787,7 @@ defineExpose({ refitContent })
 @media (prefers-reduced-motion: reduce) {
   .review-card__hint,
   .review-card-buffer--incoming,
-  .review-card-buffer--outgoing { transition: none; }
+  .review-card-buffer--outgoing,
+  .review-set-card__progress-tick { transition: none; }
 }
 </style>

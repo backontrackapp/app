@@ -27,6 +27,7 @@ final class Config
         public readonly string $openAiApiKey,
         public readonly string $openAiBaseUrl,
         public readonly string $openAiModel,
+        public readonly int $openAiDailyTokenLimit,
         public readonly bool $debug,
     ) {
     }
@@ -96,6 +97,7 @@ final class Config
             'https://api.openai.com/v1',
         )), '/');
         $openAiModel = trim((string) $value('BACKONTRACK_OPENAI_MODEL', 'gpt-5.6-terra'));
+        $openAiDailyTokenLimit = (int) $value('BACKONTRACK_OPENAI_DAILY_TOKEN_LIMIT', 10000);
         $debug = strtolower(trim((string) $value('DEBUG', ''))) === 'dev';
 
         if ($secret === '' || strlen($secret) < 32) {
@@ -211,6 +213,9 @@ final class Config
         if ($openAiModel === '' || strlen($openAiModel) > 100) {
             throw new ApiException(500, 'BACKONTRACK_OPENAI_MODEL is invalid.');
         }
+        if ($openAiDailyTokenLimit < 1 || $openAiDailyTokenLimit > 1000000) {
+            throw new ApiException(500, 'BACKONTRACK_OPENAI_DAILY_TOKEN_LIMIT must be between 1 and 1000000.');
+        }
         return new self(
             $databasePath,
             $secret,
@@ -232,6 +237,7 @@ final class Config
             $openAiApiKey,
             $openAiBaseUrl,
             $openAiModel,
+            $openAiDailyTokenLimit,
             $debug,
         );
     }

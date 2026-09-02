@@ -956,7 +956,9 @@ final class SyncService
                 throw new ApiException(422, 'An assistant flashcard is invalid.');
             }
             $cardId = $this->recordId($row['id'] ?? null);
-            $imageUrl = $curated ? $this->curatedFlashcardImageUrl($row['image_url'] ?? '') : '';
+            $imageUrl = $curated
+                ? $this->curatedFlashcardImageUrl($row['image_url'] ?? '')
+                : $this->assistantFlashcardImageUrl($row['image_url'] ?? '');
             $tagIds = $this->stringArray($row['tags'] ?? []);
             foreach ($tagIds as $tagId) {
                 $this->ownedRecord('flashcard_tags', $this->recordId($tagId), $account);
@@ -991,6 +993,7 @@ final class SyncService
             $sort->execute(['owner' => $account]);
             $reviewSetPayload = [
                 'name' => $name,
+                'icon' => trim((string) ($payload['icon'] ?? '')),
                 'tags' => $reviewSetTagIds,
                 'assigned_cards' => array_values(array_unique([...$existingIds, ...$createdCardIds])),
                 'excluded_cards' => [],
@@ -2346,6 +2349,24 @@ final class SyncService
             || isset($parts['user'])
             || isset($parts['pass'])) {
             throw new ApiException(422, 'Curated card images must use HTTPS.');
+        }
+        return $url;
+    }
+
+    private function assistantFlashcardImageUrl(mixed $value): string
+    {
+        if (!is_string($value)) {
+            throw new ApiException(422, 'An assistant card image is invalid.');
+        }
+        $url = trim($value);
+        if ($url === '') {
+            return '';
+        }
+        if (preg_match(
+            '#^https://raw\\.githubusercontent\\.com/googlefonts/noto-emoji/main/(?:png/512/emoji_u[0-9a-f]{4,6}(?:_[0-9a-f]{4,6})*\\.png|third_party/region-flags/png/[A-Z]{2}\\.png)$#',
+            $url,
+        ) !== 1) {
+            throw new ApiException(422, 'Assistant card images must use official Noto Emoji artwork.');
         }
         return $url;
     }

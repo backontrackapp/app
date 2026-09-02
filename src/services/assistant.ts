@@ -9,7 +9,7 @@ import {
   flashcardReviewSettingsAreValid,
   normalizeFlashcardBackSpeechRate,
 } from '@/services/flashcards'
-import { notoEmojiImageUrl } from '@/services/emojis'
+import { isSupportedEmoji, notoEmojiImageUrl } from '@/services/emojis'
 import type {
   AssistantCardUpdate,
   AssistantChoice,
@@ -19,6 +19,7 @@ import type {
   AssistantToolCallItem,
   AssistantToolOutputItem,
   AssistantWritePlan,
+  AssistantResponseStreamEvent,
   FlashcardReviewSet,
   FlashcardReviewSetDraft,
   SquareImageSourceValue,
@@ -41,12 +42,23 @@ function normalizedCard(value: unknown): AssistantFlashcardDraft | undefined {
   const front = normalizedText(record.front, 4000)
   const back = normalizedText(record.back, 4000)
   if (!front || !back) return undefined
+  const imageEmoji = nullableText(record.image, 64, 'Image')
+  const image = imageEmoji ? notoEmojiImageUrl(imageEmoji) : ''
+  if (imageEmoji && !image) throw new Error('Choose one Noto Emoji for the card image.')
   return {
     front,
     back,
     transliteration: normalizedText(record.transliteration, 4000),
     note: normalizedText(record.note, 2000),
+    ...(image ? { image } : {}),
   }
+}
+
+function normalizedEmoji(value: unknown, field: string) {
+  const emoji = nullableText(value, 64, field)
+  if (!emoji) return ''
+  if (!isSupportedEmoji(emoji)) throw new Error(`${field} must be one supported emoji.`)
+  return emoji
 }
 
 function nullableText(value: unknown, maximum: number, field: string) {
@@ -538,6 +550,7 @@ export function assistantWritePlan(
   if (call.name === 'create_flashcard_review_set') {
     const name = normalizedText(call.arguments.name, 160)
     if (!name) throw new Error('Review set name is required.')
+    const icon = normalizedEmoji(call.arguments.icon, 'Review set icon')
     return {
       call,
       title: `Create ${name}?`,
@@ -548,6 +561,7 @@ export function assistantWritePlan(
       reusedCardIds,
       convertsTagSelection: false,
       maxCards: Math.min(100, Math.max(1, integer(call.arguments.max_cards, 20))),
+      icon: icon || undefined,
     }
   }
 
@@ -609,6 +623,7 @@ export async function executeAssistantWritePlan(plan: AssistantWritePlan, store:
       ? String(plan.call.arguments.review_set_id || '')
       : undefined,
     name: plan.destinationName,
+    icon: plan.icon,
     maxCards: plan.maxCards,
   })
   await store.load()
@@ -632,7 +647,8 @@ export function cancelledAssistantToolOutput(callId: string): AssistantToolOutpu
 export async function requestAssistantResponse(
   items: AssistantConversationItem[],
   onTextDelta: (delta: string) => void,
+  onActivity: (event: Extract<AssistantResponseStreamEvent, { type: 'activity_delta' | 'activity' }>) => void,
   signal?: AbortSignal,
 ) {
-  return api.assistantRespond(items, onTextDelta, signal)
+  return api.assistantRespond(items, onTextDelta, onActivity, signal)
 }

@@ -242,12 +242,6 @@ function pressWord(event: MouseEvent, part: (typeof parts.value)[number]) {
     wordEnd: part.wordIndex + 1,
   })
 }
-
-function stopWordPointerDown(event: PointerEvent | MouseEvent, part: (typeof parts.value)[number]) {
-  if (!props.wordsPressable || part.wordIndex === undefined) return
-  event.stopPropagation()
-  event.preventDefault();
-}
 </script>
 
 <template>
@@ -278,8 +272,6 @@ function stopWordPointerDown(event: PointerEvent | MouseEvent, part: (typeof par
           },
         ]"
         aria-hidden="true"
-        @pointerdown="stopWordPointerDown($event, part)"
-        @mousedown="stopWordPointerDown($event, part)"
         @click="pressWord($event, part)"
       >{{ part.value }}</span>
     </span>
@@ -296,11 +288,12 @@ function stopWordPointerDown(event: PointerEvent | MouseEvent, part: (typeof par
 }
 
 .spoken-text__part--word {
+  text-shadow: none;
   display: inline-block;
   position: relative;
   transform: scale(1);
   transform-origin: center;
-  transition: transform 160ms cubic-bezier(.22, 1, .36, 1), color 160ms ease, opacity 160ms ease;
+  transition: transform 160ms cubic-bezier(.22, 1, .36, 1), color 160ms ease, opacity 160ms ease, text-shadow 160ms ease;
 }
 
 .spoken-text--emphasizing .spoken-text__part {
@@ -315,7 +308,8 @@ function stopWordPointerDown(event: PointerEvent | MouseEvent, part: (typeof par
 .spoken-text--emphasizing .spoken-text__part--active {
   z-index: 1;
   opacity: 1;
-  transform: scale(1.16);
+  transform: scale(1.15);
+  text-shadow: 2px 2px 3px rgba(0, 0, 0, 1);
 }
 
 .spoken-text__part--returning {

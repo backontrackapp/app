@@ -9,7 +9,7 @@ use PDOException;
 
 final class Database
 {
-    public const EXPECTED_SCHEMA_VERSION = '202609010002';
+    public const EXPECTED_SCHEMA_VERSION = '202609010003';
 
     public readonly PDO $pdo;
 
@@ -62,7 +62,8 @@ final class Database
         $required = [
             'users' => [
                 'id', 'email', 'email_visibility', 'verified', 'name', 'avatar',
-                'password', 'token_key', 'timezone', 'settings', 'created', 'updated',
+                'password', 'token_key', 'timezone', 'settings', 'assistant_token_usage_day',
+                'assistant_token_usage', 'created', 'updated',
             ],
             'tags' => ['id', 'owner', 'name'],
             'flashcards' => [

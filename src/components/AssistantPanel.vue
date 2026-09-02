@@ -46,6 +46,7 @@ const composer = ref('')
 const liveTranscript = ref('')
 const busy = ref(false)
 const receivingReply = ref(false)
+const activity = ref('')
 const recording = ref(false)
 const error = ref('')
 const pendingPlan = ref<AssistantWritePlan>()
@@ -106,9 +107,11 @@ async function runAssistant() {
   let streamedMessage: AssistantMessageItem | undefined
   busy.value = true
   error.value = ''
+  activity.value = 'Reviewing your flashcard request…'
   try {
     for (let iteration = 0; iteration < 6; iteration += 1) {
       streamedMessage = undefined
+      let receivingActivitySummary = false
       const response = await requestAssistantResponse(items.value, delta => {
         if (revision !== requestRevision || !model.value) return
         const shouldAutoScroll = messagesAreAtEnd()
@@ -119,6 +122,16 @@ async function runAssistant() {
         }
         streamedMessage.content += delta
         if (shouldAutoScroll) void scrollMessagesToEnd()
+      }, event => {
+        if (revision !== requestRevision || !model.value) return
+        if (event.type === 'activity') {
+          activity.value = event.label
+          receivingActivitySummary = false
+        } else {
+          activity.value = `${receivingActivitySummary ? activity.value : ''}${event.delta}`.slice(-4000)
+          receivingActivitySummary = true
+        }
+        if (messagesAreAtEnd()) void scrollMessagesToEnd()
       }, controller.signal)
       if (revision !== requestRevision || !model.value) return
       if (streamedMessage) {
@@ -146,6 +159,7 @@ async function runAssistant() {
         }
         const readResult = assistantReadToolResult(item, flashcards)
         if (readResult) {
+          activity.value = 'Checking your flashcard data…'
           items.value.push(readResult)
           continued = true
           continue
@@ -173,6 +187,7 @@ async function runAssistant() {
     if (revision === requestRevision) {
       receivingReply.value = false
       busy.value = false
+      activity.value = ''
     }
   }
 }
@@ -437,9 +452,9 @@ onBeforeUnmount(() => {
             />
           </template>
 
-          <div v-if="busy && !pendingPlan && !receivingReply" class="assistant-panel__thinking text-body-2 text-medium-emphasis">
+          <div v-if="busy && !pendingPlan && !receivingReply" class="assistant-panel__activity text-body-2 text-medium-emphasis" role="status">
             <v-progress-circular indeterminate color="secondary" size="20" width="2" />
-            <span>Thinking…</span>
+            <span>{{ activity }}</span>
           </div>
           <v-alert v-if="error" type="error" variant="tonal" density="compact">{{ error }}</v-alert>
         </div>
@@ -573,8 +588,9 @@ onBeforeUnmount(() => {
   white-space: normal;
 }
 .assistant-choice__button--selected:disabled { opacity: 1; }
-.assistant-panel__thinking,
+.assistant-panel__activity,
 .assistant-panel__listening { display: flex; align-items: center; gap: .5rem; }
+.assistant-panel__activity { min-height: 2.75rem; padding: .625rem .75rem; border: .0625rem solid rgba(var(--v-theme-secondary), .24); border-radius: .75rem; background: rgba(var(--v-theme-secondary), .08); line-height: 1.4; white-space: pre-wrap; }
 .assistant-panel__composer { padding-bottom: calc(1rem + max(env(safe-area-inset-bottom, 0rem), var(--safe-area-inset-bottom, 0rem))) !important; border-top: .0625rem solid rgb(var(--v-theme-on-surface) / .08); background: rgb(var(--v-theme-surface)); }
 .assistant-panel__listening { color: rgb(var(--v-theme-on-surface) / .72); font-size: .78rem; }
 

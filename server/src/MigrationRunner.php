@@ -11,6 +11,9 @@ final class MigrationRunner
 {
     /** @var array<string, list<string>> */
     private const LEGACY_MIGRATION_CHECKSUMS = [
+        '202609010001' => [
+            '9493fed84015521dda57daaffd7911ef564d3f03d8f4b196b10b8bf5a83c706e',
+        ],
         '202607290002' => [
             'df7ace539434eddaab62fe29d095ce1feb9c4b435b99e3f5389379e67116035b',
             'bfb89a1d869b19152f773cd66d7c5b8eac673ce0b2b8c23b5ee777f6bb57e36f',
