@@ -90,10 +90,11 @@ final class AssistantService
 
     private function budgetedRequest(array $body, array $user): array
     {
+        $dailyTokenLimit = $this->dailyTokenLimit($user['assistant_daily_token_limit'] ?? null);
         $countRequest = $this->request(
             $body,
             $user,
-            $this->config->openAiDailyTokenLimit,
+            $dailyTokenLimit,
             1,
         );
         $inputTokens = $this->inputTokenCount($countRequest);
@@ -172,7 +173,7 @@ final class AssistantService
             $pdo->exec('BEGIN IMMEDIATE');
             $transactionOpen = true;
             $statement = $pdo->prepare(
-                'SELECT assistant_token_usage_day, assistant_token_usage
+                'SELECT assistant_daily_token_limit, assistant_token_usage_day, assistant_token_usage
                  FROM users WHERE id = :id LIMIT 1',
             );
             $statement->execute(['id' => (string) $user['id']]);
@@ -183,7 +184,8 @@ final class AssistantService
             $usedTokens = (string) $usage['assistant_token_usage_day'] === $day
                 ? max(0, (int) $usage['assistant_token_usage'])
                 : 0;
-            $availableTokens = max(0, $this->config->openAiDailyTokenLimit - $usedTokens);
+            $dailyTokenLimit = $this->dailyTokenLimit($usage['assistant_daily_token_limit']);
+            $availableTokens = max(0, $dailyTokenLimit - $usedTokens);
             $maxOutputTokens = min(
                 self::MAX_OUTPUT_TOKENS,
                 $availableTokens - $inputTokens - self::TOKEN_BUDGET_MARGIN,
@@ -277,6 +279,13 @@ final class AssistantService
             throw new ApiException(502, 'The AI assistant returned invalid token usage.');
         }
         return $tokens;
+    }
+
+    private function dailyTokenLimit(mixed $userLimit): int
+    {
+        return $userLimit === null
+            ? $this->config->openAiDailyTokenLimit
+            : max(0, (int) $userLimit);
     }
 
     private function assistantUsageDay(array $user): string

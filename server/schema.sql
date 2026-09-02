@@ -14,6 +14,7 @@ CREATE TABLE users (
     token_key TEXT NOT NULL,
     timezone TEXT NOT NULL DEFAULT 'UTC',
     settings JSON NOT NULL DEFAULT '{}',
+    assistant_daily_token_limit INTEGER DEFAULT NULL,
     assistant_token_usage_day TEXT NOT NULL DEFAULT '',
     assistant_token_usage INTEGER NOT NULL DEFAULT 0,
     created TEXT NOT NULL,

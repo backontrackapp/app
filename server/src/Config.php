@@ -97,7 +97,7 @@ final class Config
             'https://api.openai.com/v1',
         )), '/');
         $openAiModel = trim((string) $value('BACKONTRACK_OPENAI_MODEL', 'gpt-5.6-terra'));
-        $openAiDailyTokenLimit = (int) $value('BACKONTRACK_OPENAI_DAILY_TOKEN_LIMIT', 10000);
+        $openAiDailyTokenLimit = (int) $value('BACKONTRACK_OPENAI_DAILY_TOKEN_LIMIT', 30000);
         $debug = strtolower(trim((string) $value('DEBUG', ''))) === 'dev';
 
         if ($secret === '' || strlen($secret) < 32) {
