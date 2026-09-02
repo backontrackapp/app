@@ -408,7 +408,7 @@ onMounted(async () => {
             <div class="program-runner__finish-icon" :style="{ background: task.color || '#C7F464' }">
               <ContentIcon :icon="task.icon || 'mdi-repeat-variant'" size="2.75rem" />
             </div>
-            <h1 class="display-title">Program <span class="text-secondary">complete.</span></h1>
+            <h1 class="display-title">Program <span class="text-secondary">complete</span>.</h1>
             <p class="muted">{{ completedCount }} of {{ requirements.length }} requirements completed.</p>
             <v-btn color="secondary" size="x-large" prepend-icon="mdi-check-bold" to="/tasks">Done</v-btn>
           </section>
