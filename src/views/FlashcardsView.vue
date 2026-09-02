@@ -673,6 +673,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
 .card-library-summary__actions { display: grid; width: 8.5rem; flex: 0 0 8.5rem; grid-template-columns: minmax(0, 1fr); gap: .5rem; }
 .card-library-summary__actions :deep(.v-btn) { width: 100%; }
 .review-set-list { display: grid; gap: .75rem; }
+@media (min-width: 43.75rem) { .review-set-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .review-set { overflow: hidden; cursor: pointer; }
 .archive-heading { min-height: 2.75rem; }
 .archive-heading :deep(.v-btn__content) { width: 100%; justify-content: flex-start; gap: .5rem; }
