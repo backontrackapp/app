@@ -295,6 +295,15 @@ async function openRequirement(completionId: string) {
   await showRequirement(index)
 }
 
+async function openNextRequirement() {
+  const index = firstOpenRequirementIndex()
+  if (index < 0) {
+    screen.value = 'finished'
+    return
+  }
+  await openRequirement(requirements.value[index]!.id)
+}
+
 function next() {
   screen.value = firstOpenRequirementIndex() < 0 ? 'finished' : 'list'
 }
@@ -481,6 +490,16 @@ onMounted(async () => {
                 @select="openRequirement"
               />
             </div>
+            <footer class="program-runner__actions program-runner__actions--single page-action-area">
+              <v-btn
+                color="secondary"
+                size="large"
+                :disabled="working"
+                @click="openNextRequirement"
+              >
+                Next
+              </v-btn>
+            </footer>
           </section>
 
           <section v-else-if="current" :key="current.id" class="program-runner__requirement runner-screen">
@@ -635,7 +654,8 @@ onMounted(async () => {
 .program-runner__simple-card p { margin-top: .25rem; color: rgb(var(--v-theme-on-surface) / .58); font-size: .8125rem; }
 .program-runner__simple-card { display: flex; margin-top: 1.5rem; align-items: center; flex-direction: column; gap: .75rem; text-align: center; }
 .program-runner__simple-card h2 { font-size: 1.125rem; font-weight: 900; }
-.program-runner__actions { display: grid; padding: 1.25rem 1rem 0; flex: 0 0 auto; grid-template-columns: 1fr 1.5fr; gap: .75rem; border-top: .0625rem solid rgb(var(--v-theme-on-surface) / .08); background: rgb(var(--v-theme-background)); }
+.program-runner__actions { display: grid; padding: 1.2rem 1rem 0; flex: 0 0 auto; grid-template-columns: 1fr 1.5fr; gap: .75rem; border-top: .0625rem solid rgba(255, 255, 255, .08); background: rgba(var(--v-theme-background), .82); -webkit-backdrop-filter: blur(1rem); backdrop-filter: blur(1rem); }
+.program-runner__actions--single { grid-template-columns: minmax(0, 48rem); justify-content: center; }
 .program-runner__actions :deep(.v-btn) { min-height: 3.5rem; }
 .program-runner__finish { display: flex; width: min(100%, 38rem); min-height: 0; margin: 0 auto; align-items: center; justify-content: center; flex: 1; flex-direction: column; gap: 1rem; padding: 1.5rem; text-align: center; }
 .program-runner__finish-icon { width: 5rem; height: 5rem; border-radius: 1.5rem; }
