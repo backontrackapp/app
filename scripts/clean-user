@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+usage() {
+  cat <<'EOF'
+Permanently remove all application data for one BackOnTrack user.
+
+Usage:
+  ./scripts/clean-user EMAIL
+EOF
+}
+
+if [[ $# -eq 1 && "$1" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -ne 1 ]]; then
+  usage >&2
+  exit 1
+fi
+
+cd "$repository_root"
+exec php server/clean-user.php --email="$1"

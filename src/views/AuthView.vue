@@ -206,7 +206,7 @@ async function signInWithPasskey() {
           <div class="logo-box">
             <img src="/brand/backontrack-wordmark.png" alt="BackOnTrack" />
           </div>
-          <h1 class="display-title auth-title mt-3">
+          <h1 class="auth-title mt-3">
             BUILD YOUR WAY <span class="text-secondary">FORWARD.</span>
           </h1>
           <p class="auth-copy mt-5">
@@ -473,6 +473,9 @@ async function signInWithPasskey() {
 
 .auth-title {
   font-size: clamp(1.65rem, 5vw, 3.5rem);
+  font-weight: 900;
+  letter-spacing: -.055em;
+  line-height: .98;
 }
 
 .auth-copy {

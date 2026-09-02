@@ -93,6 +93,26 @@ For a new installation, create the database with:
 php server/migrate.php
 ```
 
+## Create a verified user
+
+For an administrator-created account that does not need the email-confirmation flow, run the CLI utility after migrations are current. It uses the configured database, applies the same email and password constraints as registration, derives the display name from the part of the email before `@`, and never writes the password to the database in plaintext.
+
+```bash
+./scripts/create-user person@example.com correct-horse-battery
+```
+
+The command marks the account as verified, so use it only after independently confirming the email address. Its password argument will be visible in shell history and process listings; avoid using it from a shared system or a shell session with history enabled.
+
+## Reset a user to a blank account
+
+To permanently remove a user's tasks, intervals, flashcards, Review sets, tracking, journal entries, uploaded assets, sessions, passkeys, client errors, and sync state while retaining their login account, run:
+
+```bash
+./scripts/clean-user person@example.com
+```
+
+The command retains the email, password, display name, timezone, and verified status, but clears account settings and avatar and revokes existing sessions. Sign out and clear any local app data on every device before signing in again; a stale offline client could otherwise upload pending changes after the cleanup.
+
 ## Database migrations
 
 The API performs a cheap current-version check before handling a request and returns `503` for an outdated schema. For deployments, run migrations after uploading the new server code and before directing traffic to it:

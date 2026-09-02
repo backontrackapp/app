@@ -340,6 +340,8 @@ function scheduleRouteScrollUnlock() {
 const removeTransitionGuard = router.beforeEach((to, from) => {
   if (to.meta.auth && from.meta.auth && to.path !== from.path) {
     stopDocumentMomentumScroll()
+    const page = pageTransitionStage.value?.firstElementChild
+    if (page) pinLeavingPage(page)
     beginEarlyPageLeave(to.fullPath)
   }
 
@@ -633,6 +635,22 @@ function releaseLeavingPage(element: Element) {
           </v-list-item>
         </v-list>
 
+        <aside class="desktop-sidebar__ring-promo mx-3 mb-4" aria-label="BackOnTrack Ring">
+          <img
+            class="desktop-sidebar__ring-image"
+            src="/images/backontrack-ring.png"
+            alt="BackOnTrack Ring"
+            width="256"
+            height="256"
+          />
+          <div class="desktop-sidebar__ring-details">
+            <p class="desktop-sidebar__ring-title mb-1">BackOnTrack Ring</p>
+            <p class="desktop-sidebar__ring-copy text-medium-emphasis mb-2">
+              Control flashcards and intervals at your fingertips.
+            </p>
+            <p class="desktop-sidebar__ring-price mb-0">$49.99</p>
+          </div>
+        </aside>
       </div>
     </v-navigation-drawer>
 
@@ -1116,6 +1134,50 @@ function releaseLeavingPage(element: Element) {
 
 .desktop-sidebar__navigation {
   flex: 0 0 auto;
+}
+
+.desktop-sidebar__ring-promo {
+  display: flex;
+  min-width: 0;
+  margin-top: auto;
+  align-items: center;
+  gap: .5rem;
+  border: 1px solid rgba(var(--v-theme-secondary), .24);
+  border-radius: 1rem;
+  padding: .75rem;
+  background:
+    linear-gradient(135deg, rgba(var(--v-theme-secondary), .16), transparent 72%),
+    rgba(var(--v-theme-surface-variant), .52);
+}
+
+.desktop-sidebar__ring-image {
+  display: block;
+  width: 5rem;
+  height: 5rem;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+
+.desktop-sidebar__ring-details {
+  min-width: 0;
+}
+
+.desktop-sidebar__ring-title,
+.desktop-sidebar__ring-price {
+  color: rgb(var(--v-theme-on-surface));
+  font-size: .8rem;
+  font-weight: 800;
+  letter-spacing: -.01em;
+  line-height: 1.15;
+}
+
+.desktop-sidebar__ring-copy {
+  font-size: .7rem;
+  line-height: 1.3;
+}
+
+.desktop-sidebar__ring-price {
+  color: rgb(var(--v-theme-secondary));
 }
 
 .desktop-sidebar__nav-item {

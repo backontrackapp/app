@@ -1,33 +1,66 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { containCardButtonClicks } from '@/services/cardButtonPropagation'
 
 const route = useRoute()
+const router = useRouter()
 const transitioning = ref(false)
+const sessionTransitionStage = ref<HTMLElement>()
 const enteringApp = computed(() => route.name !== 'auth')
 const transitionName = computed(() => enteringApp.value ? 'session-forward' : 'session-back')
 let removeCardButtonContainment: (() => void) | undefined
+
+function pinLeavingSessionPage() {
+  const page = sessionTransitionStage.value?.firstElementChild
+  if (!(page instanceof HTMLElement) || getComputedStyle(page).position === 'fixed') return
+  const bounds = page.getBoundingClientRect()
+  page.style.setProperty('--session-leave-top', `${bounds.top}px`)
+  page.style.setProperty('--session-leave-left', `${bounds.left}px`)
+  page.style.setProperty('--session-leave-width', `${bounds.width}px`)
+  page.classList.add('session-route-leaving-pinned')
+}
+
+function releaseLeavingSessionPage(element: Element) {
+  if (!(element instanceof HTMLElement)) return
+  element.classList.remove('session-route-leaving-pinned')
+  element.style.removeProperty('--session-leave-top')
+  element.style.removeProperty('--session-leave-left')
+  element.style.removeProperty('--session-leave-width')
+}
+
+function cancelSessionTransition(element: Element) {
+  transitioning.value = false
+  releaseLeavingSessionPage(element)
+}
+
+const removeTransitionGuard = router.beforeEach((to, from) => {
+  const toKey = to.meta.auth ? 'app' : to.fullPath
+  const fromKey = from.meta.auth ? 'app' : from.fullPath
+  if (toKey !== fromKey) pinLeavingSessionPage()
+})
 
 onMounted(() => {
   removeCardButtonContainment = containCardButtonClicks()
 })
 
 onBeforeUnmount(() => {
+  removeTransitionGuard()
   removeCardButtonContainment?.()
 })
 </script>
 
 <template>
-  <div class="session-transition-stage">
+  <div ref="sessionTransitionStage" class="session-transition-stage">
     <router-view v-slot="{ Component, route: viewRoute }">
       <transition
         :name="transitionName"
         @before-leave="transitioning = true"
         @after-enter="transitioning = false"
-        @leave-cancelled="transitioning = false"
+        @after-leave="releaseLeavingSessionPage"
+        @leave-cancelled="cancelSessionTransition"
       >
-        <component :is="Component" :key="viewRoute.meta.guest ? 'guest' : 'app'" />
+        <component :is="Component" :key="viewRoute.meta.auth ? 'app' : viewRoute.fullPath" />
       </transition>
     </router-view>
   </div>
@@ -49,6 +82,16 @@ onBeforeUnmount(() => {
 .session-transition-stage > * {
   min-width: 0;
   grid-area: 1 / 1;
+}
+
+.session-route-leaving-pinned {
+  position: fixed !important;
+  z-index: 1;
+  top: var(--session-leave-top) !important;
+  right: auto !important;
+  left: var(--session-leave-left) !important;
+  width: var(--session-leave-width) !important;
+  margin: 0 !important;
 }
 
 .session-forward-enter-active,

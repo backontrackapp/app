@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+usage() {
+  cat <<'EOF'
+Create a verified BackOnTrack user.
+
+Usage:
+  ./scripts/create-user EMAIL PASSWORD
+
+The user's display name is derived from the part of the email address before @.
+EOF
+}
+
+if [[ $# -eq 1 && "$1" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -ne 2 ]]; then
+  usage >&2
+  exit 1
+fi
+
+email="$1"
+password="$2"
+name="${email%%@*}"
+
+cd "$repository_root"
+printf '%s' "$password" | php server/create-user.php \
+  --email="$email" \
+  --name="$name" \
+  --password-stdin
