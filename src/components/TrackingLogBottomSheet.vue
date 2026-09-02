@@ -161,7 +161,7 @@ async function remove() {
           <v-btn variant="tonal" :disabled="saving" @click="save(0)">No</v-btn>
         </div>
         <v-btn v-else-if="tracker.kind === 'event'" block color="secondary" :loading="saving" @click="save(1)">Log occurrence</v-btn>
-        <v-btn v-else block color="secondary" :loading="saving" @click="save()">Save log</v-btn>
+        <v-btn v-else block color="secondary" size="large" class="mobile-large-action" :loading="saving" @click="save()">Save log</v-btn>
         <v-btn v-if="entry" block color="error" variant="text" :disabled="saving" @click="remove">Delete log</v-btn>
       </div>
     </template>
