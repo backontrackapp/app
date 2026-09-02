@@ -59,6 +59,7 @@ const pendingMainNavigationPath = ref<string>()
 const isIos = Capacitor.getPlatform() === 'ios'
 const isAndroid = Capacitor.getPlatform() === 'android'
 const isBrowser = Capacitor.getPlatform() === 'web'
+const ringPurchaseUrl = import.meta.env.VITE_RING_PURCHASE_URL
 const storedMenuOrder = ref(readStoredMainMenuOrder())
 const storedHiddenMenuItems = ref(readStoredHiddenMainMenuItems())
 const reducedMotion = ref(
@@ -634,24 +635,38 @@ function releaseLeavingPage(element: Element) {
             </template>
           </v-list-item>
         </v-list>
-
-        <aside class="desktop-sidebar__ring-promo mx-3 mb-4" aria-label="BackOnTrack Ring">
-          <img
-            class="desktop-sidebar__ring-image"
-            src="/images/backontrack-ring.png"
-            alt="BackOnTrack Ring"
-            width="256"
-            height="256"
-          />
-          <div class="desktop-sidebar__ring-details">
-            <p class="desktop-sidebar__ring-title mb-1">BackOnTrack Ring</p>
-            <p class="desktop-sidebar__ring-copy text-medium-emphasis mb-2">
-              Control flashcards and intervals at your fingertips.
-            </p>
-            <p class="desktop-sidebar__ring-price mb-0">$49.99</p>
-          </div>
-        </aside>
       </div>
+
+      <template #append>
+        <div class="px-3 mb-4">
+          <v-btn
+            class="desktop-sidebar__ring-promo-button"
+            variant="text"
+            height="auto"
+            block
+            :href="ringPurchaseUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <aside class="desktop-sidebar__ring-promo" aria-label="BackOnTrack Ring">
+              <img
+                class="desktop-sidebar__ring-image"
+                src="/images/backontrack-ring.png"
+                alt="BackOnTrack Ring"
+                width="256"
+                height="256"
+              />
+              <div class="desktop-sidebar__ring-details">
+                <p class="desktop-sidebar__ring-title mb-1">BackOnTrack Ring</p>
+                <p class="desktop-sidebar__ring-copy text-medium-emphasis mb-2">
+                  Control flashcards and intervals at your fingertips.
+                </p>
+                <p class="desktop-sidebar__ring-price mb-0">$49.99</p>
+              </div>
+            </aside>
+          </v-btn>
+        </div>
+      </template>
     </v-navigation-drawer>
 
     <transition name="app-chrome" appear>
@@ -1136,14 +1151,28 @@ function releaseLeavingPage(element: Element) {
   flex: 0 0 auto;
 }
 
+.desktop-sidebar__ring-promo-button {
+  padding: 0;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.desktop-sidebar__ring-promo-button :deep(.v-btn__content) {
+  width: 100%;
+  justify-content: flex-start;
+  white-space: normal;
+  text-align: left;
+}
+
 .desktop-sidebar__ring-promo {
   display: flex;
+  width: 100%;
   min-width: 0;
   margin-top: auto;
   align-items: center;
   gap: .5rem;
   border: 1px solid rgba(var(--v-theme-secondary), .24);
-  border-radius: 1rem;
+  border-radius: 0.5rem;
   padding: .75rem;
   background:
     linear-gradient(135deg, rgba(var(--v-theme-secondary), .16), transparent 72%),
@@ -1159,7 +1188,10 @@ function releaseLeavingPage(element: Element) {
 }
 
 .desktop-sidebar__ring-details {
+  flex: 1 1 auto;
   min-width: 0;
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
 .desktop-sidebar__ring-title,

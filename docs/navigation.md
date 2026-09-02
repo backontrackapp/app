@@ -2,7 +2,7 @@
 
 When the authenticated app shell first opens, the app bar slides down and the mobile bottom navigation slides up. Routed content remains transparent behind a centered circular progress indicator until the initial task, interval, flashcard, tracking, and current Journal requests have settled, then fades into place. Reduced-motion preferences preserve the same loading gate without directional movement.
 
-On desktop, the permanent sidebar ends with a BackOnTrack Ring promotion. It shows the Ring, its $49.99 price, and a concise reminder that it controls flashcards and intervals at the fingertips. The promotion is not shown in the mobile navigation.
+On desktop, the permanent sidebar ends with a BackOnTrack Ring promotion. It shows the Ring, its $49.99 price, and a concise reminder that it controls flashcards and intervals at the fingertips. Selecting the promotion opens the checkout URL configured by `VITE_RING_PURCHASE_URL` in a new browser tab. The promotion is not shown in the mobile navigation.
 
 Authenticated routes use directional transitions based on their menu order and depth. Before the router resets document scrolling for the destination, the leaving page is fixed at its current viewport position so only the incoming page starts at the top.
 
