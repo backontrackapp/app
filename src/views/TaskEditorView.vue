@@ -265,16 +265,17 @@ const showTarget = computed(() =>
 )
 const showImageLogSettings = computed(() => taskSupportsImageLogging(draft.type))
 const showQuickLogSettings = computed(() => taskSupportsQuickLog(draft.type))
-const selectedInterval = computed(() => intervalStore.templates.find((item) => item.id === draft.intervalTemplate))
 const intervalItems = computed(() => intervalStore.templates
   .filter(item => !item.archived || item.id === draft.intervalTemplate)
   .map((item) => ({
-  title: item.name,
-  value: item.id,
-  props: {
-    subtitle: `${formatIntervalDuration(intervalDuration(item.definition))} · ${intervalStepCount(item.definition)} intervals`,
-  },
-})))
+    title: item.name,
+    value: item.id,
+    icon: item.icon || 'mdi-timer-play-outline',
+    color: item.color,
+    props: {
+      subtitle: `${formatIntervalDuration(intervalDuration(item.definition))} · ${intervalStepCount(item.definition)} intervals`,
+    },
+  })))
 const selectedReviewSet = computed(() => flashcardStore.reviewSets.find(item => item.id === draft.flashcardReviewSet))
 const isSessionTask = computed(() => draft.type === 'interval' || draft.type === 'flashcards')
 const sessionSourceLabel = computed(() => draft.type === 'interval' ? 'interval' : 'Review set')
@@ -923,19 +924,25 @@ async function deleteTaskPermanently() {
             label="Attached interval"
             :items="intervalItems"
             :rules="[v => Boolean(v) || 'Select an interval']"
-          />
-          <div v-if="selectedInterval" class="interval-attachment-summary">
-            <div class="interval-attachment-icon" :style="{ background: selectedInterval.color }">
-              <v-icon icon="mdi-timer-play-outline" />
-            </div>
-            <div class="min-width-0">
-              <strong class="d-block text-truncate">{{ selectedInterval.name }}</strong>
-              <p class="text-caption muted">
-                {{ formatIntervalDuration(intervalDuration(selectedInterval.definition)) }} ·
-                {{ intervalStepCount(selectedInterval.definition) }} intervals
-              </p>
-            </div>
-          </div>
+          >
+            <template #item="{ props: itemProps, item }">
+              <v-list-item v-bind="itemProps">
+                <template #prepend>
+                  <span class="completion-style-icon mr-3" :style="{ background: item.raw.color }">
+                    <ContentIcon :icon="item.raw.icon" size="1.125rem" />
+                  </span>
+                </template>
+              </v-list-item>
+            </template>
+            <template #selection="{ item }">
+              <span class="completion-style-selection">
+                <span class="completion-style-selection__icon" :style="{ background: item.raw.color }">
+                  <ContentIcon :icon="item.raw.icon" size=".875rem" />
+                </span>
+                <span class="text-truncate">{{ item.title }}</span>
+              </span>
+            </template>
+          </v-select>
         </template>
         <div v-else class="text-center py-3">
           <v-icon icon="mdi-timer-plus-outline" size="36" class="mb-3" />
@@ -1584,7 +1591,6 @@ async function deleteTaskPermanently() {
 .day-off-row { display: flex; width: 100%; min-width: 0; align-items: center; gap: .75rem; }
 .step-number.day-off-icon { background: rgb(var(--v-theme-background)); color: rgb(var(--v-theme-on-surface) / .68); }
 .interval-attachment-summary { display: flex; align-items: center; gap: .75rem; padding: .85rem; border-radius: 16px; background: rgb(var(--v-theme-surface-variant)); }
-.interval-attachment-icon { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border-radius: 14px; color: #17200f; }
 .flashcard-attachment-icon { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border-radius: 14px; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); }
 .tracking-attachment-icon { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 11px; color: #17200f; }
 .tracking-selection-icon { display: inline-grid; width: 1.25rem; height: 1.25rem; flex: 0 0 auto; place-items: center; border-radius: .4rem; color: #17200f; }
