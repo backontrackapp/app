@@ -41,7 +41,8 @@ import {
   DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
   FLASHCARD_SETTINGS_APPLY_MENU_ITEMS,
   firstFlashcardReviewSide,
-  flashcardBackDurationMs,
+  flashcardReviewCardBackSpeechRepeatCount,
+  flashcardReviewCardBackSpeechRate,
   flashcardReviewFaceDurationMs,
   flashcardReviewFaceCanSpeak,
   flashcardReviewFaceSpeech,
@@ -50,11 +51,11 @@ import {
   flashcardReviewShowsSide,
   flashcardReviewSettingsAreValid,
   flashcardReviewSettingsSignature,
+  flashcardReviewQueueCardSnapshot,
   flashcardReviewActionFromSwipe,
   flashcardTagToggleUpdate,
   formatReviewDuration,
   INTERVAL_FLASHCARD_QUICK_TAGS,
-  normalizeFlashcardBackSpeechRepeatCount,
   otherFlashcardReviewSide,
   sessionAccuracy,
 } from '@/services/flashcards'
@@ -284,8 +285,8 @@ const firstReviewSide = computed(() => firstFlashcardReviewSide(
 ))
 const manualShowingBack = computed(() => revealed.value)
 const backSpeechRepeatCount = computed(() => session.value?.mode === 'passive'
-  && session.value.speechEnabled
-  ? normalizeFlashcardBackSpeechRepeatCount(session.value.backSpeechRepeatCount)
+  && currentCard.value
+  ? flashcardReviewCardBackSpeechRepeatCount(session.value, currentCard.value)
   : 1)
 const passiveDurationMs = computed(() => {
   if (!session.value || !currentCard.value) return 1000
@@ -1026,7 +1027,9 @@ async function speakCurrentSide(allowPaused = false) {
     prepareFlashcardSpeechWordTracking(word => {
       if (request === speechRequest && speechKey(true) === key) spokenWord.value = word
     })
-    const speechRate = side === 'back' ? value.backSpeechRate : 1
+    const speechRate = side === 'back'
+      ? flashcardReviewCardBackSpeechRate(value, card)
+      : 1
     const wordAnimationLeadMs = side === 'back' ? 100 : 0
     if (audio) await speakFlashcardText(text, language, '', audio, speechRate, undefined, wordAnimationLeadMs)
     else await speakFlashcardText(text, language, '', '', speechRate, undefined, wordAnimationLeadMs)
@@ -1076,7 +1079,10 @@ async function speakPressedWord(word: string, pressedWord: FlashcardSpeechWord) 
   spokenWord.value = pressedWord
   speechPlaybackWarning.value = ''
   try {
-    await speakFlashcardText(text, currentSpeechLanguage.value, '', '', value.backSpeechRate)
+    const speechRate = currentSpeechSide.value === 'back' && currentCard.value
+      ? flashcardReviewCardBackSpeechRate(value, currentCard.value)
+      : 1
+    await speakFlashcardText(text, currentSpeechLanguage.value, '', '', speechRate)
     await waitForFlashcardSpeechCompletion()
     if (request === speechRequest) speechPlaybackWarning.value = ''
   } catch {
@@ -1358,8 +1364,8 @@ function applyBackgroundProgressSnapshot(
   localElapsedMs.value = Math.max(localElapsedMs.value, state.elapsedMs)
   backgroundPassiveRemainingMs.value = Math.max(0, state.remainingMs)
   const configuredDurationMs = state.side === 'front'
-    ? Math.max(1000, value.frontSeconds * 1000)
-    : flashcardBackDurationMs(value.backSeconds, value.backSpeechRepeatCount)
+    ? flashcardReviewFaceDurationMs(value, currentCard.value!, 'front')
+    : flashcardReviewFaceDurationMs(value, currentCard.value!, 'back')
   backgroundPassiveDurationMs.value = Math.max(
     1000,
     Number.isFinite(state.durationMs) ? state.durationMs : configuredDurationMs,
@@ -1508,6 +1514,14 @@ async function toggleCurrentCardTag(tag: FlashcardTag | { name: string }) {
     const updatedCard = updatedCards.find(card => card.id === cardId)
     if (!updatedCard) throw new Error('The flashcard could not be updated.')
     handleCardSaved(updatedCard)
+    if (session.value?.mode === 'passive' && currentCard.value?.id === cardId) {
+      passiveRemainingMs.value = passiveDurationMs.value
+      lastSpokenKey = ''
+      savePassiveState()
+      await syncNativeBackground()
+      await stopFlashcardSpeech()
+      await speakCurrentSide()
+    }
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not update this flashcard tag.'
   } finally {
@@ -1518,19 +1532,7 @@ async function toggleCurrentCardTag(tag: FlashcardTag | { name: string }) {
 function handleCardSaved(card: Flashcard) {
   const value = session.value
   if (!value) return
-  const snapshot = {
-    id: card.id,
-    front: card.front,
-    back: card.back,
-    ttsFront: card.ttsFront || '',
-    ttsBack: card.ttsBack || '',
-    transliteration: card.transliteration || '',
-    note: card.note,
-    frontAudio: card.frontAudio,
-    backAudio: card.backAudio,
-    image: card.image,
-    tags: [...card.tags],
-  }
+  const snapshot = flashcardReviewQueueCardSnapshot(card, store.tags)
   const index = value.queue.findIndex(item => item.id === card.id)
   if (index >= 0) value.queue.splice(index, 1, snapshot)
   else if (value.queue.length < value.maxCards) {

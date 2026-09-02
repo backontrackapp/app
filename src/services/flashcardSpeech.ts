@@ -10,6 +10,9 @@ import {
   updateFlashcardSpeechWord,
 } from '@/services/spokenText'
 import {
+  flashcardReviewCardBackSpeechRepeatCount,
+  flashcardReviewCardBackSpeechRate,
+  flashcardReviewCardFaceDurationSeconds,
   flashcardReviewFaceCanSpeak,
   flashcardReviewFaceValue,
   normalizeFlashcardBackSpeechRate,
@@ -68,6 +71,10 @@ interface FlashcardSpeechPlugin {
       note: string
       frontAudio: string
       backAudio: string
+      frontSeconds: number
+      backSeconds: number
+      backSpeechRepeatCount: number
+      backSpeechRate: number
     }>
     indefinite: boolean
     timeLimitSeconds: number
@@ -663,6 +670,10 @@ export async function syncBackgroundFlashcardReview(
         note: card.note || '',
         frontAudio: resolveFlashcardAudioPlaybackUrl(card.frontAudio || ''),
         backAudio: resolveFlashcardAudioPlaybackUrl(card.backAudio || ''),
+        frontSeconds: flashcardReviewCardFaceDurationSeconds(session, card, 'front'),
+        backSeconds: flashcardReviewCardFaceDurationSeconds(session, card, 'back'),
+        backSpeechRepeatCount: flashcardReviewCardBackSpeechRepeatCount(session, card),
+        backSpeechRate: flashcardReviewCardBackSpeechRate(session, card),
       })),
       indefinite: session.indefinite,
       timeLimitSeconds: session.timeLimitSeconds || 0,

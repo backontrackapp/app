@@ -20,6 +20,7 @@ import {
   flashcardEjectExcludes,
   flashcardEjectReachesExclusionThreshold,
   flashcardEjectLoadsNext,
+  flashcardReviewQueueCardSnapshot,
   flashcardReviewQueueState,
   normalizeFlashcardBackSpeechRepeatCount,
   normalizeFlashcardBackSpeechRate,
@@ -578,19 +579,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       .filter(session => session.status === 'running' || session.status === 'paused')
       .forEach(session => {
         const queueIndex = session.queue.findIndex(item => item.id === card.id)
-        const snapshot = {
-          id: card.id,
-          front: card.front,
-          back: card.back,
-          ttsFront: card.ttsFront || '',
-          ttsBack: card.ttsBack || '',
-          transliteration: card.transliteration || '',
-          note: card.note,
-          frontAudio: card.frontAudio,
-          backAudio: card.backAudio,
-          image: card.image,
-          tags: [...card.tags],
-        }
+        const snapshot = flashcardReviewQueueCardSnapshot(card, tags.value)
         if (card.archived && queueIndex >= 0) {
           session.queue.splice(queueIndex, 1)
           session.totalCards = session.indefinite
@@ -749,19 +738,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           && !(session.excludedCards || []).includes(id)
           && session.totalCards < session.maxCards
         ) {
-          session.queue.push({
-            id: currentCard.id,
-            front: currentCard.front,
-            back: currentCard.back,
-            ttsFront: currentCard.ttsFront || '',
-            ttsBack: currentCard.ttsBack || '',
-            transliteration: currentCard.transliteration || '',
-            note: currentCard.note,
-            frontAudio: currentCard.frontAudio,
-            backAudio: currentCard.backAudio,
-            image: currentCard.image,
-            tags: [...currentCard.tags],
-          })
+          session.queue.push(flashcardReviewQueueCardSnapshot(currentCard, tags.value))
           session.totalCards = session.indefinite
             ? session.queue.length
             : session.viewedCount + session.ejectedCount + session.queue.length
@@ -2069,20 +2046,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         selection.reserveCardIds.forEach((id) => {
           const card = availableCards.find(item => item.id === id)
           if (!card) return
-          selectedCards.set(id, {
-            id: card.id,
-            front: card.front,
-            back: card.back,
-            ttsFront: card.ttsFront || '',
-            ttsBack: card.ttsBack || '',
-            transliteration: card.transliteration || '',
-            note: card.note,
-            frontAudio: card.frontAudio,
-            backAudio: card.backAudio,
-            image: card.image,
-            tags: [...card.tags],
-            ejectCount: card.ejectCount,
-          })
+          selectedCards.set(id, flashcardReviewQueueCardSnapshot(card, tags.value))
         })
         const eligibleCards = [] as typeof queue
         const eligibleIds = new Set<string>()
@@ -2275,20 +2239,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         const previousLastEjectedAt = card.lastEjectedAt
         card.ejectCount = nextCount
         card.lastEjectedAt = undefined
-        queue.unshift({
-          id: card.id,
-          front: card.front,
-          back: card.back,
-          ttsFront: card.ttsFront || '',
-          ttsBack: card.ttsBack || '',
-          transliteration: card.transliteration || '',
-          note: card.note,
-          frontAudio: card.frontAudio,
-          backAudio: card.backAudio,
-          image: card.image,
-          tags: [...card.tags],
-          ejectCount: nextCount,
-        })
+        queue.unshift(flashcardReviewQueueCardSnapshot(card, tags.value))
         ejectedCount -= 1
         ejectCountChange = {
           reviewSet,

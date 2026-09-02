@@ -41,16 +41,19 @@ import {
   flashcardEjectReachesExclusionThreshold,
   flashcardEjectLoadsNext,
   flashcardReviewFaceSpeech,
+  flashcardReviewCardBackSpeechRepeatCount,
+  flashcardReviewCardBackSpeechRate,
+  flashcardReviewQueueCardSnapshot,
   flashcardReviewSpeechFaceValue,
   flashcardReviewFaceValue,
   flashcardReviewActionFromSwipe,
   intervalFlashcardEjectionOffsetMs,
+  intervalFlashcardCardSideOffsetMs,
   intervalFlashcardNavigationOffsetMs,
   intervalFlashcardPhase,
   intervalFlashcardSideOffsetMs,
   flashcardReviewSettingsAreValid,
   flashcardReviewSettingsSignature,
-  normalizeFlashcardBackSpeechRepeatCount,
   flashcardTagToggleUpdate,
   FLASHCARD_SETTINGS_APPLY_MENU_ITEMS,
   INTERVAL_FLASHCARD_QUICK_TAGS,
@@ -318,8 +321,9 @@ const flashcardPhase = computed(() => session.value?.flashcardReview
   : undefined)
 const flashcardProgressTickCount = computed(() => {
   const review = session.value?.flashcardReview
-  return flashcardPhase.value?.side === 'back' && review?.speechEnabled
-    ? normalizeFlashcardBackSpeechRepeatCount(review.backSpeechRepeatCount)
+  const phase = flashcardPhase.value
+  return phase?.side === 'back' && review
+    ? flashcardReviewCardBackSpeechRepeatCount(review, phase.card)
     : 1
 })
 const flashcardReviewSet = computed(() => flashcardStore.reviewSets
@@ -901,7 +905,9 @@ async function speakCurrentFlashcardSide(allowPaused = false) {
         spokenFlashcardWord.value = word
       }
     })
-    const speechRate = phase.side === 'back' ? review.backSpeechRate : 1
+    const speechRate = phase.side === 'back'
+      ? flashcardReviewCardBackSpeechRate(review, phase.card)
+      : 1
     const wordAnimationLeadMs = phase.side === 'back' ? 100 : 0
     if (audio) await speakFlashcardText(text, language, phase.key, audio, speechRate, undefined, wordAnimationLeadMs)
     else await speakFlashcardText(text, language, phase.key, '', speechRate, undefined, wordAnimationLeadMs)
@@ -2067,20 +2073,7 @@ async function toggleSessionTts() {
 }
 
 function snapshotCard(card: Flashcard) {
-  return {
-    id: card.id,
-    front: card.front,
-    back: card.back,
-    ttsFront: card.ttsFront || '',
-    ttsBack: card.ttsBack || '',
-    transliteration: card.transliteration || '',
-    note: card.note,
-    frontAudio: card.frontAudio,
-    backAudio: card.backAudio,
-    image: card.image,
-    tags: [...card.tags],
-    ejectCount: card.ejectCount,
-  }
+  return flashcardReviewQueueCardSnapshot(card, flashcardStore.tags)
 }
 
 async function openFlashcardEditor(action: 'add' | 'edit') {
@@ -2107,14 +2100,31 @@ async function closeFlashcardEditor(open: boolean) {
   }
 }
 
-async function saveIntervalFlashcard(card: Flashcard) {
+async function saveIntervalFlashcard(card: Flashcard, resetCurrentTiming = false) {
   const review = session.value?.flashcardReview
   if (!review) return
+  const currentPhase = resetCurrentTiming ? flashcardPhase.value : undefined
   const existing = review.cards.findIndex(item => item.id === card.id)
   const cards = [...review.cards]
   if (existing >= 0) cards.splice(existing, 1, snapshotCard(card))
   else if (cardMatchesTags(card, review.tags)) cards.push(snapshotCard(card))
-  await updateFlashcardSnapshot({ ...review, cards })
+  const updatedReview = { ...review, cards }
+  if (currentPhase?.card.id === card.id) {
+    updatedReview.playbackOffsetMs = intervalFlashcardCardSideOffsetMs(
+      updatedReview,
+      flashcardReviewElapsedMs.value,
+      card.id,
+      currentPhase.side,
+      currentPhase.cycle,
+    )
+  }
+  const updated = await updateFlashcardSnapshot(updatedReview)
+  if (resetCurrentTiming && updated) {
+    await stopFlashcardSpeech()
+    if (updated.status === 'running') await syncNativeTimer(updated)
+    await nextTick()
+    await speakCurrentFlashcardSide()
+  }
 }
 
 async function toggleIntervalFlashcardTag(tag: { name: string }) {
@@ -2131,7 +2141,7 @@ async function toggleIntervalFlashcardTag(tag: { name: string }) {
     const updatedCards = await flashcardStore.bulkUpdateCards(update.action, [cardId], update.values)
     const updatedCard = updatedCards.find(card => card.id === cardId)
     if (!updatedCard) throw new Error('The flashcard could not be updated.')
-    await saveIntervalFlashcard(updatedCard)
+    await saveIntervalFlashcard(updatedCard, true)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not update this flashcard tag.'
   } finally {
@@ -2176,20 +2186,7 @@ async function ejectIntervalFlashcard() {
         if (cards.some(card => card.id === replacementId)) continue
         const replacement = intervalFlashcardSource.value.find(card => card.id === replacementId)
         if (!replacement) continue
-        cards.push({
-          id: replacement.id,
-          front: replacement.front,
-          back: replacement.back,
-          ttsFront: replacement.ttsFront || '',
-          ttsBack: replacement.ttsBack || '',
-          transliteration: replacement.transliteration || '',
-          note: replacement.note,
-          frontAudio: replacement.frontAudio,
-          backAudio: replacement.backAudio,
-          image: replacement.image,
-          tags: [...replacement.tags],
-          ejectCount: replacement.ejectCount,
-        })
+        cards.push(flashcardReviewQueueCardSnapshot(replacement, flashcardStore.tags))
       }
     }
     if (

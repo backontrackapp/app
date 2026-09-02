@@ -152,6 +152,10 @@ public class BackgroundIntervalService extends Service {
         final String note;
         final String frontAudio;
         final String backAudio;
+        final long frontDurationMs;
+        final long backDurationMs;
+        final int backSpeechRepeatCount;
+        final float backSpeechRate;
 
         ReviewCard(
             String front,
@@ -161,7 +165,11 @@ public class BackgroundIntervalService extends Service {
             String transliteration,
             String note,
             String frontAudio,
-            String backAudio
+            String backAudio,
+            long frontDurationMs,
+            long backDurationMs,
+            int backSpeechRepeatCount,
+            float backSpeechRate
         ) {
             this.front = front;
             this.back = back;
@@ -171,6 +179,10 @@ public class BackgroundIntervalService extends Service {
             this.note = note;
             this.frontAudio = frontAudio;
             this.backAudio = backAudio;
+            this.frontDurationMs = frontDurationMs;
+            this.backDurationMs = backDurationMs;
+            this.backSpeechRepeatCount = backSpeechRepeatCount;
+            this.backSpeechRate = backSpeechRate;
         }
     }
 
@@ -330,7 +342,11 @@ public class BackgroundIntervalService extends Service {
                 card.optString("transliteration", ""),
                 card.optString("note", ""),
                 card.optString("frontAudio", ""),
-                card.optString("backAudio", "")
+                card.optString("backAudio", ""),
+                Math.max(0L, card.optLong("frontSeconds", 0L) * 1000L),
+                Math.max(0L, card.optLong("backSeconds", 0L) * 1000L),
+                Math.max(0, card.optInt("backSpeechRepeatCount", 0)),
+                (float) Math.max(0.0, card.optDouble("backSpeechRate", 0.0))
             ));
         }
         reviewFrontDurationMs = Math.max(1000L, Math.min(10000L, review.optLong("frontSeconds", 5L) * 1000L));
@@ -486,7 +502,7 @@ public class BackgroundIntervalService extends Service {
             : 0L;
         int backSpeechRepeatIndex = "back".equals(side)
             ? Math.min(
-                reviewBackSpeechRepeatCount - 1,
+                reviewBackSpeechRepeatCount(card) - 1,
                 (int) (elapsedInBack / reviewBackRepeatDurationMs(card))
             )
             : 0;
@@ -504,14 +520,32 @@ public class BackgroundIntervalService extends Service {
 
     private long reviewFaceDurationMs(ReviewCard card, String side) {
         long configuredDurationMs = "back".equals(side)
-            ? reviewBaseBackDurationMs
-            : reviewFrontDurationMs;
-        int repetitions = "back".equals(side) ? reviewBackSpeechRepeatCount : 1;
+            ? reviewBackDurationMs(card)
+            : reviewFrontDurationMs(card);
+        int repetitions = "back".equals(side) ? reviewBackSpeechRepeatCount(card) : 1;
         return repetitions * (configuredDurationMs + reviewSpeechDurationMs(card, side));
     }
 
     private long reviewBackRepeatDurationMs(ReviewCard card) {
-        return reviewBaseBackDurationMs + reviewSpeechDurationMs(card, "back");
+        return reviewBackDurationMs(card) + reviewSpeechDurationMs(card, "back");
+    }
+
+    private long reviewFrontDurationMs(ReviewCard card) {
+        return card.frontDurationMs > 0L ? card.frontDurationMs : reviewFrontDurationMs;
+    }
+
+    private long reviewBackDurationMs(ReviewCard card) {
+        return card.backDurationMs > 0L ? card.backDurationMs : reviewBaseBackDurationMs;
+    }
+
+    private int reviewBackSpeechRepeatCount(ReviewCard card) {
+        return card.backSpeechRepeatCount > 0
+            ? card.backSpeechRepeatCount
+            : reviewBackSpeechRepeatCount;
+    }
+
+    private float reviewBackSpeechRate(ReviewCard card) {
+        return card.backSpeechRate > 0.0f ? card.backSpeechRate : reviewBackSpeechRate;
     }
 
     private long reviewSpeechDurationMs(ReviewCard card, String side) {
@@ -525,7 +559,7 @@ public class BackgroundIntervalService extends Service {
         int unitCount = isChinese
             ? text.codePointCount(0, text.length())
             : text.split("\\s+").length;
-        float speechRate = "back".equals(side) ? reviewBackSpeechRate : 1.0f;
+        float speechRate = "back".equals(side) ? reviewBackSpeechRate(card) : 1.0f;
         double millisecondsPerUnit = (isChinese ? 260d : 340d)
             / Math.max(0.25d, Math.min(1d, speechRate));
         return Math.max(0L, Math.round(unitCount * millisecondsPerUnit));
@@ -594,7 +628,9 @@ public class BackgroundIntervalService extends Service {
         pendingReviewSpeechLanguage = "front".equals(phase.side)
             ? reviewFrontLanguage
             : reviewBackLanguage;
-        pendingReviewSpeechRate = "back".equals(phase.side) ? reviewBackSpeechRate : 1.0f;
+        pendingReviewSpeechRate = "back".equals(phase.side)
+            ? reviewBackSpeechRate(card)
+            : 1.0f;
         pendingReviewRecordingUrl = faceRecording(card, faceValue);
         speakPendingReviewSide();
     }

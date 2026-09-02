@@ -119,6 +119,10 @@ public class BackgroundFlashcardService extends Service {
         final String note;
         final String frontAudio;
         final String backAudio;
+        final long frontDurationMs;
+        final long backDurationMs;
+        final int backSpeechRepeatCount;
+        final float backSpeechRate;
 
         Card(
             String front,
@@ -128,7 +132,11 @@ public class BackgroundFlashcardService extends Service {
             String transliteration,
             String note,
             String frontAudio,
-            String backAudio
+            String backAudio,
+            long frontDurationMs,
+            long backDurationMs,
+            int backSpeechRepeatCount,
+            float backSpeechRate
         ) {
             this.front = front;
             this.back = back;
@@ -138,6 +146,10 @@ public class BackgroundFlashcardService extends Service {
             this.note = note;
             this.frontAudio = frontAudio;
             this.backAudio = backAudio;
+            this.frontDurationMs = frontDurationMs;
+            this.backDurationMs = backDurationMs;
+            this.backSpeechRepeatCount = backSpeechRepeatCount;
+            this.backSpeechRate = backSpeechRate;
         }
     }
 
@@ -222,7 +234,11 @@ public class BackgroundFlashcardService extends Service {
                 encoded.optString("transliteration", ""),
                 encoded.optString("note", ""),
                 encoded.optString("frontAudio", ""),
-                encoded.optString("backAudio", "")
+                encoded.optString("backAudio", ""),
+                Math.max(0L, encoded.optLong("frontSeconds", 0L) * 1000L),
+                Math.max(0L, encoded.optLong("backSeconds", 0L) * 1000L),
+                Math.max(0, encoded.optInt("backSpeechRepeatCount", 0)),
+                (float) Math.max(0.0, encoded.optDouble("backSpeechRate", 0.0))
             ));
         }
         if (cards.isEmpty()) throw new IllegalArgumentException("The review queue is empty.");
@@ -257,6 +273,8 @@ public class BackgroundFlashcardService extends Service {
         baseElapsedMs = Math.max(0L, config.optLong("elapsedMs", 0L));
         configuredElapsedMs = SystemClock.elapsedRealtime();
         lastTickElapsedMs = configuredElapsedMs;
+        cardIndex = 0;
+        applyCardTiming(cards.get(cardIndex));
         long remainingMs = Math.max(1L, config.optLong("remainingMs", 1L));
         deadlineElapsedMs = configuredElapsedMs + remainingMs;
         currentFaceDurationMs = "back".equals(side) ? backDurationMs : frontDurationMs;
@@ -266,7 +284,6 @@ public class BackgroundFlashcardService extends Service {
                 (int) (Math.max(0L, backDurationMs - remainingMs) / baseBackDurationMs)
             )
             : -1;
-        cardIndex = 0;
         completedCards = 0;
         lastNotificationSecond = -1L;
         pendingSpeechText = "";
@@ -299,6 +316,7 @@ public class BackgroundFlashcardService extends Service {
                         return;
                     }
                 }
+                applyCardTiming(cards.get(cardIndex));
                 side = "back".equals(cardSides) || ("both".equals(cardSides) && invertFaces)
                     ? "back"
                     : "front";
@@ -312,6 +330,14 @@ public class BackgroundFlashcardService extends Service {
             }
             persistState();
         }
+    }
+
+    private void applyCardTiming(Card card) {
+        if (card.frontDurationMs > 0L) frontDurationMs = card.frontDurationMs;
+        if (card.backDurationMs > 0L) baseBackDurationMs = card.backDurationMs;
+        if (card.backSpeechRepeatCount > 0) backSpeechRepeatCount = card.backSpeechRepeatCount;
+        if (card.backSpeechRate > 0.0f) backSpeechRate = card.backSpeechRate;
+        backDurationMs = baseBackDurationMs * backSpeechRepeatCount;
     }
 
     private void repeatBackSpeechWhenDue(long now) {

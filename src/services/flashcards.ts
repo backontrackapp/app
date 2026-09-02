@@ -43,6 +43,42 @@ export const INTERVAL_FLASHCARD_QUICK_TAGS = [
   { name: 'hard', color: 'error' },
 ] as const
 
+export type FlashcardReviewTimingFlag = 'easy' | 'hard'
+
+export function flashcardReviewTimingFlag(
+  card: Pick<FlashcardReviewQueueCard, 'tags' | 'tagNames'>,
+): FlashcardReviewTimingFlag | undefined {
+  const names = [...(card.tagNames || []), ...card.tags]
+    .map(name => name.trim().toLocaleLowerCase())
+  if (names.includes('easy')) return 'easy'
+  if (names.includes('hard')) return 'hard'
+  return undefined
+}
+
+export function flashcardReviewQueueCardSnapshot(
+  card: Flashcard,
+  availableTags: readonly FlashcardTag[] = card.tagDetails || [],
+): FlashcardReviewQueueCard {
+  const tagNames = availableTags
+    .filter(tag => card.tags.includes(tag.id))
+    .map(tag => tag.name)
+  return {
+    id: card.id,
+    front: card.front,
+    back: card.back,
+    ttsFront: card.ttsFront || '',
+    ttsBack: card.ttsBack || '',
+    transliteration: card.transliteration || '',
+    note: card.note,
+    frontAudio: card.frontAudio,
+    backAudio: card.backAudio,
+    image: card.image,
+    tags: [...card.tags],
+    ...(tagNames.length ? { tagNames } : {}),
+    ejectCount: card.ejectCount,
+  }
+}
+
 export function flashcardTagToggleUpdate(
   currentTagIds: readonly string[],
   selectedTag: FlashcardTag,
@@ -704,20 +740,7 @@ export function flashcardReviewQueueState(
     reviewSet.sortDirection,
     random,
   )
-    .map(card => ({
-      id: card.id,
-      front: card.front,
-      back: card.back,
-      ttsFront: card.ttsFront || '',
-      ttsBack: card.ttsBack || '',
-      transliteration: card.transliteration || '',
-      note: card.note,
-      frontAudio: card.frontAudio,
-      backAudio: card.backAudio,
-      image: card.image,
-      tags: [...card.tags],
-      ejectCount: card.ejectCount,
-    }))
+    .map(card => flashcardReviewQueueCardSnapshot(card))
   const queue = candidates.slice(0, reviewSet.maxCards)
   return {
     queue,
@@ -870,6 +893,40 @@ export function flashcardBackDurationMs(backSeconds: number, repeatCount: number
   return durationMs * normalizeFlashcardBackSpeechRepeatCount(repeatCount)
 }
 
+export function flashcardReviewCardBackSpeechRepeatCount(
+  review: Pick<FlashcardReviewTiming, 'backSpeechRepeatCount'>,
+  card: Pick<FlashcardReviewQueueCard, 'tags' | 'tagNames'>,
+) {
+  const configured = normalizeFlashcardBackSpeechRepeatCount(review.backSpeechRepeatCount)
+  const flag = flashcardReviewTimingFlag(card)
+  if (flag === 'easy') return 1
+  if (flag === 'hard') return configured + 1
+  return configured
+}
+
+export function flashcardReviewCardFaceDurationSeconds(
+  review: Pick<FlashcardReviewTiming, 'frontSeconds' | 'backSeconds'>,
+  card: Pick<FlashcardReviewQueueCard, 'tags' | 'tagNames'>,
+  side: FlashcardReviewSide,
+) {
+  const flag = flashcardReviewTimingFlag(card)
+  if (flag === 'easy') return 1
+  const configured = normalizeFlashcardFaceDurationSeconds(
+    side === 'front' ? review.frontSeconds : review.backSeconds,
+  )
+  return flag === 'hard' && side === 'back' ? configured + 3 : configured
+}
+
+export function flashcardReviewCardBackSpeechRate(
+  review: Pick<FlashcardReviewTiming, 'backSpeechRate'>,
+  card: Pick<FlashcardReviewQueueCard, 'tags' | 'tagNames'>,
+) {
+  const configured = normalizeFlashcardBackSpeechRate(review.backSpeechRate)
+  return flashcardReviewTimingFlag(card) === 'hard'
+    ? Math.max(MIN_FLASHCARD_BACK_SPEECH_RATE, configured - 0.5)
+    : configured
+}
+
 type FlashcardReviewTiming = Pick<
   FlashcardReviewSession,
   | 'frontSeconds'
@@ -898,7 +955,7 @@ export function flashcardReviewFaceSpeechDurationMs(
   if (!content || !language) return 0
   const isChinese = language.toLocaleLowerCase().startsWith('zh')
   const unitCount = isChinese ? [...content].length : content.split(/\s+/).length
-  const speechRate = side === 'back' ? normalizeFlashcardBackSpeechRate(review.backSpeechRate) : 1
+  const speechRate = side === 'back' ? flashcardReviewCardBackSpeechRate(review, card) : 1
   return Math.round((isChinese ? 260 : 340) / speechRate * unitCount)
 }
 
@@ -907,11 +964,13 @@ export function flashcardReviewFaceDurationMs(
   card: FlashcardReviewQueueCard,
   side: FlashcardReviewSide,
 ) {
-  const configuredDurationMs = normalizeFlashcardFaceDurationSeconds(
-    side === 'front' ? review.frontSeconds : review.backSeconds,
+  const configuredDurationMs = flashcardReviewCardFaceDurationSeconds(
+    review,
+    card,
+    side,
   ) * 1000
   const repetitions = side === 'back'
-    ? normalizeFlashcardBackSpeechRepeatCount(review.backSpeechRepeatCount)
+    ? flashcardReviewCardBackSpeechRepeatCount(review, card)
     : 1
   return repetitions * (
     configuredDurationMs + flashcardReviewFaceSpeechDurationMs(review, card, side)
@@ -1040,6 +1099,25 @@ export function intervalFlashcardSideOffsetMs(
     - elapsedMs
 }
 
+export function intervalFlashcardCardSideOffsetMs(
+  review: IntervalFlashcardReviewSnapshot,
+  elapsedMs: number,
+  cardId: string,
+  side: FlashcardReviewSide,
+  cycle = 0,
+) {
+  const cardIndex = review.cards.findIndex(card => card.id === cardId)
+  if (cardIndex < 0) return review.playbackOffsetMs || 0
+  const firstSide = firstFlashcardReviewSide(review.cardSides, review.invertFaces)
+  const sideOffsetMs = side === firstSide
+    ? 0
+    : flashcardReviewFaceDurationMs(review, review.cards[cardIndex]!, firstSide)
+  return Math.max(0, cycle) * intervalFlashcardCycleDurationMs(review)
+    + intervalFlashcardCardStartMs(review, cardIndex)
+    + sideOffsetMs
+    - elapsedMs
+}
+
 export function intervalFlashcardPhase(
   review: IntervalFlashcardReviewSnapshot,
   elapsedMs: number,
@@ -1065,12 +1143,16 @@ export function intervalFlashcardPhase(
     : otherFlashcardReviewSide(firstSide)
   const sideElapsedMs = side === firstSide ? elapsedInCycleMs : elapsedInCycleMs - firstSideDurationMs
   const sideDurationMs = flashcardReviewFaceDurationMs(review, card, side)
-  const configuredBackDurationMs = normalizeFlashcardFaceDurationSeconds(review.backSeconds) * 1000
+  const configuredBackDurationMs = flashcardReviewCardFaceDurationSeconds(
+    review,
+    card,
+    'back',
+  ) * 1000
   const speechDurationMs = flashcardReviewFaceSpeechDurationMs(review, card, 'back')
   const backRepeatDurationMs = configuredBackDurationMs + speechDurationMs
   const backSpeechRepeatIndex = side === 'back'
     ? Math.min(
-      normalizeFlashcardBackSpeechRepeatCount(review.backSpeechRepeatCount) - 1,
+      flashcardReviewCardBackSpeechRepeatCount(review, card) - 1,
         Math.floor(sideElapsedMs / backRepeatDurationMs),
       )
     : 0

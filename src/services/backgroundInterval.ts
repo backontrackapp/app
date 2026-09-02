@@ -5,6 +5,11 @@ import {
 } from '@/services/flashcardSpeech'
 import { intervalTypeSound } from '@/services/intervalTypes'
 import {
+  flashcardReviewCardBackSpeechRepeatCount,
+  flashcardReviewCardBackSpeechRate,
+  flashcardReviewCardFaceDurationSeconds,
+} from '@/services/flashcards'
+import {
   intervalFlashcardReviewElapsedMs,
   intervalStepCount,
   intervalStepDurationSeconds,
@@ -46,6 +51,10 @@ interface BackgroundIntervalPlugin {
         note: string
         frontAudio: string
         backAudio: string
+        frontSeconds: number
+        backSeconds: number
+        backSpeechRepeatCount: number
+        backSpeechRate: number
       }>
       cardSides: 'both' | 'front' | 'back'
       invertFaces: boolean
@@ -135,6 +144,24 @@ export async function syncBackgroundInterval(session: IntervalSession) {
                 note: card.note || '',
                 frontAudio: resolveFlashcardAudioPlaybackUrl(card.frontAudio || ''),
                 backAudio: resolveFlashcardAudioPlaybackUrl(card.backAudio || ''),
+                frontSeconds: flashcardReviewCardFaceDurationSeconds(
+                  session.flashcardReview!,
+                  card,
+                  'front',
+                ),
+                backSeconds: flashcardReviewCardFaceDurationSeconds(
+                  session.flashcardReview!,
+                  card,
+                  'back',
+                ),
+                backSpeechRepeatCount: flashcardReviewCardBackSpeechRepeatCount(
+                  session.flashcardReview!,
+                  card,
+                ),
+                backSpeechRate: flashcardReviewCardBackSpeechRate(
+                  session.flashcardReview!,
+                  card,
+                ),
               })),
               cardSides: 'both',
               invertFaces: false,
