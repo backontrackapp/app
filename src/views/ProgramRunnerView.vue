@@ -84,7 +84,28 @@ const workoutIntervalReturnTo = computed(() => router.resolve({
     resume: '1',
   },
 }).fullPath)
+const workoutIntervalAdvanceTo = computed(() => router.resolve({
+  name: 'program-runner',
+  params: { taskId: taskId.value },
+  query: {
+    date: dateKey.value,
+    step: stepId.value,
+    ...(current.value ? { focus: current.value.id, intervalCompleted: current.value.id } : {}),
+    advance: '1',
+    resume: '1',
+  },
+}).fullPath)
 const completedCount = computed(() => requirements.value.filter(item => item.complete).length)
+const runnerAdvanceTo = computed(() => router.resolve({
+  name: 'program-runner',
+  params: { taskId: taskId.value },
+  query: {
+    date: dateKey.value,
+    step: stepId.value,
+    advance: '1',
+    resume: '1',
+  },
+}).fullPath)
 const startSummary = computed(() => {
   const total = requirements.value.length
   return `${total} ${total === 1 ? 'requirement' : 'requirements'} · ${completedCount.value} complete`
@@ -252,6 +273,10 @@ async function start() {
     screen.value = 'finished'
     return
   }
+  if (route.query.advance === '1') {
+    await openRequirement(requirements.value[index]!.id)
+    return
+  }
   screen.value = 'list'
 }
 
@@ -334,6 +359,9 @@ async function runInterval() {
       returnTo: current.value?.type === 'workout'
         ? workoutIntervalReturnTo.value
         : runnerReturnTo.value,
+      doneTo: current.value?.type === 'workout'
+        ? workoutIntervalAdvanceTo.value
+        : runnerAdvanceTo.value,
     },
   })
 }
@@ -350,6 +378,7 @@ async function runReviewSet() {
       date: progress.value.scheduledDate,
       from: 'program',
       returnTo: runnerReturnTo.value,
+      doneTo: runnerAdvanceTo.value,
     },
   })
 }

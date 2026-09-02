@@ -316,6 +316,11 @@ const accuracy = computed(() => session.value ? sessionAccuracy(session.value) :
 const exitDestination = computed(() => typeof route.query.returnTo === 'string'
   ? route.query.returnTo
   : route.query.from === 'tasks' ? '/tasks' : '/flashcards')
+const completionDestination = computed(() => (
+  session.value?.status === 'completed' && typeof route.query.doneTo === 'string'
+    ? route.query.doneTo
+    : exitDestination.value
+))
 const startTaskName = computed(() => {
   const taskId = session.value?.task
   return taskId ? taskStore.tasks.find(task => task.id === taskId)?.name : undefined
@@ -849,6 +854,7 @@ async function startPreviewReview(replaceActive = false) {
         query: {
           ...(route.query.from ? { from: route.query.from } : {}),
           ...(typeof route.query.returnTo === 'string' ? { returnTo: route.query.returnTo } : {}),
+          ...(typeof route.query.doneTo === 'string' ? { doneTo: route.query.doneTo } : {}),
         },
       })
     } finally {
@@ -1743,7 +1749,7 @@ async function leaveRunner() {
               <div v-if="accuracy !== undefined"><strong>{{ accuracy }}%</strong><span>Accuracy</span></div>
               <div><strong>{{ session.ejectedCount }}</strong><span>Ejected</span></div>
             </div>
-            <v-btn class="completion-panel__done" size="x-large" color="secondary" @click="router.replace(exitDestination)">Done</v-btn>
+            <v-btn class="completion-panel__done" size="x-large" color="secondary" @click="router.replace(completionDestination)">Done</v-btn>
           </section>
 
           <section v-else-if="currentCard" key="runner" class="runner-body runner-screen">

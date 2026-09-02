@@ -481,9 +481,16 @@ const playActionLabel = computed(() => hasStarted.value ? 'Resume' : 'Start')
 const returnTo = computed(() => typeof route.query.returnTo === 'string'
   ? route.query.returnTo
   : route.query.from === 'tasks' ? '/tasks' : '/intervals')
+const doneTo = computed(() => typeof route.query.doneTo === 'string'
+  ? route.query.doneTo
+  : returnTo.value)
+const completionDestination = computed(() => session.value?.status === 'completed'
+  ? doneTo.value
+  : returnTo.value)
 const runnerRouteQuery = computed(() => ({
   ...(route.query.from ? { from: route.query.from } : {}),
   ...(typeof route.query.returnTo === 'string' ? { returnTo: route.query.returnTo } : {}),
+  ...(typeof route.query.doneTo === 'string' ? { doneTo: route.query.doneTo } : {}),
 }))
 const originTaskId = computed(() => typeof route.query.task === 'string' ? route.query.task : '')
 const startTaskName = computed(() => {
@@ -2522,7 +2529,7 @@ async function runAgain() {
               color="secondary"
               size="x-large"
               prepend-icon="mdi-check-bold"
-              :to="returnTo"
+              :to="completionDestination"
             >
               Done
             </v-btn>
