@@ -79,6 +79,7 @@ const unitOptions = computed(() => [
   { title: 'Calories (kcal)', value: 'kcal' },
   { title: 'Percent (%)', value: '%' },
   { title: 'Minutes', value: 'minutes' },
+  { title: 'Hours', value: 'hours' },
   ...(draft.kind === 'rating' ? [{
     title: `Out of ${draft.scaleMin}–${draft.scaleMax}`,
     value: scaleUnitValue.value,
