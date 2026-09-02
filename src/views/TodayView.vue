@@ -38,6 +38,7 @@ import {
   taskScheduledTime,
   tasksWithoutProgress,
 } from '@/services/taskScheduleLayout'
+import type { ScheduledTaskProgress } from '@/services/taskScheduleLayout'
 import { taskIdsFromProgressDrag, taskProgressDragKey } from '@/services/taskReordering'
 import { taskDisplayIcon, taskSupportsImageLogging, taskSupportsQuickLog, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import { useIntervalStore } from '@/stores/intervals'
@@ -855,8 +856,15 @@ function taskScheduleStatus(progress: TaskProgress) {
 }
 
 function taskTimeLabel(progress: TaskProgress) {
+  if ('scheduleTime' in progress) {
+    return formatTaskScheduleTime((progress as ScheduledTaskProgress).scheduleTime)
+  }
   const time = taskScheduledTime(progress.task)
   return time ? formatTaskScheduleTime(time) : undefined
+}
+
+function scheduledProgressKey(progress: ScheduledTaskProgress) {
+  return `${visibilityKey(progress)}:${progress.scheduleTime}`
 }
 
 function notScheduledSubtitle(progress: TaskProgress) {
@@ -1707,7 +1715,7 @@ async function saveTaskLogEntry() {
               <div class="task-stack task-hour-stack">
                 <div
                   v-for="item in group.tasks"
-                  :key="visibilityKey(item)"
+                  :key="scheduledProgressKey(item)"
                   :data-task-progress-key="visibilityKey(item)"
                   class="task-masonry-item"
                 >

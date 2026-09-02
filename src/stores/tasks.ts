@@ -56,6 +56,15 @@ const asWorkoutSetsRecord = (value: unknown): Record<string, ExerciseSet[]> => (
 )
 
 function mapTask(record: Record<string, any>): Task {
+  const scheduledTimes = asStringArray(record.scheduled_times)
+  const legacyScheduledTime = typeof record.scheduled_time === 'string'
+    ? record.scheduled_time
+    : ''
+  const effectiveScheduledTimes = scheduledTimes.length
+    ? scheduledTimes
+    : legacyScheduledTime
+      ? [legacyScheduledTime]
+      : []
   return {
     id: record.id,
     name: record.name,
@@ -68,7 +77,8 @@ function mapTask(record: Record<string, any>): Task {
     active: record.active,
     archived: record.archived === true,
     scheduleMode: record.schedule_mode === 'time_based' ? 'time_based' : 'all_day',
-    scheduledTime: record.schedule_mode === 'time_based' ? record.scheduled_time || undefined : undefined,
+    scheduledTime: record.schedule_mode === 'time_based' ? effectiveScheduledTimes[0] : undefined,
+    scheduledTimes: record.schedule_mode === 'time_based' ? effectiveScheduledTimes : [],
     startDate: record.start_date,
     endDate: record.end_date || undefined,
     recurrenceType: record.recurrence_type,
@@ -1636,6 +1646,10 @@ export const useTaskStore = defineStore('tasks', () => {
           highest,
           task.quickLogSortOrder ?? task.sortOrder,
         ), -1) + 1
+    const scheduledTimes = draft.scheduleMode === 'time_based'
+      ? [...new Set(draft.scheduledTimes?.length ? draft.scheduledTimes : [draft.scheduledTime || ''])]
+          .filter(Boolean)
+      : []
     const payload = {
       owner: api.authStore.record!.id,
       name: draft.name,
@@ -1648,7 +1662,8 @@ export const useTaskStore = defineStore('tasks', () => {
       active: draft.active,
       archived: draft.archived === true,
       schedule_mode: draft.scheduleMode === 'time_based' ? 'time_based' : 'all_day',
-      scheduled_time: draft.scheduleMode === 'time_based' ? draft.scheduledTime || '' : '',
+      scheduled_time: scheduledTimes[0] || '',
+      scheduled_times: scheduledTimes,
       start_date: draft.startDate,
       end_date: draft.endDate || '',
       recurrence_type: draft.recurrenceType,

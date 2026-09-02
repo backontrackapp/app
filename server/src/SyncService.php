@@ -2018,11 +2018,24 @@ final class SyncService
         if ($resource === 'tasks') {
             $scheduleMode = (string) ($values['schedule_mode'] ?? 'all_day');
             $scheduledTime = (string) ($values['scheduled_time'] ?? '');
-            if ($scheduleMode === 'time_based' && $scheduledTime === '') {
-                throw new ApiException(422, 'Choose a time for a time-based task.');
+            $scheduledTimes = $values['scheduled_times'] ?? [];
+            $scheduledTimes = is_array($scheduledTimes) ? $scheduledTimes : [];
+            if ($scheduledTimes === [] && $scheduledTime !== '') {
+                $scheduledTimes = [$scheduledTime];
             }
-            if ($scheduleMode === 'all_day' && $scheduledTime !== '') {
-                throw new ApiException(422, 'All-day tasks cannot have a scheduled time.');
+            if ($scheduleMode === 'time_based' && $scheduledTimes === []) {
+                throw new ApiException(422, 'Choose at least one time for a time-based task.');
+            }
+            if ($scheduleMode === 'all_day' && ($scheduledTime !== '' || $scheduledTimes !== [])) {
+                throw new ApiException(422, 'All-day tasks cannot have scheduled times.');
+            }
+            foreach ($scheduledTimes as $time) {
+                if (!is_string($time) || preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $time) !== 1) {
+                    throw new ApiException(422, 'Scheduled times must use HH:MM.');
+                }
+            }
+            if (count($scheduledTimes) !== count(array_unique($scheduledTimes))) {
+                throw new ApiException(422, 'Each task instance must use a different time.');
             }
             $reminderTimes = $values['reminder_times'] ?? [];
             foreach ($reminderTimes as $time) {

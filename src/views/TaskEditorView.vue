@@ -187,6 +187,7 @@ const draft = reactive<TaskDraft>({
   archived: false,
   scheduleMode: 'time_based',
   scheduledTime: '09:00',
+  scheduledTimes: ['09:00'],
   startDate: format(new Date(), 'yyyy-MM-dd'),
   endDate: undefined,
   recurrenceType: 'daily',
@@ -222,9 +223,41 @@ async function markFormReady() {
   original.value = signature.value
   ready.value = true
 }
-const scheduledTimeModel = computed({
-  get: () => draft.scheduledTime || '09:00',
-  set: (value: number | string) => { draft.scheduledTime = String(value) },
+const scheduledTimes = computed(() => draft.scheduledTimes?.length
+  ? draft.scheduledTimes
+  : [draft.scheduledTime || '09:00'])
+
+function updateScheduledTime(index: number, value: number | string) {
+  const times = [...scheduledTimes.value]
+  times[index] = String(value)
+  draft.scheduledTimes = times
+  draft.scheduledTime = times[0]
+}
+
+function addScheduledTime() {
+  const times = [...scheduledTimes.value]
+  const [hour = 9, minute = 0] = (times.at(-1) || '09:00').split(':').map(Number)
+  let nextMinutes = (hour * 60 + minute + 60) % (24 * 60)
+  let nextTime = `${String(Math.floor(nextMinutes / 60)).padStart(2, '0')}:${String(nextMinutes % 60).padStart(2, '0')}`
+  while (times.includes(nextTime) && times.length < 24 * 60) {
+    nextMinutes = (nextMinutes + 1) % (24 * 60)
+    nextTime = `${String(Math.floor(nextMinutes / 60)).padStart(2, '0')}:${String(nextMinutes % 60).padStart(2, '0')}`
+  }
+  draft.scheduledTimes = [...times, nextTime]
+}
+
+function removeScheduledTime(index: number) {
+  if (scheduledTimes.value.length <= 1) return
+  const times = scheduledTimes.value.filter((_, timeIndex) => timeIndex !== index)
+  draft.scheduledTimes = times
+  draft.scheduledTime = times[0]
+}
+
+watch(() => draft.scheduleMode, (mode) => {
+  if (mode !== 'time_based' || draft.scheduledTimes?.length) return
+  const time = draft.scheduledTime || '09:00'
+  draft.scheduledTime = time
+  draft.scheduledTimes = [time]
 })
 
 const showTarget = computed(() =>
@@ -499,6 +532,7 @@ onMounted(async () => {
       name: `${task.name} copy`,
       archived: false,
       weekdays: [...task.weekdays],
+      scheduledTimes: [...(task.scheduledTimes ?? (task.scheduledTime ? [task.scheduledTime] : []))],
       trackingTrackers: [...(task.trackingTrackers ?? [])],
       reminderTimes: [...task.reminderTimes],
       sortOrder: store.tasks.reduce((highest, item) => Math.max(highest, item.sortOrder), -1) + 1,
@@ -521,6 +555,7 @@ onMounted(async () => {
   }
   Object.assign(draft, {
     ...task,
+    scheduledTimes: [...(task.scheduledTimes ?? (task.scheduledTime ? [task.scheduledTime] : []))],
     steps: taskSteps,
   })
   if (task.type === 'program') syncProgramSequence()
@@ -692,8 +727,12 @@ async function save() {
     error.value = 'Choose a different time for each notification.'
     return
   }
-  if (draft.scheduleMode === 'time_based' && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(draft.scheduledTime || '')) {
-    error.value = 'Choose a valid time for this task.'
+  if (draft.scheduleMode === 'time_based' && scheduledTimes.value.some(time => !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time))) {
+    error.value = 'Choose a valid time for each task instance.'
+    return
+  }
+  if (draft.scheduleMode === 'time_based' && new Set(scheduledTimes.value).size !== scheduledTimes.value.length) {
+    error.value = 'Choose a different time for each task instance.'
     return
   }
   const emptyCompletionStep = draft.type === 'program'
@@ -1048,12 +1087,44 @@ async function deleteTaskPermanently() {
           <v-expand-transition>
             <div v-if="draft.scheduleMode === 'time_based'">
               <div class="scheduled-time-setting pt-4">
-                <label class="field-label">Scheduled time <span class="text-error">*</span></label>
-                <TimerWheelPicker
-                  v-model="scheduledTimeModel"
-                  mode="time"
-                  class="mt-2"
-                />
+                <div
+                  v-for="(time, index) in scheduledTimes"
+                  :key="index"
+                  class="scheduled-time-instance"
+                  :class="index ? 'mt-4' : undefined"
+                >
+                  <div class="scheduled-time-instance__header">
+                    <label class="field-label">
+                      Scheduled time{{ scheduledTimes.length > 1 ? ` ${index + 1}` : '' }}
+                      <span class="text-error">*</span>
+                    </label>
+                    <v-btn
+                      v-if="scheduledTimes.length > 1"
+                      icon="mdi-delete-outline"
+                      variant="text"
+                      color="error"
+                      size="small"
+                      :aria-label="`Remove scheduled time ${index + 1}`"
+                      @click="removeScheduledTime(index)"
+                    />
+                  </div>
+                  <TimerWheelPicker
+                    :model-value="time"
+                    mode="time"
+                    class="mt-2"
+                    @update:model-value="updateScheduledTime(index, $event)"
+                  />
+                </div>
+                <v-btn
+                  block
+                  variant="tonal"
+                  color="secondary"
+                  prepend-icon="mdi-plus"
+                  class="mt-4"
+                  @click="addScheduledTime"
+                >
+                  Add another time
+                </v-btn>
               </div>
             </div>
           </v-expand-transition>
@@ -1064,7 +1135,7 @@ async function deleteTaskPermanently() {
         v-model:enabled="draft.reminderEnabled"
         v-model:times="draft.reminderTimes"
         :available="reminderAvailable"
-        :default-time="draft.scheduleMode === 'time_based' ? draft.scheduledTime : undefined"
+        :default-time="draft.scheduleMode === 'time_based' ? scheduledTimes[0] : undefined"
       />
 
       <v-card v-if="draft.type !== 'program'" class="surface-card field-stack pa-5 mb-4">
@@ -1493,6 +1564,7 @@ async function deleteTaskPermanently() {
   opacity: 1;
 }
 .scheduled-time-setting { min-width: 0; }
+.scheduled-time-instance__header { display: flex; min-height: 2.75rem; align-items: center; justify-content: space-between; gap: 1rem; }
 .date-grid, .target-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .date-range-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
 .step-source-note { display: flex; align-items: flex-start; gap: .65rem; padding: .8rem; border-radius: 16px; background: rgb(var(--v-theme-surface-variant)); }

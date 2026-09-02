@@ -36,6 +36,7 @@ export interface Task {
   archived?: boolean
   scheduleMode?: TaskScheduleMode
   scheduledTime?: string
+  scheduledTimes?: string[]
   startDate: string
   endDate?: string
   recurrenceType: RecurrenceType
@@ -638,6 +639,7 @@ export interface FlashcardReviewQueueCard {
   backAudio?: string
   image: string
   tags: string[]
+  tagNames?: string[]
   ejectCount: number
 }
 

@@ -124,6 +124,7 @@ final class Schema
                     'archived' => self::boolean(),
                     'schedule_mode' => self::choice(['all_day', 'time_based']),
                     'scheduled_time' => self::timeKey(false, true),
+                    'scheduled_times' => self::jsonArray(1000),
                     'start_date' => self::dateKey(true),
                     'end_date' => self::dateKey(false, true),
                     'recurrence_type' => self::choice(['daily', 'weekdays', 'interval_weeks'], true),

@@ -190,6 +190,7 @@ CREATE TABLE tasks (
     archived BOOLEAN NOT NULL DEFAULT FALSE,
     schedule_mode TEXT NOT NULL DEFAULT 'all_day',
     scheduled_time TEXT NOT NULL DEFAULT '',
+    scheduled_times JSON NOT NULL DEFAULT '[]',
     start_date TEXT NOT NULL DEFAULT '',
     end_date TEXT NOT NULL DEFAULT '',
     recurrence_type TEXT NOT NULL DEFAULT '',

@@ -10,6 +10,8 @@ Swiping left across the Tasks view advances to the next date, while swiping righ
 
 The task editor's archive action offers a choice between archiving and permanent deletion. Archiving removes a task from its schedule and reminders while preserving its settings, entries, and history. Archived tasks appear in the collapsible Archive section below Not scheduled, where selecting one opens the editor so it can be restored. Permanent deletion removes the task, its program steps, occurrences, entries, and image logs; saved interval and Review sessions remain in history without task attribution.
 
+Time-based tasks can have more than one scheduled time. The task editor adds another time wheel for each additional instance and allows any extra instance to be removed while keeping at least one time. On the Tasks timeline, every configured time displays the same daily task and shares its completion state, logs, and actions with the other instances.
+
 Archived tasks remain visible in recent task history without an archive tag.
 
 The task action menu includes **Duplicate**, which opens a new task prefilled with the original task's settings. The copy receives an independent name, ordering, and program steps, and is not created until the editor is saved.

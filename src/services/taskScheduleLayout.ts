@@ -3,7 +3,11 @@ import type { Task, TaskProgress } from '@/types/domain'
 export interface TaskHourGroup {
   hour: string
   label: string
-  tasks: TaskProgress[]
+  tasks: ScheduledTaskProgress[]
+}
+
+export interface ScheduledTaskProgress extends TaskProgress {
+  scheduleTime: string
 }
 
 export interface TaskScheduleLayout {
@@ -19,10 +23,17 @@ function progressOrder(left: TaskProgress, right: TaskProgress) {
 }
 
 export function taskScheduledTime(task: Task) {
-  if (task.scheduleMode !== 'time_based' || !task.scheduledTime || !TIME_PATTERN.test(task.scheduledTime)) {
-    return undefined
-  }
-  return task.scheduledTime
+  return taskScheduledTimes(task)[0]
+}
+
+export function taskScheduledTimes(task: Task) {
+  if (task.scheduleMode !== 'time_based') return []
+  const times = task.scheduledTimes?.length
+    ? task.scheduledTimes
+    : task.scheduledTime
+      ? [task.scheduledTime]
+      : []
+  return [...new Set(times.filter(time => TIME_PATTERN.test(time)))].sort()
 }
 
 export function formatTaskScheduleTime(time: string, includeMinutes = true) {
@@ -36,16 +47,18 @@ export function formatTaskScheduleTime(time: string, includeMinutes = true) {
 
 export function groupTaskProgressBySchedule(progressItems: TaskProgress[]): TaskScheduleLayout {
   const allDay: TaskProgress[] = []
-  const timed = new Map<string, TaskProgress[]>()
+  const timed = new Map<string, ScheduledTaskProgress[]>()
 
   for (const progress of progressItems) {
-    const time = taskScheduledTime(progress.task)
-    if (!time) {
+    const times = taskScheduledTimes(progress.task)
+    if (!times.length) {
       allDay.push(progress)
       continue
     }
-    const hour = time.slice(0, 2)
-    timed.set(hour, [...(timed.get(hour) ?? []), progress])
+    for (const time of times) {
+      const hour = time.slice(0, 2)
+      timed.set(hour, [...(timed.get(hour) ?? []), { ...progress, scheduleTime: time }])
+    }
   }
 
   allDay.sort(progressOrder)
@@ -57,7 +70,7 @@ export function groupTaskProgressBySchedule(progressItems: TaskProgress[]): Task
         hour,
         label: formatTaskScheduleTime(`${hour}:00`, false),
         tasks: tasks.sort((left, right) => (
-          taskScheduledTime(left.task)!.localeCompare(taskScheduledTime(right.task)!)
+          left.scheduleTime.localeCompare(right.scheduleTime)
           || progressOrder(left, right)
         )),
       })),
