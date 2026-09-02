@@ -486,6 +486,7 @@ onMounted(async () => {
           ? route.query.completion
           : undefined,
         taskDate: typeof route.query.date === 'string' ? route.query.date : undefined,
+        taskScheduledTime: typeof route.query.time === 'string' ? route.query.time : undefined,
       }
       initializeLocalState(previewSession.value)
     } else {
@@ -846,6 +847,7 @@ async function startPreviewReview(replaceActive = false) {
         ? { programStepCompletion: preview.programStepCompletion }
         : {}),
       taskDate: preview.taskDate,
+      taskScheduledTime: preview.taskScheduledTime,
     })
     skipLeavePause = true
     try {

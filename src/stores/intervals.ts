@@ -122,6 +122,7 @@ function mapSession(record: Record<string, any>): IntervalSession {
     programStep: record.program_step || undefined,
     programStepCompletion: record.program_step_completion || undefined,
     taskDate: record.task_date || '',
+    taskScheduledTime: record.task_scheduled_time || undefined,
     source: record.source,
     status: record.status,
     name: record.snapshot_name,
@@ -381,6 +382,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     programStep?: string
     programStepCompletion?: string
     taskDate?: string
+    taskScheduledTime?: string
     flashcardReview?: IntervalFlashcardReviewSnapshot
     presentation?: SessionPresentation
   }) {
@@ -418,6 +420,7 @@ export const useIntervalStore = defineStore('intervals', () => {
       program_step: input.programStep || '',
       program_step_completion: input.programStepCompletion || '',
       task_date: input.task ? input.taskDate || '' : '',
+      task_scheduled_time: input.task ? input.taskScheduledTime || '' : '',
       source: input.source,
       status: 'running',
       snapshot_name: input.name,
@@ -652,6 +655,7 @@ export const useIntervalStore = defineStore('intervals', () => {
         programStepId: mapped.programStep,
         programStepCompletionId: mapped.programStepCompletion,
         taskDate: mapped.taskDate,
+        taskScheduledTime: mapped.taskScheduledTime,
         startedAt: mapped.startedAt,
         status: mapped.status === 'completed' ? 'completed' : 'ended',
         elapsedSeconds: mapped.elapsedSeconds,
@@ -663,6 +667,7 @@ export const useIntervalStore = defineStore('intervals', () => {
           sourceType: 'flashcards',
           sourceId: reviewSetId,
           taskDate: mapped.taskDate,
+          taskScheduledTime: mapped.taskScheduledTime,
           startedAt: mapped.startedAt,
           status: mapped.status === 'completed' ? 'completed' : 'ended',
           elapsedSeconds: reviewElapsedSeconds,
@@ -681,6 +686,8 @@ export const useIntervalStore = defineStore('intervals', () => {
         mapped.taskDate,
         mapped.programStep || '',
         mapped.programStepCompletion || '',
+        false,
+        mapped.taskScheduledTime || '',
       )
     }
     localStorage.removeItem(RECOVERY_KEY)

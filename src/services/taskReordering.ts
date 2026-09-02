@@ -2,7 +2,8 @@ import type { LongPressDragResult } from '@/directives/longPressDrag'
 import type { TaskProgress } from '@/types/domain'
 
 export function taskProgressDragKey(progress: TaskProgress) {
-  return `${progress.task.id}:${progress.programStep?.id || ''}`
+  const base = `${progress.task.id}:${progress.programStep?.id || ''}`
+  return progress.scheduledTime ? `${base}:${progress.scheduledTime}` : base
 }
 
 export function taskIdsFromProgressDrag(

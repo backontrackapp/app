@@ -50,14 +50,20 @@ export function groupTaskProgressBySchedule(progressItems: TaskProgress[]): Task
   const timed = new Map<string, ScheduledTaskProgress[]>()
 
   for (const progress of progressItems) {
-    const times = taskScheduledTimes(progress.task)
+    const times = progress.scheduledTime
+      ? [progress.scheduledTime]
+      : taskScheduledTimes(progress.task)
     if (!times.length) {
       allDay.push(progress)
       continue
     }
     for (const time of times) {
       const hour = time.slice(0, 2)
-      timed.set(hour, [...(timed.get(hour) ?? []), { ...progress, scheduleTime: time }])
+      timed.set(hour, [...(timed.get(hour) ?? []), {
+        ...progress,
+        scheduledTime: time,
+        scheduleTime: time,
+      }])
     }
   }
 

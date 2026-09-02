@@ -247,6 +247,7 @@ function mapSession(record: Record<string, any>): FlashcardReviewSession {
     programStep: record.program_step || undefined,
     programStepCompletion: record.program_step_completion || undefined,
     taskDate: record.task_date || undefined,
+    taskScheduledTime: record.task_scheduled_time || undefined,
     presentation: record.presentation_snapshot && typeof record.presentation_snapshot === 'object'
       ? record.presentation_snapshot
       : {},
@@ -1774,6 +1775,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       programStep?: string
       programStepCompletion?: string
       taskDate?: string
+      taskScheduledTime?: string
     } = {},
   ) {
     const active = activeSession.value
@@ -1783,6 +1785,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         && (active.programStep || '') === (attribution.programStep || '')
         && (active.programStepCompletion || '') === (attribution.programStepCompletion || '')
         && (active.taskDate || '') === (attribution.taskDate || '')
+        && (active.taskScheduledTime || '') === (attribution.taskScheduledTime || '')
       if (sameLaunch) return active
       throw new Error(`${active.name} is already in progress. Finish or end it before starting another review.`)
     }
@@ -1845,6 +1848,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         program_step: attribution.programStep || '',
         program_step_completion: attribution.programStepCompletion || '',
         task_date: attribution.task ? attribution.taskDate || '' : '',
+        task_scheduled_time: attribution.task ? attribution.taskScheduledTime || '' : '',
         presentation_snapshot: {
           icon: reviewSet.icon || 'mdi-cards-playing-outline',
           color: reviewSet.color || '#C7F464',
@@ -1965,6 +1969,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         programStepId: session.programStep,
         programStepCompletionId: session.programStepCompletion,
         taskDate: session.taskDate,
+        taskScheduledTime: session.taskScheduledTime,
         startedAt: session.startedAt,
         status: session.status === 'completed' ? 'completed' : 'ended',
         elapsedSeconds: session.elapsedSeconds,

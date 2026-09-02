@@ -1120,6 +1120,7 @@ class ApiClient {
       programStep?: string
       programStepCompletion?: string
       taskDate?: string
+      taskScheduledTime?: string
     } = {},
   ) {
     return request<RecordModel>(
@@ -1131,6 +1132,7 @@ class ApiClient {
           program_step: input.programStep || '',
           program_step_completion: input.programStepCompletion || '',
           task_date: input.taskDate || '',
+          task_scheduled_time: input.taskScheduledTime || '',
         },
       },
       this.authStore,

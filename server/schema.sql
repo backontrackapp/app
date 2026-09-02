@@ -262,6 +262,7 @@ CREATE TABLE occurrences (
     task TEXT NOT NULL DEFAULT '',
     program_step TEXT NOT NULL DEFAULT '',
     scheduled_date TEXT NOT NULL DEFAULT '',
+    scheduled_time TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT '',
     sealed BOOLEAN NOT NULL DEFAULT FALSE,
     completed_at TEXT NOT NULL DEFAULT '',
@@ -272,7 +273,7 @@ CREATE TABLE occurrences (
 );
 
 CREATE UNIQUE INDEX idx_occurrences_unique
-    ON occurrences (task, program_step, scheduled_date);
+    ON occurrences (task, program_step, scheduled_date, scheduled_time);
 CREATE INDEX idx_occurrences_owner_date
     ON occurrences (owner, scheduled_date);
 
@@ -367,6 +368,7 @@ CREATE TABLE interval_sessions (
     program_step TEXT NOT NULL DEFAULT '',
     program_step_completion TEXT NOT NULL DEFAULT '',
     task_date TEXT NOT NULL DEFAULT '',
+    task_scheduled_time TEXT NOT NULL DEFAULT '',
     note TEXT NOT NULL DEFAULT '',
     flashcard_snapshot JSON NOT NULL DEFAULT '{}',
     presentation_snapshot JSON NOT NULL DEFAULT '{}',
@@ -429,6 +431,7 @@ CREATE TABLE flashcard_review_sessions (
     program_step TEXT NOT NULL DEFAULT '',
     program_step_completion TEXT NOT NULL DEFAULT '',
     task_date TEXT NOT NULL DEFAULT '',
+    task_scheduled_time TEXT NOT NULL DEFAULT '',
     presentation_snapshot JSON NOT NULL DEFAULT '{}',
     client_id TEXT NOT NULL DEFAULT ''
 );

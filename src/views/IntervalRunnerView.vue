@@ -154,6 +154,7 @@ const pendingActiveSessionStart = ref<
       taskId?: string
       programStepId?: string
       programStepCompletionId?: string
+      taskScheduledTime?: string
     }
 >()
 const flashcardContextSheet = ref(false)
@@ -505,6 +506,11 @@ const originProgramStepId = computed(() => typeof route.query.step === 'string' 
 const originProgramStepCompletionId = computed(() => (
   typeof route.query.completion === 'string' ? route.query.completion : ''
 ))
+const originTaskScheduledTime = computed(() => (
+  typeof route.query.time === 'string'
+    ? route.query.time
+    : session.value?.taskScheduledTime || ''
+))
 const attributedProgramStep = computed(() => {
   const programStepId = originProgramStepId.value || session.value?.programStep
   return programStepId
@@ -601,7 +607,10 @@ const attachedProgressCandidates = computed(() => {
   const taskDate = originTaskId.value ? parseISO(originTaskDate.value) : new Date()
   const taskProgress = taskStore.tasks
     .filter((task) => task.type === 'interval' && task.intervalTemplate === templateId)
-    .map((task) => taskStore.makeProgress(task, taskDate))
+    .flatMap((task) => {
+      const times = task.scheduledTimes?.length ? task.scheduledTimes : [task.scheduledTime || '']
+      return times.map(time => taskStore.makeProgress(task, taskDate, undefined, time))
+    })
   const stepProgress = taskStore.steps
     .filter((step) => step.active
       && step.completions?.some(completion => (
@@ -609,7 +618,9 @@ const attachedProgressCandidates = computed(() => {
       )))
     .flatMap((step) => {
       const task = taskStore.tasks.find((item) => item.id === step.task && item.type === 'program')
-      return task ? [taskStore.makeProgress(task, taskDate, step)] : []
+      if (!task) return []
+      const times = task.scheduledTimes?.length ? task.scheduledTimes : [task.scheduledTime || '']
+      return times.map(time => taskStore.makeProgress(task, taskDate, step, time))
     })
   return [...taskProgress, ...stepProgress]
 })
@@ -772,6 +783,7 @@ onMounted(async () => {
         programStep: originProgramStepId.value || undefined,
         programStepCompletion: originProgramStepCompletionId.value || undefined,
         taskDate: originTaskId.value ? originTaskDate.value : toDateKey(now),
+        taskScheduledTime: originTaskId.value ? originTaskScheduledTime.value || undefined : undefined,
         source: 'template',
         status: 'paused',
         name: template.name,
@@ -1354,6 +1366,7 @@ async function requestStartTemplate(replaceActive = false) {
     originTaskId.value || undefined,
     originProgramStepId.value || undefined,
     originProgramStepCompletionId.value || undefined,
+    originTaskScheduledTime.value || undefined,
   )
 }
 
@@ -1361,6 +1374,7 @@ async function startTemplate(
   taskId?: string,
   programStepId?: string,
   programStepCompletionId?: string,
+  taskScheduledTime?: string,
   replaceActive = false,
 ) {
   const item = previewSession.value
@@ -1372,6 +1386,7 @@ async function startTemplate(
       taskId,
       programStepId,
       programStepCompletionId,
+      taskScheduledTime,
     }
     attributionSheet.value = false
     replaceActiveSessionDialog.value = true
@@ -1385,6 +1400,7 @@ async function startTemplate(
       ? eligibleTaskProgress.value.find((progress) =>
           progress.task.id === taskId
           && (progress.programStep?.id || '') === (programStepId || '')
+          && (!taskScheduledTime || progress.scheduledTime === taskScheduledTime)
           && (!programStepCompletionId || progress.completionItems?.some(completion => (
             completion.id === programStepCompletionId && !completion.complete
           ))),
@@ -1404,6 +1420,7 @@ async function startTemplate(
       programStep: programStepId,
       ...(programStepCompletionId ? { programStepCompletion: programStepCompletionId } : {}),
       taskDate: taskId ? item.taskDate : undefined,
+      taskScheduledTime: taskId ? attributedProgress?.scheduledTime || taskScheduledTime : undefined,
       flashcardReview: item.flashcardReview,
       presentation: presentationForTemplate(item.template, programStepId, programStepCompletionId),
     })
@@ -1411,12 +1428,14 @@ async function startTemplate(
       started.task !== taskId
       || started.programStep !== programStepId
       || started.programStepCompletion !== programStepCompletionId
+      || started.taskScheduledTime !== (attributedProgress?.scheduledTime || taskScheduledTime)
     ) {
       pendingActiveSessionStart.value = {
         kind: 'template',
         taskId,
         programStepId,
         programStepCompletionId,
+        taskScheduledTime,
       }
       activeSessionName.value = started.name
       replaceActiveSessionDialog.value = true
@@ -1465,6 +1484,7 @@ async function replaceActiveSession() {
         pending.taskId,
         pending.programStepId,
         pending.programStepCompletionId,
+        pending.taskScheduledTime,
         true,
       )
     } else {
@@ -3079,7 +3099,7 @@ async function runAgain() {
         :title="item.programStep?.name || item.task.name"
         :subtitle="item.programStep ? `${item.task.name} · Complete one requirement when the interval finishes` : 'Complete this task when the interval finishes'"
         rounded="lg"
-        @click="startTemplate(item.task.id, item.programStep?.id, intervalCompletionId(item))"
+        @click="startTemplate(item.task.id, item.programStep?.id, intervalCompletionId(item), item.scheduledTime)"
       />
       <v-list-item
         prepend-icon="mdi-timer-outline"

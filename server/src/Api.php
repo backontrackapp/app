@@ -2963,6 +2963,13 @@ final class Api
                     (string) $user['timezone'],
                 );
             }
+            if (($values['task'] ?? '') !== '') {
+                $task = $this->ownedRecord('tasks', (string) $values['task'], (string) $user['id']);
+                $values['task_scheduled_time'] = $this->taskOccurrenceTime(
+                    $task,
+                    (string) ($values['task_scheduled_time'] ?? ''),
+                );
+            }
             $this->validateNewIntervalSession($values, $user);
         }
         if ($collection['name'] === 'entries') {
@@ -3115,6 +3122,7 @@ final class Api
                 array_key_exists('task', $body)
                 || array_key_exists('program_step', $body)
                 || array_key_exists('task_date', $body)
+                || array_key_exists('task_scheduled_time', $body)
             ) {
                 throw new ApiException(422, 'Interval task attribution cannot be changed after the session starts.');
             }
@@ -4450,7 +4458,7 @@ final class Api
     {
         $body = $this->jsonBody();
         $this->allowOnlyFields($body, [
-            'task', 'program_step', 'program_step_completion', 'task_date',
+            'task', 'program_step', 'program_step_completion', 'task_date', 'task_scheduled_time',
         ]);
 
         $sessionCollection = $this->requireCollection('flashcard_review_sessions');
@@ -4471,6 +4479,11 @@ final class Api
             $body['task_date'] ?? '',
             $fields['task_date'],
         );
+        $taskScheduledTime = $this->validateField(
+            'task_scheduled_time',
+            $body['task_scheduled_time'] ?? '',
+            $fields['task_scheduled_time'],
+        );
 
         $owner = (string) $user['id'];
         $reviewSet = $this->accessibleFlashcardReviewSet($reviewSetId, $owner);
@@ -4480,7 +4493,12 @@ final class Api
         );
         $sourceOwner = (string) $reviewSet['owner'];
         if ($taskId === '') {
-            if ($programStepId !== '' || $programStepCompletionId !== '' || $taskDate !== '') {
+            if (
+                $programStepId !== ''
+                || $programStepCompletionId !== ''
+                || $taskDate !== ''
+                || $taskScheduledTime !== ''
+            ) {
                 throw new ApiException(422, 'Task details require an attached Review set task.');
             }
         } else {
@@ -4501,10 +4519,17 @@ final class Api
                 );
             }
             $task = $this->ownedRecord('tasks', $taskId, $owner);
+            $taskScheduledTime = $this->taskOccurrenceTime($task, $taskScheduledTime);
             if (
                 !(bool) $task['active']
                 || (bool) ($task['archived'] ?? false)
-                || !$this->intervalAttributionIsOpenOnDate($task, $programStepId, $taskDate, $owner)
+                || !$this->intervalAttributionIsOpenOnDate(
+                    $task,
+                    $programStepId,
+                    $taskDate,
+                    $owner,
+                    $taskScheduledTime,
+                )
             ) {
                 throw new ApiException(409, 'The selected task or program step is not open for this date.');
             }
@@ -4554,7 +4579,7 @@ final class Api
                     speech_enabled_snapshot, back_speech_rate_snapshot, front_language_snapshot, back_language_snapshot, queue_state, reserve_card_ids,
                     started_at, ended_at, updated_at, elapsed_seconds, total_cards, viewed_count,
                     success_count, error_count, ejected_count, task, program_step,
-                    program_step_completion, task_date, presentation_snapshot
+                    program_step_completion, task_date, task_scheduled_time, presentation_snapshot
                  ) VALUES (
                     :id, :owner, :source_owner, :review_set, :status, :snapshot_name, :mode_snapshot,
                     :card_sides_snapshot, :invert_faces_snapshot, :sort_snapshot, :sort_direction_snapshot, :indefinite_snapshot,
@@ -4564,7 +4589,8 @@ final class Api
                     :front_display_snapshot, :back_display_snapshot,
                     :speech_enabled_snapshot, :back_speech_rate_snapshot, :front_language_snapshot, :back_language_snapshot, :queue_state, :reserve_card_ids,
                     :started_at, :ended_at, :updated_at, 0, :total_cards, 0, 0, 0, 0,
-                    :task, :program_step, :program_step_completion, :task_date, :presentation_snapshot
+                    :task, :program_step, :program_step_completion, :task_date,
+                    :task_scheduled_time, :presentation_snapshot
                  )',
             );
             $statement->execute([
@@ -4613,6 +4639,7 @@ final class Api
                 'program_step' => $programStepId,
                 'program_step_completion' => $programStepCompletionId,
                 'task_date' => $taskDate,
+                'task_scheduled_time' => $taskScheduledTime,
                 'presentation_snapshot' => json_encode($presentation, JSON_THROW_ON_ERROR),
             ]);
         } catch (PDOException $exception) {
@@ -6033,6 +6060,7 @@ final class Api
         $taskId = (string) ($session['task'] ?? '');
         $programStepId = (string) ($session['program_step'] ?? '');
         $taskDate = (string) ($session['task_date'] ?? '');
+        $taskScheduledTime = (string) ($session['task_scheduled_time'] ?? '');
         if ($taskDate === '') {
             $taskDate = $this->dateKeyInTimezone(
                 (string) ($session['started_at'] ?? $completedAt),
@@ -6084,6 +6112,10 @@ final class Api
         $entryCollection = $this->requireCollection('entries');
 
         foreach ($statement->fetchAll() as $task) {
+            $occurrenceTime = $this->taskOccurrenceTime(
+                $task,
+                (string) $task['id'] === $taskId ? $taskScheduledTime : '',
+            );
             $goalType = (string) ($task['session_goal_type'] ?? 'complete');
             $elapsedSeconds = max(0, (int) ($session['elapsed_seconds'] ?? 0));
             if ($goalType === 'complete' && $status !== 'completed') {
@@ -6095,12 +6127,17 @@ final class Api
             ) {
                 continue;
             }
-            $occurrence = $this->sessionTaskOccurrence($task, $taskDate, $owner);
+            $occurrence = $this->sessionTaskOccurrence($task, $taskDate, $owner, $occurrenceTime);
             if (!is_array($occurrence)) {
                 if (!$this->taskScheduledOnDate($task, $taskDate)) {
                     continue;
                 }
-                $occurrence = $this->createSessionTaskOccurrence($task, $taskDate, $owner);
+                $occurrence = $this->createSessionTaskOccurrence(
+                    $task,
+                    $taskDate,
+                    $owner,
+                    $occurrenceTime,
+                );
             } elseif (!in_array((string) $occurrence['status'], ['pending', 'completed'], true)) {
                 continue;
             }
@@ -6124,7 +6161,12 @@ final class Api
                     $elapsedSeconds,
                     $owner,
                 );
-                $total = $this->sessionTaskDurationTotal((string) $task['id'], $taskDate, $owner);
+                $total = $this->sessionTaskDurationTotal(
+                    (string) $task['id'],
+                    $taskDate,
+                    $owner,
+                    (string) $occurrence['id'],
+                );
                 if (
                     $total >= max(1, (int) ($task['session_target_seconds'] ?? 0))
                     && (string) $occurrence['status'] !== 'completed'
@@ -6364,23 +6406,35 @@ final class Api
         return $seconds * 1000;
     }
 
-    private function sessionTaskOccurrence(array $task, string $taskDate, string $owner): array|false
+    private function sessionTaskOccurrence(
+        array $task,
+        string $taskDate,
+        string $owner,
+        string $scheduledTime,
+    ): array|false
     {
         $statement = $this->database->pdo->prepare(
             "SELECT * FROM occurrences
              WHERE task = :task AND program_step = '' AND scheduled_date = :scheduled_date
+               AND scheduled_time = :scheduled_time
                AND owner = :owner
              LIMIT 1",
         );
         $statement->execute([
             'task' => $task['id'],
             'scheduled_date' => $taskDate,
+            'scheduled_time' => $scheduledTime,
             'owner' => $owner,
         ]);
         return $statement->fetch();
     }
 
-    private function createSessionTaskOccurrence(array $task, string $taskDate, string $owner): array
+    private function createSessionTaskOccurrence(
+        array $task,
+        string $taskDate,
+        string $owner,
+        string $scheduledTime,
+    ): array
     {
         $id = $this->newId();
         $target = (string) ($task['session_goal_type'] ?? 'complete') === 'duration'
@@ -6391,10 +6445,10 @@ final class Api
             : '';
         $statement = $this->database->pdo->prepare(
             "INSERT INTO occurrences (
-                id, owner, task, program_step, scheduled_date, status, sealed,
+                id, owner, task, program_step, scheduled_date, scheduled_time, status, sealed,
                 completed_at, snapshot_name, snapshot_target, snapshot_unit
              ) VALUES (
-                :id, :owner, :task, '', :scheduled_date, 'pending', FALSE,
+                :id, :owner, :task, '', :scheduled_date, :scheduled_time, 'pending', FALSE,
                 '', :snapshot_name, :snapshot_target, :snapshot_unit
              )",
         );
@@ -6403,6 +6457,7 @@ final class Api
             'owner' => $owner,
             'task' => $task['id'],
             'scheduled_date' => $taskDate,
+            'scheduled_time' => $scheduledTime,
             'snapshot_name' => $task['name'],
             'snapshot_target' => $target,
             'snapshot_unit' => $unit,
@@ -6475,17 +6530,24 @@ final class Api
         return is_array($entry) ? $entry : null;
     }
 
-    private function sessionTaskDurationTotal(string $taskId, string $taskDate, string $owner): int
+    private function sessionTaskDurationTotal(
+        string $taskId,
+        string $taskDate,
+        string $owner,
+        string $occurrenceId,
+    ): int
     {
         $statement = $this->database->pdo->prepare(
             "SELECT COALESCE(SUM(value), 0) FROM entries
              WHERE task = :task AND program_step = '' AND entry_date = :entry_date
+               AND occurrence = :occurrence
                AND owner = :owner AND source_session != ''",
         );
         $statement->execute([
             'task' => $taskId,
             'entry_date' => $taskDate,
             'owner' => $owner,
+            'occurrence' => $occurrenceId,
         ]);
         return (int) $statement->fetchColumn();
     }
@@ -6498,6 +6560,7 @@ final class Api
         $taskId = (string) ($session['task'] ?? '');
         $programStepId = (string) ($session['program_step'] ?? '');
         $taskDate = (string) ($session['task_date'] ?? '');
+        $taskScheduledTime = (string) ($session['task_scheduled_time'] ?? '');
         if ($taskId === '' || $programStepId === '' || $taskDate === '') {
             return null;
         }
@@ -6544,7 +6607,8 @@ final class Api
 
         $statement = $this->database->pdo->prepare(
             "SELECT * FROM occurrences
-             WHERE task = :task AND program_step = :program_step AND scheduled_date = :scheduled_date
+             WHERE task = :task AND program_step = :program_step
+               AND scheduled_date = :scheduled_date AND scheduled_time = :scheduled_time
                AND owner = :owner
              LIMIT 1",
         );
@@ -6552,6 +6616,7 @@ final class Api
             'task' => $taskId,
             'program_step' => $programStepId,
             'scheduled_date' => $taskDate,
+            'scheduled_time' => $taskScheduledTime,
             'owner' => $owner,
         ]);
         $occurrence = $statement->fetch();
@@ -6603,11 +6668,11 @@ final class Api
                 );
             $insert = $this->database->pdo->prepare(
                 "INSERT INTO occurrences (
-                    id, owner, task, program_step, scheduled_date, status, sealed,
+                    id, owner, task, program_step, scheduled_date, scheduled_time, status, sealed,
                     completed_at, snapshot_name, snapshot_target, snapshot_unit,
                     completion_state
                  ) VALUES (
-                    :id, :owner, :task, :program_step, :scheduled_date, :status, FALSE,
+                    :id, :owner, :task, :program_step, :scheduled_date, :scheduled_time, :status, FALSE,
                     :completed_at, :snapshot_name, :snapshot_target, :snapshot_unit,
                     :completion_state
                  )",
@@ -6618,6 +6683,7 @@ final class Api
                 'task' => $taskId,
                 'program_step' => $programStepId,
                 'scheduled_date' => $taskDate,
+                'scheduled_time' => $taskScheduledTime,
                 'status' => $nextStatus,
                 'completed_at' => $nextCompletedAt,
                 'snapshot_name' => (string) ($programStep['name'] ?? $task['name']),
@@ -6753,12 +6819,14 @@ final class Api
         );
         $statement->execute(['id' => $id, 'owner' => $owner]);
         $statement = $this->database->pdo->prepare(
-            "UPDATE interval_sessions SET task = '', program_step = '', program_step_completion = ''
+            "UPDATE interval_sessions SET task = '', program_step = '', program_step_completion = '',
+                task_scheduled_time = ''
              WHERE task = :id AND owner = :owner",
         );
         $statement->execute(['id' => $id, 'owner' => $owner]);
         $statement = $this->database->pdo->prepare(
-            "UPDATE flashcard_review_sessions SET task = '', program_step = '', program_step_completion = ''
+            "UPDATE flashcard_review_sessions SET task = '', program_step = '', program_step_completion = '',
+                task_scheduled_time = ''
              WHERE task = :id AND owner = :owner",
         );
         $statement->execute(['id' => $id, 'owner' => $owner]);
@@ -7913,6 +7981,7 @@ final class Api
         $taskId = (string) ($record['task'] ?? '');
         $programStepId = (string) ($record['program_step'] ?? '');
         $programStepCompletionId = (string) ($record['program_step_completion'] ?? '');
+        $taskScheduledTime = (string) ($record['task_scheduled_time'] ?? '');
         if ($source === 'template' && $template === '') {
             throw new ApiException(422, 'A saved interval session requires a template.');
         }
@@ -7921,6 +7990,7 @@ final class Api
             || $taskId !== ''
             || $programStepId !== ''
             || $programStepCompletionId !== ''
+            || $taskScheduledTime !== ''
         )) {
             throw new ApiException(422, 'Quick intervals must run standalone.');
         }
@@ -7954,6 +8024,7 @@ final class Api
                 $programStepId,
                 (string) $record['task_date'],
                 $owner,
+                $taskScheduledTime,
             )
         ) {
             throw new ApiException(409, 'The selected task or program step is not open for this date.');
@@ -8015,11 +8086,13 @@ final class Api
         string $programStepId,
         string $dateKey,
         string $owner,
+        string $scheduledTime = '',
     ): bool
     {
         $statement = $this->database->pdo->prepare(
             "SELECT status FROM occurrences
-             WHERE task = :task AND program_step = :program_step AND scheduled_date = :scheduled_date
+             WHERE task = :task AND program_step = :program_step
+               AND scheduled_date = :scheduled_date AND scheduled_time = :scheduled_time
                AND owner = :owner
              LIMIT 1",
         );
@@ -8027,6 +8100,7 @@ final class Api
             'task' => $task['id'],
             'program_step' => $programStepId,
             'scheduled_date' => $dateKey,
+            'scheduled_time' => $scheduledTime,
             'owner' => $owner,
         ]);
         $status = $statement->fetchColumn();
@@ -8077,6 +8151,24 @@ final class Api
         }
         $cycleDay = ($elapsed % $cycleLength) + 1;
         return in_array($cycleDay, array_map('intval', $cycleDays), true);
+    }
+
+    private function taskOccurrenceTime(array $task, string $requestedTime = ''): string
+    {
+        if ((string) ($task['schedule_mode'] ?? 'all_day') !== 'time_based') {
+            return '';
+        }
+        $times = $this->decodeJsonColumn($task['scheduled_times'] ?? '[]');
+        $times = is_array($times)
+            ? array_values(array_filter($times, static fn (mixed $time): bool => is_string($time)))
+            : [];
+        if ($times === [] && (string) ($task['scheduled_time'] ?? '') !== '') {
+            $times = [(string) $task['scheduled_time']];
+        }
+        if ($requestedTime !== '' && !in_array($requestedTime, $times, true)) {
+            throw new ApiException(422, 'Choose a scheduled time belonging to this task.');
+        }
+        return $requestedTime !== '' ? $requestedTime : (string) ($times[0] ?? '');
     }
 
     private function taskScheduledOnDate(array $task, string $dateKey): bool

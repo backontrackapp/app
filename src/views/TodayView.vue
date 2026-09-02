@@ -856,9 +856,7 @@ function taskScheduleStatus(progress: TaskProgress) {
 }
 
 function taskTimeLabel(progress: TaskProgress) {
-  if ('scheduleTime' in progress) {
-    return formatTaskScheduleTime((progress as ScheduledTaskProgress).scheduleTime)
-  }
+  if (progress.scheduledTime) return formatTaskScheduleTime(progress.scheduledTime)
   const time = taskScheduledTime(progress.task)
   return time ? formatTaskScheduleTime(time) : undefined
 }
@@ -1080,6 +1078,7 @@ function runTaskMainAction(action: TaskMainActionItem) {
       query: {
         date: progress.scheduledDate,
         step: progress.programStep?.id || '',
+        ...(progress.scheduledTime ? { time: progress.scheduledTime } : {}),
         ...(progress.occurrence ? { resume: '1', advance: '1' } : {}),
       },
     })
@@ -1233,6 +1232,7 @@ async function openTaskLogHistory() {
         progress.task.id,
         progress.scheduledDate,
         progress.programStep?.id,
+        progress.scheduledTime ? progress.occurrence?.id : undefined,
       ),
       store.loadTaskLogImages(progress.task.id).catch(() => []),
     ])
@@ -1461,6 +1461,7 @@ function reviewSessionMatchesProgress(progress: TaskProgress, completionId = '')
     && (active.programStep || '') === (progress.programStep?.id || '')
     && (active.programStepCompletion || '') === completionId
     && active.taskDate === progress.scheduledDate
+    && (active.taskScheduledTime || '') === (progress.scheduledTime || '')
 }
 
 async function startFlashcardTask(
@@ -1496,6 +1497,7 @@ async function startFlashcardTask(
       ...(progress.programStep ? { step: progress.programStep.id } : {}),
       ...(completion ? { completion: completion.id } : {}),
       date: progress.scheduledDate,
+      ...(progress.scheduledTime ? { time: progress.scheduledTime } : {}),
       from: 'tasks',
     },
   })
@@ -1506,6 +1508,8 @@ function sessionMatchesProgress(progress: TaskProgress, completionId = '') {
   return active?.task === progress.task.id
     && (active.programStep || '') === (progress.programStep?.id || '')
     && (active.programStepCompletion || '') === completionId
+    && active.taskDate === progress.scheduledDate
+    && (active.taskScheduledTime || '') === (progress.scheduledTime || '')
 }
 
 async function startIntervalTask(
@@ -1541,6 +1545,7 @@ async function startIntervalTask(
       ...(progress.programStep ? { step: progress.programStep.id } : {}),
       ...(completion ? { completion: completion.id } : {}),
       date: progress.scheduledDate,
+      ...(progress.scheduledTime ? { time: progress.scheduledTime } : {}),
       from: 'tasks',
     },
   })

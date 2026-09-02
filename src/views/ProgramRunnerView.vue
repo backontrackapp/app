@@ -44,13 +44,16 @@ const exercise = shallowRef<ExerciseOption>()
 
 const taskId = computed(() => typeof route.params.taskId === 'string' ? route.params.taskId : '')
 const dateKey = computed(() => typeof route.query.date === 'string' ? route.query.date : '')
+const scheduledTime = computed(() => typeof route.query.time === 'string' ? route.query.time : '')
 const stepId = computed(() => typeof route.query.step === 'string' ? route.query.step : '')
 const focusCompletionId = computed(() => typeof route.query.focus === 'string' ? route.query.focus : '')
 const task = computed(() => taskStore.tasks.find(item => item.id === taskId.value))
 const progress = computed<TaskProgress | undefined>(() => {
   if (!task.value || !dateKey.value) return undefined
   return taskStore.progressForDate(parseISO(dateKey.value)).find(item => (
-    item.task.id === taskId.value && item.programStep?.id === stepId.value
+    item.task.id === taskId.value
+    && item.programStep?.id === stepId.value
+    && (!scheduledTime.value || item.scheduledTime === scheduledTime.value)
   ))
 })
 const requirements = computed(() => progress.value?.completionItems || [])
@@ -67,6 +70,7 @@ const runnerReturnTo = computed(() => router.resolve({
   query: {
     date: dateKey.value,
     step: stepId.value,
+    ...(scheduledTime.value ? { time: scheduledTime.value } : {}),
     ...(current.value ? { focus: current.value.id } : {}),
     ...(current.value?.type === 'interval' && !current.value.exercise
       ? { intervalPreview: current.value.id }
@@ -80,6 +84,7 @@ const workoutIntervalReturnTo = computed(() => router.resolve({
   query: {
     date: dateKey.value,
     step: stepId.value,
+    ...(scheduledTime.value ? { time: scheduledTime.value } : {}),
     ...(current.value ? { focus: current.value.id, intervalCompleted: current.value.id } : {}),
     resume: '1',
   },
@@ -90,6 +95,7 @@ const workoutIntervalAdvanceTo = computed(() => router.resolve({
   query: {
     date: dateKey.value,
     step: stepId.value,
+    ...(scheduledTime.value ? { time: scheduledTime.value } : {}),
     ...(current.value ? { focus: current.value.id, intervalCompleted: current.value.id } : {}),
     advance: '1',
     resume: '1',
@@ -102,6 +108,7 @@ const runnerAdvanceTo = computed(() => router.resolve({
   query: {
     date: dateKey.value,
     step: stepId.value,
+    ...(scheduledTime.value ? { time: scheduledTime.value } : {}),
     advance: '1',
     resume: '1',
   },
@@ -376,6 +383,7 @@ async function runInterval() {
       step: progress.value.programStep?.id || '',
       ...(current.value?.type === 'interval' ? { completion: current.value.id } : {}),
       date: progress.value.scheduledDate,
+      ...(progress.value.scheduledTime ? { time: progress.value.scheduledTime } : {}),
       from: 'program',
       returnTo: current.value?.type === 'workout'
         ? workoutIntervalReturnTo.value
@@ -397,6 +405,7 @@ async function runReviewSet() {
       step: progress.value.programStep?.id || '',
       completion: current.value.id,
       date: progress.value.scheduledDate,
+      ...(progress.value.scheduledTime ? { time: progress.value.scheduledTime } : {}),
       from: 'program',
       returnTo: runnerReturnTo.value,
       doneTo: runnerAdvanceTo.value,

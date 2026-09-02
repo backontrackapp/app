@@ -14,6 +14,7 @@ import {
 } from '@/services/programStepCompletions'
 import { dailyTotalCompletionPercent, isTaskScheduled, meetsTarget, programCycleDay, progressPercent, stepsForDate, toDateKey } from '@/services/schedule'
 import { taskNeedsReview } from '@/services/taskCardActions'
+import { taskScheduledTimes } from '@/services/taskScheduleLayout'
 import { taskGoalTracker } from '@/services/taskTrackers'
 import { reconcileTaskReminders } from '@/services/taskReminders'
 import { taskSupportsImageLogging, taskSupportsQuickLog } from '@/services/taskTypes'
@@ -54,6 +55,10 @@ const asWorkoutSetsRecord = (value: unknown): Record<string, ExerciseSet[]> => (
       ]))
     : {}
 )
+
+function taskInstanceTime(task: Task, scheduledTime = '') {
+  return scheduledTime || task.scheduledTimes?.[0] || task.scheduledTime || ''
+}
 
 function mapTask(record: Record<string, any>): Task {
   const scheduledTimes = asStringArray(record.scheduled_times)
@@ -135,6 +140,7 @@ function mapOccurrence(record: Record<string, any>): Occurrence {
     task: record.task,
     programStep: record.program_step || undefined,
     scheduledDate: record.scheduled_date,
+    scheduledTime: record.scheduled_time || undefined,
     status: record.status,
     sealed: record.sealed === true,
     completedAt: record.completed_at || undefined,
@@ -221,8 +227,13 @@ export const useTaskStore = defineStore('tasks', () => {
 
   const activeTasks = computed(() => tasks.value.filter((task) => task.active && !task.archived))
 
-  function occurrenceStatusKey(taskId: string, scheduledDate: string, programStepId = '') {
-    return `${scheduledDate}:${taskId}:${programStepId}`
+  function occurrenceStatusKey(
+    taskId: string,
+    scheduledDate: string,
+    programStepId = '',
+    scheduledTime = '',
+  ) {
+    return `${scheduledDate}:${scheduledTime}:${taskId}:${programStepId}`
   }
 
   function mergePendingOccurrences(loaded: Occurrence[]) {
@@ -232,6 +243,7 @@ export const useTaskStore = defineStore('tasks', () => {
         item.task,
         item.scheduledDate,
         item.programStep,
+        item.scheduledTime,
       ) === key)
       if (index >= 0) merged.splice(index, 1, pending)
       else merged.push(pending)
@@ -260,6 +272,7 @@ export const useTaskStore = defineStore('tasks', () => {
         occurrence.task,
         occurrence.scheduledDate,
         occurrence.programStep,
+        occurrence.scheduledTime,
       )
       if (!byStatusKey.has(statusKey)) byStatusKey.set(statusKey, occurrence)
       const dateOccurrences = byDate.get(occurrence.scheduledDate)
@@ -278,11 +291,17 @@ export const useTaskStore = defineStore('tasks', () => {
     return (occurrenceIndex.value.programOccurrencesByTask.get(task.id) || [])
       .filter((occurrence) => {
         const optimisticStatus = optimisticOccurrencePatches.value[
-          occurrenceStatusKey(occurrence.task, occurrence.scheduledDate, occurrence.programStep)
+          occurrenceStatusKey(
+            occurrence.task,
+            occurrence.scheduledDate,
+            occurrence.programStep,
+            occurrence.scheduledTime,
+          )
         ]?.status
         return (optimisticStatus ?? occurrence.status) === 'rescheduled'
       })
       .map(occurrence => occurrence.scheduledDate)
+      .filter((date, index, dates) => dates.indexOf(date) === index)
   }
 
   function programCycleDayForDate(task: Task, date: Date) {
@@ -325,30 +344,44 @@ export const useTaskStore = defineStore('tasks', () => {
     return counts
   })
 
-  function entriesFor(task: Task, date: Date, step?: ProgramStep) {
+  function entriesFor(task: Task, date: Date, step?: ProgramStep, scheduledTime = '') {
+    const instanceTime = taskInstanceTime(task, scheduledTime)
     const weekly = task.goalPeriod === 'week' && !step
     const start = weekly ? startOfWeek(date, { weekStartsOn: 1 }) : date
     const matchingEntries: Entry[] = []
     for (let offset = 0; offset < (weekly ? 7 : 1); offset += 1) {
       const entryDate = toDateKey(addDays(start, offset))
-      matchingEntries.push(...(taskEntryIndex.value.get(
+      const entries = taskEntryIndex.value.get(
         occurrenceStatusKey(task.id, entryDate, step?.id),
-      ) || []))
+      ) || []
+      if (!instanceTime) {
+        matchingEntries.push(...entries)
+        continue
+      }
+      const occurrence = occurrenceFor(task, parseISO(entryDate), step, instanceTime)
+      if (occurrence) matchingEntries.push(...entries.filter(entry => entry.occurrence === occurrence.id))
     }
     return matchingEntries
   }
 
-  function occurrenceFor(task: Task, date: Date, step?: ProgramStep) {
+  function occurrenceFor(task: Task, date: Date, step?: ProgramStep, scheduledTime = '') {
+    const instanceTime = taskInstanceTime(task, scheduledTime)
     return occurrenceIndex.value.byStatusKey.get(
-      occurrenceStatusKey(task.id, toDateKey(date), step?.id),
+      occurrenceStatusKey(task.id, toDateKey(date), step?.id, instanceTime),
     )
   }
 
-  function makeProgress(task: Task, date: Date, step?: ProgramStep): TaskProgress {
-    const occurrence = occurrenceFor(task, date, step)
+  function makeProgress(
+    task: Task,
+    date: Date,
+    step?: ProgramStep,
+    scheduledTime = '',
+  ): TaskProgress {
+    const instanceTime = taskInstanceTime(task, scheduledTime)
+    const occurrence = occurrenceFor(task, date, step, instanceTime)
     const dateKey = toDateKey(date)
     const optimisticPatch = optimisticOccurrencePatches.value[
-      occurrenceStatusKey(task.id, dateKey, step?.id)
+      occurrenceStatusKey(task.id, dateKey, step?.id, instanceTime)
     ]
     const goalTracker = !step ? taskGoalTracker(task, trackingStore.trackers) : undefined
     const trackingTrackerIds = !step && task.type === 'tracking' && !goalTracker
@@ -362,7 +395,7 @@ export const useTaskStore = defineStore('tasks', () => {
     const journalEntryCount = !step && task.type === 'journal'
       ? journalEntryCountByTaskDate.value.get(occurrenceStatusKey(task.id, dateKey)) || 0
       : 0
-    const matchingEntries = entriesFor(task, date, step)
+    const matchingEntries = entriesFor(task, date, step, instanceTime)
     const goalTrackingStart = goalTracker?.trackingWindow === 'week'
       ? startOfWeek(date, { weekStartsOn: 1 })
       : date
@@ -498,6 +531,7 @@ export const useTaskStore = defineStore('tasks', () => {
     return {
       task,
       scheduledDate: toDateKey(date),
+      scheduledTime: instanceTime || undefined,
       occurrence,
       value,
       percent: completionItems
@@ -521,11 +555,11 @@ export const useTaskStore = defineStore('tasks', () => {
       programStep: step,
       completionItems,
       tracker: goalTracker,
-      locked: step ? isStepLocked(task, step, date) : false,
+      locked: step ? isStepLocked(task, step, date, instanceTime) : false,
     }
   }
 
-  function isStepLocked(task: Task, step: ProgramStep, date: Date) {
+  function isStepLocked(task: Task, step: ProgramStep, date: Date, scheduledTime = '') {
     if (!task.programStrict) return false
     const currentDay = programCycleDayForDate(task, date)
     if (!currentDay) return false
@@ -549,7 +583,7 @@ export const useTaskStore = defineStore('tasks', () => {
         }
       }
       if (!slotDate) return true
-      const occurrence = occurrenceFor(task, slotDate, candidate)
+      const occurrence = occurrenceFor(task, slotDate, candidate, scheduledTime)
       return !occurrence || occurrence.status === 'pending'
     })
   }
@@ -559,41 +593,53 @@ export const useTaskStore = defineStore('tasks', () => {
     const includedStatusKeys = new Set<string>()
     const dateKey = toDateKey(date)
     const dateOccurrences = occurrenceIndex.value.byDate.get(dateKey) || []
-    const anchoredProgramTasks = new Set(dateOccurrences.flatMap((occurrence) => {
+    const anchoredProgramInstances = new Set(dateOccurrences.flatMap((occurrence) => {
       if (!occurrence.programStep) return []
       const statusKey = occurrenceStatusKey(
         occurrence.task,
         dateKey,
         occurrence.programStep,
+        occurrence.scheduledTime,
       )
       const effectiveStatus = optimisticOccurrencePatches.value[statusKey]?.status
         ?? occurrence.status
       const hasActivity = Boolean(
         occurrence.sealed
         || Object.values(occurrence.completionState || {}).some(Boolean)
-        || taskEntryIndex.value.get(statusKey)?.length,
+        || entries.value.some(entry => entry.occurrence === occurrence.id),
       )
-      return effectiveStatus !== 'pending' || hasActivity ? [occurrence.task] : []
+      return effectiveStatus !== 'pending' || hasActivity
+        ? [`${occurrence.task}:${occurrence.scheduledTime || ''}`]
+        : []
     }))
     for (const task of activeTasks.value) {
       if (!taskIsScheduledForDate(task, date)) continue
-      if (task.type !== 'program') {
-        result.push(makeProgress(task, date))
-        includedStatusKeys.add(occurrenceStatusKey(task.id, dateKey))
-        continue
-      }
-      for (const step of stepsForTaskDate(task, date)) {
-        const statusKey = occurrenceStatusKey(task.id, dateKey, step.id)
-        if (
-          anchoredProgramTasks.has(task.id)
-          && !occurrenceIndex.value.byStatusKey.has(statusKey)
-        ) continue
-        result.push(makeProgress(task, date, step))
-        includedStatusKeys.add(statusKey)
+      const scheduledTimes = taskScheduledTimes(task)
+      const instanceTimes = scheduledTimes.length ? scheduledTimes : ['']
+      for (const scheduledTime of instanceTimes) {
+        if (task.type !== 'program') {
+          result.push(makeProgress(task, date, undefined, scheduledTime))
+          includedStatusKeys.add(occurrenceStatusKey(task.id, dateKey, '', scheduledTime))
+          continue
+        }
+        for (const step of stepsForTaskDate(task, date)) {
+          const statusKey = occurrenceStatusKey(task.id, dateKey, step.id, scheduledTime)
+          if (
+            anchoredProgramInstances.has(`${task.id}:${scheduledTime}`)
+            && !occurrenceIndex.value.byStatusKey.has(statusKey)
+          ) continue
+          result.push(makeProgress(task, date, step, scheduledTime))
+          includedStatusKeys.add(statusKey)
+        }
       }
     }
     for (const occurrence of dateOccurrences) {
-      const statusKey = occurrenceStatusKey(occurrence.task, dateKey, occurrence.programStep)
+      const statusKey = occurrenceStatusKey(
+        occurrence.task,
+        dateKey,
+        occurrence.programStep,
+        occurrence.scheduledTime,
+      )
       if (includedStatusKeys.has(statusKey)) continue
       includedStatusKeys.add(statusKey)
       const task = taskById.value.get(occurrence.task)
@@ -605,16 +651,16 @@ export const useTaskStore = defineStore('tasks', () => {
         const scheduled = stepsForTaskDate(task, date).some(candidate => candidate.id === step.id)
         const previousDate = toDateKey(subDays(date, 1))
         const carriedFromPreviousDay = occurrenceIndex.value.byStatusKey.get(
-          occurrenceStatusKey(task.id, previousDate, step.id),
+          occurrenceStatusKey(task.id, previousDate, step.id, occurrence.scheduledTime),
         )?.status === 'carried'
         const hasActivity = Boolean(
           occurrence.sealed
           || Object.values(occurrence.completionState || {}).some(Boolean)
-          || taskEntryIndex.value.get(statusKey)?.length,
+          || entries.value.some(entry => entry.occurrence === occurrence.id),
         )
         if (!scheduled && !carriedFromPreviousDay && !hasActivity) continue
       }
-      result.push(makeProgress(task, date, step))
+      result.push(makeProgress(task, date, step, occurrence.scheduledTime))
     }
     return result.sort((a, b) => Number(b.task.mandatory) - Number(a.task.mandatory) || a.task.sortOrder - b.task.sortOrder)
   }
@@ -648,7 +694,12 @@ export const useTaskStore = defineStore('tasks', () => {
     const candidates = new Map<string, TaskProgress>()
     const addCandidate = (item: TaskProgress) => {
       candidates.set(
-        occurrenceStatusKey(item.task.id, item.scheduledDate, item.programStep?.id),
+        occurrenceStatusKey(
+          item.task.id,
+          item.scheduledDate,
+          item.programStep?.id,
+          item.scheduledTime,
+        ),
         item,
       )
     }
@@ -669,7 +720,10 @@ export const useTaskStore = defineStore('tasks', () => {
         reviewDate = addDays(reviewDate, 1)
       ) {
         for (const step of stepsForTaskDate(task, reviewDate)) {
-          addCandidate(makeProgress(task, reviewDate, step))
+          const scheduledTimes = taskScheduledTimes(task)
+          for (const scheduledTime of scheduledTimes.length ? scheduledTimes : ['']) {
+            addCandidate(makeProgress(task, reviewDate, step, scheduledTime))
+          }
         }
       }
     }
@@ -697,18 +751,26 @@ export const useTaskStore = defineStore('tasks', () => {
       const scheduledSteps = task.type === 'program'
         ? stepsForTaskDate(task, date)
         : [undefined]
-      for (const step of scheduledSteps) {
-        progress.push(makeProgress(task, date, step))
-        includedStatusKeys.add(occurrenceStatusKey(task.id, dateKey, step?.id))
+      const scheduledTimes = taskScheduledTimes(task)
+      for (const scheduledTime of scheduledTimes.length ? scheduledTimes : ['']) {
+        for (const step of scheduledSteps) {
+          progress.push(makeProgress(task, date, step, scheduledTime))
+          includedStatusKeys.add(occurrenceStatusKey(task.id, dateKey, step?.id, scheduledTime))
+        }
       }
     }
     for (const occurrence of occurrenceIndex.value.byDate.get(dateKey) || []) {
       if (occurrence.task !== task.id) continue
-      const statusKey = occurrenceStatusKey(task.id, dateKey, occurrence.programStep)
+      const statusKey = occurrenceStatusKey(
+        task.id,
+        dateKey,
+        occurrence.programStep,
+        occurrence.scheduledTime,
+      )
       if (includedStatusKeys.has(statusKey)) continue
       includedStatusKeys.add(statusKey)
       const step = occurrence.programStep ? stepById.value.get(occurrence.programStep) : undefined
-      progress.push(makeProgress(task, date, step))
+      progress.push(makeProgress(task, date, step, occurrence.scheduledTime))
     }
     return progress.length > 0 && progress.some(item => !item.complete)
   }
@@ -910,9 +972,15 @@ export const useTaskStore = defineStore('tasks', () => {
     }
   }
 
-  async function ensureOccurrence(task: Task, date: Date, step?: ProgramStep) {
-    const existing = occurrenceFor(task, date, step)
-    const key = occurrenceStatusKey(task.id, toDateKey(date), step?.id)
+  async function ensureOccurrence(
+    task: Task,
+    date: Date,
+    step?: ProgramStep,
+    scheduledTime = '',
+  ) {
+    const instanceTime = taskInstanceTime(task, scheduledTime)
+    const existing = occurrenceFor(task, date, step, instanceTime)
+    const key = occurrenceStatusKey(task.id, toDateKey(date), step?.id, instanceTime)
     if (existing) return pendingOccurrenceCreates.get(key) || existing
 
     const goalTracker = !step ? taskGoalTracker(task, trackingStore.trackers) : undefined
@@ -921,6 +989,7 @@ export const useTaskStore = defineStore('tasks', () => {
       task: task.id,
       programStep: step?.id,
       scheduledDate: toDateKey(date),
+      scheduledTime: instanceTime || undefined,
       status: 'pending',
       sealed: false,
       snapshotName: step?.name || task.name,
@@ -954,6 +1023,7 @@ export const useTaskStore = defineStore('tasks', () => {
           task: task.id,
           program_step: step?.id || '',
           scheduled_date: occurrence.scheduledDate,
+          scheduled_time: occurrence.scheduledTime || '',
           status: 'pending',
           sealed: false,
           snapshot_name: occurrence.snapshotName,
@@ -992,6 +1062,7 @@ export const useTaskStore = defineStore('tasks', () => {
       progress.task.id,
       progress.scheduledDate,
       progress.programStep?.id,
+      progress.scheduledTime,
     )
     const revision = ++optimisticOccurrenceRevision
     optimisticOccurrencePatches.value = {
@@ -1005,7 +1076,12 @@ export const useTaskStore = defineStore('tasks', () => {
     }
     try {
       if (waitFor) await waitFor
-      const occurrence = await ensureOccurrence(progress.task, progressDate, progress.programStep)
+      const occurrence = await ensureOccurrence(
+        progress.task,
+        progressDate,
+        progress.programStep,
+        progress.scheduledTime,
+      )
       const payload: Record<string, unknown> = {}
       if (patch.status !== undefined) payload.status = patch.status
       if (patch.sealed !== undefined) payload.sealed = patch.sealed
@@ -1025,7 +1101,12 @@ export const useTaskStore = defineStore('tasks', () => {
 
   async function toggleComplete(progress: TaskProgress, complete: boolean) {
     const progressDate = parseISO(progress.scheduledDate)
-    const existing = occurrenceFor(progress.task, progressDate, progress.programStep)
+    const existing = occurrenceFor(
+      progress.task,
+      progressDate,
+      progress.programStep,
+      progress.scheduledTime,
+    )
     if (existing && (existing.status === 'completed') === complete) return
     await updateOccurrenceOptimistically(progress, {
       status: complete ? 'completed' : 'pending',
@@ -1061,6 +1142,7 @@ export const useTaskStore = defineStore('tasks', () => {
         progress.task,
         parseISO(progress.scheduledDate),
         step,
+        progress.scheduledTime,
       )
       const workoutSets = {
         ...(occurrence.workoutSets || {}),
@@ -1096,7 +1178,12 @@ export const useTaskStore = defineStore('tasks', () => {
     const completionState = {
       ...(progress.occurrence?.completionState || {}),
       ...(optimisticOccurrencePatches.value[
-        occurrenceStatusKey(progress.task.id, progress.scheduledDate, progress.programStep.id)
+        occurrenceStatusKey(
+          progress.task.id,
+          progress.scheduledDate,
+          progress.programStep.id,
+          progress.scheduledTime,
+        )
       ]?.completionState || {}),
       [completionId]: complete,
     }
@@ -1118,7 +1205,12 @@ export const useTaskStore = defineStore('tasks', () => {
     const completionState = {
       ...(progress.occurrence?.completionState || {}),
       ...(optimisticOccurrencePatches.value[
-        occurrenceStatusKey(progress.task.id, progress.scheduledDate, progress.programStep.id)
+        occurrenceStatusKey(
+          progress.task.id,
+          progress.scheduledDate,
+          progress.programStep.id,
+          progress.scheduledTime,
+        )
       ]?.completionState || {}),
     }
     const clearableCompletionIds = (progress.completionItems || [])
@@ -1143,11 +1235,13 @@ export const useTaskStore = defineStore('tasks', () => {
     programStepId = '',
     programStepCompletionId = '',
     preserveRecordedCompletion = false,
+    scheduledTime = '',
   ) {
     if (!taskId || !dateKey) return undefined
     const progress = progressForDate(parseISO(dateKey)).find(item => (
       item.task.id === taskId
       && (item.programStep?.id || '') === programStepId
+      && (!scheduledTime || item.scheduledTime === scheduledTime)
     ))
     if (!progress) return undefined
     if (programStepId && programStepCompletionId) {
@@ -1160,7 +1254,12 @@ export const useTaskStore = defineStore('tasks', () => {
       ) return progress.occurrence
       await setProgramStepCompletion(progress, programStepCompletionId, true)
     } else if (!progress.complete) await toggleComplete(progress, true)
-    return occurrenceFor(progress.task, parseISO(dateKey), progress.programStep)
+    return occurrenceFor(
+      progress.task,
+      parseISO(dateKey),
+      progress.programStep,
+      progress.scheduledTime,
+    )
   }
 
   async function applyLocalSessionProgress(input: {
@@ -1171,6 +1270,7 @@ export const useTaskStore = defineStore('tasks', () => {
     programStepId?: string
     programStepCompletionId?: string
     taskDate?: string
+    taskScheduledTime?: string
     startedAt: string
     status: 'completed' | 'ended'
     elapsedSeconds: number
@@ -1195,6 +1295,7 @@ export const useTaskStore = defineStore('tasks', () => {
         input.programStepId,
         input.programStepCompletionId,
         preserveRecordedProgramCompletion,
+        input.taskScheduledTime,
       )
     }
     if (!input.sourceId) return
@@ -1213,7 +1314,7 @@ export const useTaskStore = defineStore('tasks', () => {
     for (const task of candidates) {
       if (task.sessionGoalType !== 'duration') {
         if (input.status === 'completed') {
-          await completeAttributedTask(task.id, taskDate)
+          await completeAttributedTask(task.id, taskDate, '', '', false, input.taskScheduledTime)
         }
         continue
       }
@@ -1225,7 +1326,7 @@ export const useTaskStore = defineStore('tasks', () => {
       ))
       if (existingEntry) continue
 
-      const occurrence = await ensureOccurrence(task, date)
+      const occurrence = await ensureOccurrence(task, date, undefined, input.taskScheduledTime)
       const record = await api.collection('entries').create({
         owner: api.authStore.record!.id,
         task: task.id,
@@ -1240,7 +1341,7 @@ export const useTaskStore = defineStore('tasks', () => {
         source_session: input.id,
       })
       upsertEntryRecord(record)
-      const updated = makeProgress(task, date)
+      const updated = makeProgress(task, date, undefined, input.taskScheduledTime)
       if (updated.complete && occurrence.status !== 'completed') {
         await updateOccurrenceOptimistically(updated, {
           status: 'completed',
@@ -1284,6 +1385,7 @@ export const useTaskStore = defineStore('tasks', () => {
         programStepId: String(record.program_step || ''),
         programStepCompletionId: String(record.program_step_completion || ''),
         taskDate,
+        taskScheduledTime: String(record.task_scheduled_time || ''),
         startedAt,
         status,
         elapsedSeconds: Number(record.elapsed_seconds || 0),
@@ -1316,6 +1418,7 @@ export const useTaskStore = defineStore('tasks', () => {
         sourceType: 'flashcards',
         sourceId: reviewSetId,
         taskDate: String(record.task_date || ''),
+        taskScheduledTime: String(record.task_scheduled_time || ''),
         startedAt,
         status,
         elapsedSeconds: reviewElapsedSeconds,
@@ -1355,8 +1458,18 @@ export const useTaskStore = defineStore('tasks', () => {
     if (amount === 0) throw new Error('Task log entries cannot have a value of zero.')
     entryMutationRevision += 1
     const progressDate = parseISO(progress.scheduledDate)
-    const occurrencePromise = ensureOccurrence(progress.task, progressDate, progress.programStep)
-    const occurrence = occurrenceFor(progress.task, progressDate, progress.programStep)!
+    const occurrencePromise = ensureOccurrence(
+      progress.task,
+      progressDate,
+      progress.programStep,
+      progress.scheduledTime,
+    )
+    const occurrence = occurrenceFor(
+      progress.task,
+      progressDate,
+      progress.programStep,
+      progress.scheduledTime,
+    )!
     const completion = progress.programStep?.completions?.find(
       item => item.id === programStepCompletionId,
     )
@@ -1485,12 +1598,18 @@ export const useTaskStore = defineStore('tasks', () => {
 
   async function syncEntryProgress(progress: TaskProgress, waitFor?: Promise<unknown>) {
     const progressDate = parseISO(progress.scheduledDate)
-    const updated = makeProgress(progress.task, progressDate, progress.programStep)
+    const updated = makeProgress(
+      progress.task,
+      progressDate,
+      progress.programStep,
+      progress.scheduledTime,
+    )
     const isCheck = !progress.programStep && progress.task.type === 'check'
     const occurrence = occurrenceFor(
       progress.task,
       progressDate,
       progress.programStep,
+      progress.scheduledTime,
     )
     if (!isCheck && occurrence) {
       const shouldComplete = updated.complete
@@ -1505,12 +1624,18 @@ export const useTaskStore = defineStore('tasks', () => {
     void syncTaskReminders()
   }
 
-  async function loadEntriesForDay(taskId: string, entryDate: string, programStepId?: string) {
+  async function loadEntriesForDay(
+    taskId: string,
+    entryDate: string,
+    programStepId?: string,
+    occurrenceId?: string,
+  ) {
     const stepFilter = programStepId
       ? `program_step = "${programStepId}"`
       : 'program_step = ""'
+    const occurrenceFilter = occurrenceId ? ` && occurrence = "${occurrenceId}"` : ''
     const records = await api.collection('entries').getFullList({
-      filter: `task = "${taskId}" && entry_date = "${entryDate}" && ${stepFilter}`,
+      filter: `task = "${taskId}" && entry_date = "${entryDate}" && ${stepFilter}${occurrenceFilter}`,
       sort: '-created_at',
     })
     return records.map(mapEntry)
@@ -1629,7 +1754,12 @@ export const useTaskStore = defineStore('tasks', () => {
       completedAt: status === 'completed' ? new Date().toISOString() : '',
     })
     const carriedOccurrence = status === 'carried'
-      ? ensureOccurrence(progress.task, addDays(progressDate, 1), progress.programStep)
+      ? ensureOccurrence(
+          progress.task,
+          addDays(progressDate, 1),
+          progress.programStep,
+          progress.scheduledTime,
+        )
       : undefined
     await Promise.all([statusUpdate, carriedOccurrence])
     void syncTaskReminders()
@@ -1889,6 +2019,7 @@ export const useTaskStore = defineStore('tasks', () => {
       progress.task,
       parseISO(progress.scheduledDate),
       progress.programStep,
+      progress.scheduledTime,
     )
     if (!occurrence || occurrence.status !== 'skipped') return
     if (progressIsScheduled(progress)) {
@@ -2067,11 +2198,13 @@ export const useTaskStore = defineStore('tasks', () => {
       progress.task.id,
       progress.scheduledDate,
       progress.programStep.id,
+      progress.scheduledTime,
     )
     const currentProgress = makeProgress(
       progress.task,
       progressDate,
       progress.programStep,
+      progress.scheduledTime,
     )
     if (pendingProgramShifts.has(shiftKey) || currentProgress.status === 'rescheduled') return
     pendingProgramShifts.add(shiftKey)
@@ -2093,7 +2226,12 @@ export const useTaskStore = defineStore('tasks', () => {
   async function undoReviewResolution(progress: TaskProgress, cleanFollowing = false) {
     if (progress.status !== 'missed' && progress.status !== 'rescheduled') return
     const progressDate = parseISO(progress.scheduledDate)
-    const occurrence = occurrenceFor(progress.task, progressDate, progress.programStep)
+    const occurrence = occurrenceFor(
+      progress.task,
+      progressDate,
+      progress.programStep,
+      progress.scheduledTime,
+    )
     if (!occurrence || (occurrence.status !== 'missed' && occurrence.status !== 'rescheduled')) return
 
     const affected = cleanFollowing ? [
@@ -2146,6 +2284,7 @@ export const useTaskStore = defineStore('tasks', () => {
     task: occurrence.task,
     program_step: occurrence.programStep || '',
     scheduled_date: occurrence.scheduledDate,
+    scheduled_time: occurrence.scheduledTime || '',
     status: occurrence.status,
     sealed: occurrence.sealed,
     completed_at: occurrence.completedAt || '',
@@ -2182,13 +2321,19 @@ export const useTaskStore = defineStore('tasks', () => {
     try {
       for (const progress of progressItems) {
         const progressDate = parseISO(progress.scheduledDate)
-        let occurrence = occurrenceFor(progress.task, progressDate, progress.programStep)
+        let occurrence = occurrenceFor(
+          progress.task,
+          progressDate,
+          progress.programStep,
+          progress.scheduledTime,
+        )
         if (!occurrence) {
           occurrence = {
             id: createLocalRecordId(),
             task: progress.task.id,
             programStep: progress.programStep?.id,
             scheduledDate: progress.scheduledDate,
+            scheduledTime: progress.scheduledTime,
             status: 'pending',
             sealed: false,
             snapshotName: progress.programStep?.name || progress.task.name,
@@ -2214,7 +2359,12 @@ export const useTaskStore = defineStore('tasks', () => {
         let carriedOccurrence: Occurrence | undefined
         if (action === 'carried') {
           const carriedDate = addDays(progressDate, 1)
-          carriedOccurrence = occurrenceFor(progress.task, carriedDate, progress.programStep)
+          carriedOccurrence = occurrenceFor(
+            progress.task,
+            carriedDate,
+            progress.programStep,
+            progress.scheduledTime,
+          )
           if (!carriedOccurrence) {
             carriedOccurrence = {
               ...occurrence,

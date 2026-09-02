@@ -1087,15 +1087,16 @@ final class SyncService
 
         $findOccurrence = $this->database->pdo->prepare(
             'SELECT id, status FROM occurrences
-             WHERE owner = :owner AND task = :task AND program_step = :step AND scheduled_date = :date
+             WHERE owner = :owner AND task = :task AND program_step = :step
+               AND scheduled_date = :date AND scheduled_time = :time
              LIMIT 1',
         );
         $insertOccurrence = $this->database->pdo->prepare(
             'INSERT INTO occurrences (
-                id, owner, task, program_step, scheduled_date, status, sealed, completed_at,
+                id, owner, task, program_step, scheduled_date, scheduled_time, status, sealed, completed_at,
                 snapshot_name, snapshot_target, snapshot_unit, completion_state
              ) VALUES (
-                :id, :owner, :task, :step, :date, :status, FALSE, \'\',
+                :id, :owner, :task, :step, :date, :time, :status, FALSE, \'\',
                 :snapshot_name, :snapshot_target, :snapshot_unit, :completion_state
              )',
         );
@@ -1120,11 +1121,12 @@ final class SyncService
                 $this->recordId($stepId);
             }
             $date = (string) ($record['scheduled_date'] ?? '');
+            $time = (string) ($record['scheduled_time'] ?? '');
             $parsedDate = \DateTimeImmutable::createFromFormat('!Y-m-d', $date);
             if (!$parsedDate || $parsedDate->format('Y-m-d') !== $date) {
                 throw new ApiException(422, 'A bulk review date is invalid.');
             }
-            $key = $taskId . ':' . $stepId . ':' . $date;
+            $key = $taskId . ':' . $stepId . ':' . $date . ':' . $time;
             if (isset($seen[$key])) {
                 throw new ApiException(422, 'The same open-work item was included more than once.');
             }
@@ -1149,6 +1151,7 @@ final class SyncService
                 'task' => $taskId,
                 'step' => $stepId,
                 'date' => $date,
+                'time' => $time,
             ]);
             $existing = $findOccurrence->fetch();
             $status = $action === 'shift' ? 'rescheduled' : ($action === 'undo' ? 'pending' : $action);
@@ -1172,6 +1175,7 @@ final class SyncService
                     'task' => $taskId,
                     'step' => $stepId,
                     'date' => $date,
+                    'time' => $time,
                     'status' => $status,
                     'snapshot_name' => mb_substr((string) ($record['snapshot_name'] ?? ''), 0, 200),
                     'snapshot_target' => (float) ($record['snapshot_target'] ?? 0),
@@ -1190,6 +1194,7 @@ final class SyncService
                     'task' => $taskId,
                     'step' => $stepId,
                     'date' => $carriedDate,
+                    'time' => $time,
                 ]);
                 if (!is_array($findOccurrence->fetch())) {
                     $carried = $item['carried_occurrence'] ?? null;
@@ -1202,6 +1207,7 @@ final class SyncService
                         'task' => $taskId,
                         'step' => $stepId,
                         'date' => $carriedDate,
+                        'time' => $time,
                         'status' => 'pending',
                         'snapshot_name' => mb_substr((string) ($record['snapshot_name'] ?? ''), 0, 200),
                         'snapshot_target' => (float) ($record['snapshot_target'] ?? 0),
@@ -3213,13 +3219,15 @@ final class SyncService
         if ($resource === 'occurrences') {
             $statement = $this->database->pdo->prepare(
                 'SELECT id FROM occurrences
-                 WHERE owner = :owner AND task = :task AND program_step = :step AND scheduled_date = :date',
+                 WHERE owner = :owner AND task = :task AND program_step = :step
+                   AND scheduled_date = :date AND scheduled_time = :time',
             );
             $statement->execute([
                 'owner' => $account,
                 'task' => $values['task'] ?? '',
                 'step' => $values['program_step'] ?? '',
                 'date' => $values['scheduled_date'] ?? '',
+                'time' => $values['scheduled_time'] ?? '',
             ]);
             $id = $statement->fetchColumn();
             return is_string($id) ? $id : null;

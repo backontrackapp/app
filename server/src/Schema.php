@@ -188,6 +188,7 @@ final class Schema
                     'task' => self::relation(true),
                     'program_step' => self::relation(false, true),
                     'scheduled_date' => self::dateKey(true),
+                    'scheduled_time' => self::text(5),
                     'status' => self::choice(
                         ['pending', 'completed', 'missed', 'carried', 'rescheduled', 'skipped'],
                         true,
@@ -202,7 +203,7 @@ final class Schema
                 ],
                 'required' => ['task', 'scheduled_date', 'status', 'snapshot_name'],
                 'sort' => ['scheduled_date', 'completed_at'],
-                'filter' => ['task', 'program_step', 'scheduled_date', 'status'],
+                'filter' => ['task', 'program_step', 'scheduled_date', 'scheduled_time', 'status'],
             ],
             'entries' => [
                 'fields' => [
@@ -279,6 +280,7 @@ final class Schema
                     'program_step' => self::relation(false, true),
                     'program_step_completion' => self::text(64),
                     'task_date' => self::dateKey(false, true),
+                    'task_scheduled_time' => self::text(5),
                     'note' => self::text(2000),
                     'flashcard_snapshot' => self::json(2000000),
                     'presentation_snapshot' => self::json(2000),
@@ -294,7 +296,8 @@ final class Schema
                 ],
                 'sort' => ['started_at', 'ended_at', 'task_date', 'status'],
                 'filter' => [
-                    'template', 'task', 'program_step', 'task_date', 'source', 'status', 'started_at',
+                    'template', 'task', 'program_step', 'task_date', 'task_scheduled_time',
+                    'source', 'status', 'started_at',
                 ],
             ],
             'flashcard_review_sessions' => [
@@ -341,6 +344,7 @@ final class Schema
                     'program_step' => self::relation(false, true),
                     'program_step_completion' => self::text(64),
                     'task_date' => self::dateKey(false, true),
+                    'task_scheduled_time' => self::text(5),
                     'presentation_snapshot' => self::json(2000),
                 ],
                 'required' => [
@@ -349,7 +353,8 @@ final class Schema
                 ],
                 'sort' => ['started_at', 'ended_at', 'updated_at', 'status'],
                 'filter' => [
-                    'review_set', 'task', 'program_step', 'task_date', 'status', 'started_at',
+                    'review_set', 'task', 'program_step', 'task_date', 'task_scheduled_time',
+                    'status', 'started_at',
                 ],
             ],
             'flashcard_review_events' => [

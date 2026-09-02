@@ -131,6 +131,7 @@ export interface Occurrence {
   task: string
   programStep?: string
   scheduledDate: string
+  scheduledTime?: string
   status: OccurrenceStatus
   sealed: boolean
   completedAt?: string
@@ -181,6 +182,7 @@ export interface TaskLogImageUpdate {
 export interface TaskProgress {
   task: Task
   scheduledDate: string
+  scheduledTime?: string
   occurrence?: Occurrence
   value: number
   percent: number
@@ -324,6 +326,7 @@ export interface IntervalSession {
   programStep?: string
   programStepCompletion?: string
   taskDate: string
+  taskScheduledTime?: string
   source: 'template' | 'quick'
   status: IntervalSessionStatus
   name: string
@@ -671,6 +674,7 @@ export interface FlashcardReviewSession extends FlashcardReviewSettings {
   programStep?: string
   programStepCompletion?: string
   taskDate?: string
+  taskScheduledTime?: string
   presentation: SessionPresentation
 }
 
