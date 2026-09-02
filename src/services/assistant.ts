@@ -560,7 +560,7 @@ export function assistantWritePlan(
       existingCardIds,
       reusedCardIds,
       convertsTagSelection: false,
-      maxCards: Math.min(100, Math.max(1, integer(call.arguments.max_cards, 20))),
+      maxCards: Math.min(100, Math.max(1, integer(call.arguments.max_cards, 12))),
       icon: icon || undefined,
     }
   }

@@ -582,7 +582,7 @@ class ApiClient {
       review_set_tags: [...new Set(input.reviewSetTags || [])],
       name: input.name || '',
       icon: input.icon || '',
-      max_cards: input.maxCards || 20,
+      max_cards: input.maxCards || 12,
       source: input.source || 'assistant',
       ...(input.settings ? { settings: flashcardReviewSettingsBody(input.settings) } : {}),
     }
@@ -623,8 +623,8 @@ class ApiClient {
         excluded_cards: [],
         ...flashcardReviewSettingsBody(input.settings || {
           mode: 'manual', cardSides: 'both', indefinite: false, timeLimitSeconds: 0,
-          maxCards: Math.min(100, Math.max(1, Number(input.maxCards) || 20)),
-          ejectBehavior: 'replace', ejectExcludeAfter: DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
+          maxCards: Math.min(100, Math.max(1, Number(input.maxCards) || 12)),
+          ejectBehavior: 'replace_exclude', ejectExcludeAfter: DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
           frontSeconds: 5, backSeconds: 5,
           backSpeechRepeatCount: 1,
           frontDisplay: DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
@@ -1464,7 +1464,7 @@ class ApiClient {
         card_sides: 'both',
         invert_faces: false,
         indefinite: Boolean(source.indefinite),
-        max_cards: Number(source.max_cards || 20),
+        max_cards: Number(source.max_cards || 12),
         eject_behavior: source.eject_behavior || 'remove',
         eject_exclude_after: Number(
           source.eject_exclude_after || DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,

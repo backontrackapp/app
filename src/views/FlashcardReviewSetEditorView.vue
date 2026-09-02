@@ -89,7 +89,7 @@ const draft = reactive<FlashcardReviewSetDraft>({
   indefinite: false,
   timeLimitSeconds: 0,
   maxCards: DEFAULT_FLASHCARD_SESSION_CARDS,
-  ejectBehavior: 'replace',
+  ejectBehavior: 'replace_exclude',
   ejectExcludeAfter: DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
   frontSeconds: 5,
   backSeconds: 5,

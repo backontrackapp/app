@@ -2998,7 +2998,7 @@ final class Api
                 'card_sides' => 'both',
                 'invert_faces' => false,
                 'indefinite' => false,
-                'max_cards' => 20,
+                'max_cards' => 12,
                 'eject_exclude_after' => 3,
                 'front_seconds' => 5,
                 'back_seconds' => 5,
