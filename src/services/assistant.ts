@@ -1,6 +1,7 @@
 import { api } from '@/lib/api'
 import {
   cardMatchesReviewSet,
+  DEFAULT_FLASHCARD_SESSION_CARDS,
   DEFAULT_FLASHCARD_REVIEW_BACK_DISPLAY,
   DEFAULT_FLASHCARD_REVIEW_FRONT_DISPLAY,
   flashcardEjectBehavior,
@@ -560,7 +561,7 @@ export function assistantWritePlan(
       existingCardIds,
       reusedCardIds,
       convertsTagSelection: false,
-      maxCards: Math.min(100, Math.max(1, integer(call.arguments.max_cards, 12))),
+      maxCards: DEFAULT_FLASHCARD_SESSION_CARDS,
       icon: icon || undefined,
     }
   }

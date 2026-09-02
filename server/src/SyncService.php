@@ -986,7 +986,7 @@ final class SyncService
         $reviewSetId = $this->recordId($payload['review_set_id'] ?? null);
         if ($mode === 'create') {
             $name = trim((string) ($payload['name'] ?? ''));
-            $maxCards = (int) ($payload['max_cards'] ?? 12);
+            $maxCards = $curated ? (int) ($payload['max_cards'] ?? 12) : 12;
             $sort = $this->database->pdo->prepare(
                 'SELECT COUNT(*) FROM flashcard_review_sets WHERE owner = :owner',
             );

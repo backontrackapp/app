@@ -504,8 +504,7 @@ final class AssistantService
                 ],
                 'cards' => ['type' => 'array', 'maxItems' => 100, 'items' => $card],
                 'existing_card_ids' => ['type' => 'array', 'maxItems' => 100, 'items' => ['type' => 'string']],
-                'max_cards' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100],
-            ], ['name', 'icon', 'cards', 'existing_card_ids', 'max_cards']),
+            ], ['name', 'icon', 'cards', 'existing_card_ids']),
             $this->tool('add_flashcards_to_review_set', 'Propose adding new and/or existing cards to one owned Review set.', [
                 'review_set_id' => ['type' => 'string'],
                 'cards' => ['type' => 'array', 'maxItems' => 100, 'items' => $card],

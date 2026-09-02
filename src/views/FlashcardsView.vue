@@ -360,10 +360,6 @@ async function reorderReviewSets(result: LongPressDragResult) {
                 </div>
                 <div class="review-set__meta mt-2">
                   <span class="review-set__meta-item">
-                    <v-icon icon="mdi-card-multiple-outline" size="small" />
-                    <span>Assigned cards</span>
-                  </span>
-                  <span class="review-set__meta-item">
                     <v-icon
                       :icon="reviewSet.mode === 'passive' ? 'mdi-play-speed' : 'mdi-gesture-tap'"
                       size="small"
@@ -464,10 +460,6 @@ async function reorderReviewSets(result: LongPressDragResult) {
                   Shared by {{ reviewSet.ownerName || 'another account' }}
                 </p>
                 <div class="review-set__meta mt-2">
-                  <span class="review-set__meta-item">
-                    <v-icon icon="mdi-card-multiple-outline" size="small" />
-                    <span>Assigned cards</span>
-                  </span>
                   <span class="review-set__meta-item">
                     <v-icon :icon="reviewSet.mode === 'passive' ? 'mdi-play-speed' : 'mdi-gesture-tap'" size="small" />
                     <span>{{ reviewSet.mode === 'passive' ? 'Passive' : 'Manual' }}</span>
