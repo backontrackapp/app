@@ -1088,10 +1088,16 @@ function releaseLeavingPage(element: Element) {
 }
 
 .desktop-sidebar {
-  border-right: 1px solid rgb(var(--v-theme-on-surface) / .08) !important;
+  border-right: 1px solid rgba(var(--v-theme-on-surface), .14) !important;
   background:
-    linear-gradient(180deg, rgb(var(--v-theme-secondary) / .035), transparent 14rem),
+    linear-gradient(180deg, rgba(var(--v-theme-secondary), .08), transparent 16rem),
+    linear-gradient(
+      90deg,
+      rgba(var(--v-theme-surface-variant), .72),
+      rgba(var(--v-theme-surface-variant), .32)
+    ),
     rgb(var(--v-theme-surface)) !important;
+  box-shadow: .75rem 0 1.5rem rgba(0, 0, 0, .1) !important;
 }
 
 .desktop-sidebar :deep(.v-navigation-drawer__content) {
