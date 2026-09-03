@@ -8060,12 +8060,29 @@ final class Api
             'owner' => $owner,
         ]);
         $step = $statement->fetch();
-        return is_array($step) && $this->matchingProgramStepCompletionId(
+        if (!is_array($step)) {
+            return false;
+        }
+        if ($this->matchingProgramStepCompletionId(
             $step,
             $programStepCompletionId,
             'interval',
             $templateId,
-        ) !== '';
+        ) !== '') {
+            return true;
+        }
+        $matchingWorkouts = array_filter(
+            $this->programStepCompletions($step),
+            static fn (array $completion): bool => (
+                (string) ($completion['type'] ?? '') === 'workout'
+                && (string) ($completion['intervalTemplate'] ?? '') === $templateId
+                && (
+                    $programStepCompletionId === ''
+                    || (string) ($completion['id'] ?? '') === $programStepCompletionId
+                )
+            ),
+        );
+        return $matchingWorkouts !== [];
     }
 
     private function intervalAttributionIsOpenOnDate(

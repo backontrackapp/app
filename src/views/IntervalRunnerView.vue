@@ -612,7 +612,8 @@ const attachedProgressCandidates = computed(() => {
   const stepProgress = taskStore.steps
     .filter((step) => step.active
       && step.completions?.some(completion => (
-        completion.type === 'interval' && completion.intervalTemplate === templateId
+        (completion.type === 'interval' || completion.type === 'workout')
+        && completion.intervalTemplate === templateId
       )))
     .flatMap((step) => {
       const task = taskStore.tasks.find((item) => item.id === step.task && item.type === 'program')
@@ -628,7 +629,7 @@ const eligibleTaskProgress = computed(() => {
     .filter((item) => (item.status === 'pending' || item.status === 'missed')
       && !item.complete
       && (!item.programStep || item.completionItems?.some(completion => (
-        completion.type === 'interval'
+        (completion.type === 'interval' || completion.type === 'workout')
         && completion.intervalTemplate === (typeof route.params.templateId === 'string'
           ? route.params.templateId
           : session.value?.template)

@@ -20,6 +20,8 @@ Starting a saved or Quick interval while another interval is active opens a warn
 
 When an interval is opened from a task, its start panel shows the task name beneath the interval summary. Standalone interval launches omit this task context.
 
+An Interval attached to a Workout requirement can start while that program step is pending or missed. Selecting **Start interval** from the exercise page creates the running session immediately without showing the Interval start screen. Finishing the Interval returns to the Workout confirmation without completing the Workout requirement by itself.
+
 The start panel remains mounted until the running route has committed. Start, active, and completion screens follow one forward horizontal transition: the next screen enters from the right while the previous screen exits left. The panels remain pinned to the same layout area instead of rendering an empty intermediate frame or shifting the page. Reduced-motion preferences keep the crossfade without directional movement.
 
 Back, Leave, and start-screen Cancel navigation from an Interval always returns to the Tasks home screen, including when the Interval was launched from another section or a program. A completed Interval's **Done** action can still continue its originating workflow.

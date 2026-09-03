@@ -10,9 +10,18 @@ import NumberPadField from '@/components/NumberPadField.vue'
 import ProgramRequirementList from '@/components/ProgramRequirementList.vue'
 import RunnerStartScreen from '@/components/RunnerStartScreen.vue'
 import RunnerSessionActions from '@/components/RunnerSessionActions.vue'
+import { stopBackgroundInterval } from '@/services/backgroundInterval'
 import { exercisePresentationById } from '@/services/exercisePresentations'
 import { loadExerciseOptions } from '@/services/exercises'
-import { formatIntervalDuration, intervalDuration, intervalStepKindCount } from '@/services/intervals'
+import { stopFlashcardSpeech } from '@/services/flashcardSpeech'
+import { createIntervalFlashcardReviewSnapshot } from '@/services/flashcards'
+import { playIntervalGoCue, prepareIntervalCues } from '@/services/intervalCues'
+import {
+  formatIntervalDuration,
+  intervalDuration,
+  intervalStepKindCount,
+  resolveIntervalStep,
+} from '@/services/intervals'
 import { programStepRequirementName } from '@/services/programStepCompletions'
 import { programRunnerSessionMenuItems } from '@/services/runnerSessionActions'
 import { TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
@@ -39,6 +48,9 @@ const activeIndex = ref(0)
 const working = ref(false)
 const sessionActionsSheet = ref(false)
 const endDialog = ref(false)
+const replaceActiveIntervalDialog = ref(false)
+const replacingActiveInterval = ref(false)
+const activeIntervalName = ref('')
 const amount = ref(0)
 const sets = ref<ExerciseSet[]>([])
 const exercise = shallowRef<ExerciseOption>()
@@ -378,8 +390,107 @@ function endProgram() {
   minimizeProgram()
 }
 
+async function startWorkoutInterval(replaceActive = false) {
+  const item = current.value
+  const currentProgress = progress.value
+  const template = attachedInterval.value
+  if (!item || item.type !== 'workout' || !currentProgress || !template || working.value) return
+  if (intervalStore.activeSession && !replaceActive) {
+    activeIntervalName.value = intervalStore.activeSession.name
+    replaceActiveIntervalDialog.value = true
+    return
+  }
+
+  working.value = true
+  error.value = ''
+  try {
+    if (currentProgress.status === 'missed') {
+      await taskStore.setStatus(currentProgress, 'pending')
+    }
+    await prepareIntervalCues(template.cues)
+    let flashcardReview
+    if (template.flashcardReviewSet) {
+      const reviewSet = flashcardStore.reviewSets.find(set => set.id === template.flashcardReviewSet)
+      if (!reviewSet) throw new Error('The Review set attached to this interval could not be found.')
+      const cards = reviewSet.accessRole === 'owner'
+        ? flashcardStore.cards
+        : await flashcardStore.loadReviewSetCards(reviewSet.id)
+      flashcardReview = createIntervalFlashcardReviewSnapshot(reviewSet, cards)
+      if (!flashcardReview) {
+        throw new Error('The Review set attached to this interval has no matching cards.')
+      }
+    }
+    const session = await intervalStore.startSession({
+      name: template.name,
+      source: 'template',
+      definition: template.definition,
+      cues: template.cues,
+      template: template.id,
+      task: currentProgress.task.id,
+      programStep: currentProgress.programStep?.id,
+      taskDate: currentProgress.scheduledDate,
+      taskScheduledTime: currentProgress.scheduledTime,
+      flashcardReview,
+      presentation: {
+        icon: template.icon || 'mdi-timer-outline',
+        color: template.color || '#C7F464',
+        ...(item.exercise ? { exercise: item.exercise } : {}),
+      },
+    })
+    if (
+      session.task !== currentProgress.task.id
+      || session.programStep !== currentProgress.programStep?.id
+      || session.programStepCompletion
+      || session.taskDate !== currentProgress.scheduledDate
+      || (session.taskScheduledTime || '') !== (currentProgress.scheduledTime || '')
+    ) {
+      activeIntervalName.value = session.name
+      replaceActiveIntervalDialog.value = true
+      return
+    }
+    const firstStep = resolveIntervalStep(session.definition, session.runtime.stepIndex)?.step
+    if (session.status === 'running' && firstStep) {
+      playIntervalGoCue(session.cues, firstStep.kind, firstStep.name)
+    }
+    await router.replace({
+      name: 'interval-runner',
+      params: { sessionId: session.id },
+      query: {
+        from: 'program',
+        returnTo: workoutIntervalReturnTo.value,
+        doneTo: workoutIntervalAdvanceTo.value,
+      },
+    })
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not start the interval.'
+  } finally {
+    working.value = false
+  }
+}
+
+async function replaceActiveInterval() {
+  if (replacingActiveInterval.value) return
+  replacingActiveInterval.value = true
+  error.value = ''
+  try {
+    await intervalStore.endActiveSession()
+    await stopBackgroundInterval()
+    await stopFlashcardSpeech()
+    replaceActiveIntervalDialog.value = false
+    await startWorkoutInterval(true)
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not end the active interval.'
+  } finally {
+    replacingActiveInterval.value = false
+  }
+}
+
 async function runInterval() {
   if (!current.value?.intervalTemplate || !progress.value) return
+  if (current.value.type === 'workout') {
+    await startWorkoutInterval()
+    return
+  }
   await router.replace({
     name: 'interval-template-runner',
     params: { templateId: current.value.intervalTemplate },
@@ -390,12 +501,8 @@ async function runInterval() {
       date: progress.value.scheduledDate,
       ...(progress.value.scheduledTime ? { time: progress.value.scheduledTime } : {}),
       from: 'program',
-      returnTo: current.value?.type === 'workout'
-        ? workoutIntervalReturnTo.value
-        : runnerReturnTo.value,
-      doneTo: current.value?.type === 'workout'
-        ? workoutIntervalAdvanceTo.value
-        : runnerAdvanceTo.value,
+      returnTo: runnerReturnTo.value,
+      doneTo: runnerAdvanceTo.value,
     },
   })
 }
@@ -661,6 +768,17 @@ onMounted(async () => {
       icon="mdi-stop-circle-outline"
       :loading="working"
       @confirm="endProgram"
+    />
+
+    <ConfirmDialog
+      v-model="replaceActiveIntervalDialog"
+      title="End the active interval?"
+      :message="`${activeIntervalName || 'Another interval'} is already in progress. End it and start ${attachedInterval?.name || 'this interval'} instead?`"
+      confirm-text="End and continue"
+      confirm-color="warning"
+      icon="mdi-alert-outline"
+      :loading="replacingActiveInterval || working"
+      @confirm="replaceActiveInterval"
     />
   </main>
 </template>
