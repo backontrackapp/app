@@ -1031,6 +1031,11 @@ function openTrackingTimeAction() {
 
 function openQuickLogTrackers(progress: TaskProgress) {
   quickLogTrackerProgress.value = progress
+  const trackers = trackingMeta(progress)
+  if (trackers.length === 1) {
+    selectQuickLogTracker(trackers[0].id)
+    return
+  }
   quickLogTrackersOpen.value = true
 }
 
