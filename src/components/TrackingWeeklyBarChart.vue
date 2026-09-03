@@ -183,13 +183,25 @@ const selectedTrackerIds = computed<string[]>({
     storeInactiveTrackingChartTrackerIds([...next])
   },
 })
-const legendOptions = computed(() => availableSeries.value.map(({ tracker }) => ({
-  value: tracker.id,
-  title: tracker.name,
-  color: tracker.color,
-  icon: tracker.icon || 'mdi-checkbox-marked-circle-outline',
-  line: isLineTracker(tracker),
-})))
+const legendOptions = computed(() => [
+  { title: 'How you felt', role: 'outcome' as const },
+  { title: 'Things you did', role: 'factor' as const },
+].flatMap((group) => {
+  const items = availableSeries.value
+    .filter(({ tracker }) => tracker.role === group.role)
+    .map(({ tracker }) => ({
+      type: 'item' as const,
+      value: tracker.id,
+      title: tracker.name,
+      color: tracker.color,
+      icon: tracker.icon || 'mdi-checkbox-marked-circle-outline',
+      line: isLineTracker(tracker),
+    }))
+
+  return items.length
+    ? [{ type: 'subheader' as const, title: group.title }, ...items]
+    : []
+}))
 const ariaLabel = computed(() => {
   const start = days.value[0]?.date
   const end = days.value.at(-1)?.date
@@ -460,7 +472,11 @@ function onKeydown(event: KeyboardEvent) {
         aria-label="Chart series shown"
       >
         <template #item="{ props: itemProps, item }">
+          <v-list-subheader v-if="item.raw.type === 'subheader'">
+            {{ item.raw.title }}
+          </v-list-subheader>
           <v-list-item
+            v-else
             v-bind="itemProps"
             :title="item.raw.title"
           >
