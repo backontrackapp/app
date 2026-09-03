@@ -285,6 +285,10 @@ async function start() {
     await openNextRequirement()
     return
   }
+  if (route.query.direct === '1' && requirements.value[index]?.id === focusCompletionId.value) {
+    await openRequirement(focusCompletionId.value)
+    return
+  }
   screen.value = 'list'
 }
 

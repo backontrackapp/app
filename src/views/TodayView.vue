@@ -1273,6 +1273,7 @@ function runProgramStepRequirement(progress: TaskProgress, completionId: string)
         date: progress.scheduledDate,
         step: progress.programStep?.id || '',
         focus: completion.id,
+        direct: '1',
         resume: '1',
       },
     })
