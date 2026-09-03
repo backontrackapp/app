@@ -31,7 +31,7 @@ import { programStepRequirementName } from '@/services/programStepCompletions'
 import { taskCompletionMarkerColor, toDateKey } from '@/services/schedule'
 import { TASK_CARD_ACTION_ITEMS, taskCanLogAdditionalValue, taskCanLogAmounts, taskIntervalCanStart } from '@/services/taskCardActions'
 import type { TaskCardActionId } from '@/services/taskCardActions'
-import { formatTrackingValue } from '@/services/tracking'
+import { formatTrackingValue, trackingDurationUnitSeconds } from '@/services/tracking'
 import {
   formatTaskScheduleTime,
   groupTaskProgressBySchedule,
@@ -56,7 +56,6 @@ import type {
   TrackingTracker,
 } from '@/types/domain'
 
-const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
 const HEALTH_CONNECT_RESUME_DELAY_MS = 500
 const NEXT_TASK_SCROLL_GAP_REM = 1
 const store = useTaskStore()
@@ -65,7 +64,7 @@ const flashcardStore = useFlashcardStore()
 const journalStore = useJournalStore()
 const trackingStore = useTrackingStore()
 const router = useRouter()
-const { mdAndUp, smAndUp } = useDisplay()
+const { mdAndUp } = useDisplay()
 const {
   selectedDate,
   selectedProgress,
@@ -153,12 +152,6 @@ const exactAmount = computed(() => {
   const value = Number(exactAmountInput.value)
   return Number.isFinite(value) ? value : null
 })
-const exactDesktopAmount = computed<number | null>({
-  get: () => exactAmount.value,
-  set: (value) => {
-    exactAmountInput.value = value === null ? '' : String(value)
-  },
-})
 const exactCanLogAmount = computed(() => exactAmount.value !== null && exactAmount.value !== 0)
 const exactCanAdjustAmount = computed(() => exactAmount.value !== null && exactAmount.value > 0)
 const exactCanSetAmount = computed(() => exactAmount.value !== null && exactAmount.value >= 0)
@@ -169,14 +162,6 @@ const exactAmountError = computed(() => {
   }
   return undefined
 })
-const exactUnit = computed(() => exactProgress.value?.completionItems?.find(
-  item => item.id === exactCompletionId.value,
-)?.customUnit
-  || exactProgress.value?.completionItems?.find(item => item.id === exactCompletionId.value)?.unit
-  || exactProgress.value?.tracker?.unit
-  || exactProgress.value?.task.customUnit
-  || exactProgress.value?.task.unit
-  || '')
 const lockInDescription = computed(() => {
   const progress = lockInProgress.value
   if (!progress) return ''
@@ -1085,10 +1070,6 @@ function runTaskMainAction(action: TaskMainActionItem) {
     return
   }
   if (action.id === 'log-amount') {
-    if (progress.tracker?.kind === 'duration') {
-      openTrackingLogger(progress, progress.tracker.id)
-      return
-    }
     void openExact(progress, (
       progress.task.type === 'step_counter' || progress.tracker?.source === 'health_connect_steps'
     ))
@@ -1578,11 +1559,15 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
   if (mode === 'set' ? exactAmount.value < 0 : exactAmount.value <= 0) return
   const progress = exactProgress.value
   exactAction.value = mode
+  const tracker = progress.tracker
+  const enteredAmount = tracker?.kind === 'duration'
+    ? exactAmount.value * trackingDurationUnitSeconds(tracker.unit)
+    : exactAmount.value
   const amount = mode === 'set'
-    ? exactAmount.value - (exactCompletion.value?.value ?? progress.value)
+    ? enteredAmount - (exactCompletion.value?.value ?? progress.value)
     : mode === 'subtract'
-      ? -exactAmount.value
-      : exactAmount.value
+      ? -enteredAmount
+      : enteredAmount
   const shouldOfferLockIn = mode === 'add'
     && !exactCompletionId.value
     && (
@@ -1595,7 +1580,6 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
     return
   }
   exactError.value = ''
-  const tracker = progress.tracker
   const occurredAt = isToday(parseISO(progress.scheduledDate))
     ? new Date()
     : new Date(`${progress.scheduledDate}T12:00:00`)
@@ -1963,7 +1947,7 @@ async function saveTaskLogEntry() {
     <AppDialog
       v-model="exactDialog"
       max-width="440"
-      :transition="smAndUp ? 'dialog-transition' : 'digit-pad-scale-transition'"
+      transition="digit-pad-scale-transition"
     >
       <v-card class="pa-5">
         <div class="d-flex align-center justify-space-between mb-5">
@@ -1977,21 +1961,10 @@ async function saveTaskLogEntry() {
           {{ exactError }}
         </v-alert>
         <div class="amount-entry mb-4">
-          <v-number-input
-            v-if="smAndUp"
-            v-model="exactDesktopAmount"
-            :label="exactUnit ? `Amount (${exactUnit})` : 'Amount'"
-            :precision="null"
-            :min="exactEditingEntry ? undefined : 0"
-            :autofocus="allowAutomaticFocus"
-            :error-messages="exactAmountError"
-          />
-          <div v-else>
-            <NumberPad v-model="exactAmountInput" :allow-negative="Boolean(exactEditingEntry)" />
-            <p v-if="exactAmountError" class="text-caption text-error mt-2">
-              {{ exactAmountError }}
-            </p>
-          </div>
+          <NumberPad v-model="exactAmountInput" :allow-negative="Boolean(exactEditingEntry)" />
+          <p v-if="exactAmountError" class="text-caption text-error mt-2">
+            {{ exactAmountError }}
+          </p>
         </div>
         <v-btn
           v-if="exactEditingEntry"

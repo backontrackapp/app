@@ -28,9 +28,11 @@ Number trackers with a target can be attached to a scheduled Tracking task. Thei
 
 Daily Total tasks can optionally enable **Log with images** to quickly log a reusable labeled amount from a photo. Other task types use their standard amount, timer, session, sync, or completion controls and do not expose image logging.
 
-Duration trackers with a target use the same task-card progress, amount logging, timer, and **Lock in total** actions. Locking finishes the task for that day and prevents further timer or amount changes while preserving the day's logged duration and earned progress; the same menu can unlock the total again.
+Duration trackers with a target use the same task-card progress, amount logging, timer, and **Lock in total** actions. Their **Log amount** action opens the number pad directly, matching number trackers, and converts the selected minutes or hours to stored seconds. Locking finishes the task for that day and prevents further timer or amount changes while preserving the day's logged duration and earned progress; the same menu can unlock the total again.
 
 Logged amounts update task progress immediately. Background persistence and synchronization refreshes preserve that optimistic value so totals do not temporarily revert while the save is in flight.
+
+Amount logging always uses the shared number pad on mobile and desktop, including standard task logs, program quantity requirements, and reusable image-log amounts. These logging flows never open a native number field.
 
 Synchronization silently discards rejected changes for task-log, Tracking, and Journal entries when their entry no longer exists on the server, as well as task-log entries rejected for having a zero value. These states cannot succeed on retry: missing entries are already absent, while removing a task-log amount must delete its entry rather than save zero. A discarded patch triggers a clean server snapshot so local history returns to its canonical value. Other rejected changes continue to appear in the synchronization panel for review.
 

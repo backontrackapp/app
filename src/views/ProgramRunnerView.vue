@@ -6,6 +6,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import ContentIcon from '@/components/ContentIcon.vue'
 import ExerciseDetailsPanel from '@/components/ExerciseDetailsPanel.vue'
 import ExerciseSetEditor from '@/components/ExerciseSetEditor.vue'
+import NumberPadField from '@/components/NumberPadField.vue'
 import ProgramRequirementList from '@/components/ProgramRequirementList.vue'
 import RunnerStartScreen from '@/components/RunnerStartScreen.vue'
 import RunnerSessionActions from '@/components/RunnerSessionActions.vue'
@@ -597,7 +598,13 @@ onMounted(async () => {
 
               <v-card v-else-if="current.type === 'quantity'" class="surface-card pa-5 program-runner__simple-card">
                 <p class="mb-4">Target: {{ current.targetValue }} {{ current.customUnit || current.unit || '' }}</p>
-                <v-number-input v-model="amount" label="Amount to log" :min="0" :precision="null" />
+                <NumberPadField
+                  v-model="amount"
+                  :title="current.customUnit || current.unit
+                    ? `Amount to log (${current.customUnit || current.unit})`
+                    : 'Amount to log'"
+                  :min="0"
+                />
               </v-card>
 
               <v-card v-else-if="current.type === 'interval'" class="surface-card pa-5 program-runner__simple-card">

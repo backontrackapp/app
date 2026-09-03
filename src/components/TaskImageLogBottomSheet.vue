@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import NumberPadField from '@/components/NumberPadField.vue'
 import SquareImageUpload from '@/components/SquareImageUpload.vue'
 import { longPress as vLongPress } from '@/directives/longPress'
 import { TASK_IMAGE_LOG_ACTIONS, type TaskImageLogActionId } from '@/services/taskImageLogActions'
@@ -27,7 +28,7 @@ const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
 const label = ref('')
-const amount = ref<number | null>(null)
+const amount = ref(0)
 const upload = ref<Blob>()
 const previewUrl = ref('')
 const editingImage = ref<TaskLogImage>()
@@ -49,7 +50,6 @@ const unit = computed(() => props.progress?.programStep?.customUnit
   || (props.progress?.task.type === 'duration' ? 'hours' : ''))
 const fieldsAreValid = computed(() => Boolean(
   label.value.trim()
-  && amount.value !== null
   && Number.isFinite(amount.value)
   && amount.value > 0,
 ))
@@ -103,7 +103,7 @@ function openNew() {
   mode.value = 'new'
   editingImage.value = undefined
   label.value = ''
-  amount.value = null
+  amount.value = 0
   upload.value = undefined
   error.value = ''
   releasePreview()
@@ -166,12 +166,12 @@ async function saveNew() {
   try {
     await store.createTaskLogImage(props.progress, {
       label: label.value.trim(),
-      amount: amount.value!,
+      amount: amount.value,
       image: upload.value,
     }, props.completionId)
     snackbar.showSaved('Image log', label.value)
     model.value = false
-    emit('logged', amount.value!)
+    emit('logged', amount.value)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not save this image log.'
   } finally {
@@ -186,7 +186,7 @@ async function saveEdit() {
   try {
     await store.updateTaskLogImage(editingImage.value, {
       label: label.value.trim(),
-      amount: amount.value!,
+      amount: amount.value,
       image: upload.value,
     })
     snackbar.showSaved('Image log', label.value)
@@ -327,16 +327,12 @@ function returnToGallery() {
           autocomplete="off"
           class="mt-4"
         />
-        <v-number-input
+        <NumberPadField
           v-model="amount"
-          label="Amount *"
+          :title="unit ? `Amount (${unit}) *` : 'Amount *'"
           :min="0"
-          :precision="null"
-          autocomplete="off"
           class="mt-3"
-        >
-          <template v-if="unit" #append-inner>{{ unit }}</template>
-        </v-number-input>
+        />
         <v-row dense class="mt-3">
           <v-col cols="5">
             <v-btn block variant="text" size="large" :disabled="saving" @click="returnToGallery">
