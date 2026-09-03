@@ -389,7 +389,7 @@ export const useTaskStore = defineStore('tasks', () => {
       : []
     const loggedTrackingTrackerIds = trackingEntryTrackerIdsByDate.value.get(dateKey)
     const loggedTrackingTrackerCount = trackingTrackerIds.reduce(
-      (count, trackerId) => count + Number(loggedTrackingTrackerIds?.has(trackerId)),
+      (count, trackerId) => count + (loggedTrackingTrackerIds?.has(trackerId) ? 1 : 0),
       0,
     )
     const journalEntryCount = !step && task.type === 'journal'

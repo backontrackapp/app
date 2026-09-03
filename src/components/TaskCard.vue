@@ -33,7 +33,6 @@ const emit = defineEmits<{
   actions: [progress: TaskProgress]
   runProgramStepRequirement: [progress: TaskProgress, completionId: string]
   logTracking: [progress: TaskProgress, trackerId: string]
-  logTrackingTime: [progress: TaskProgress, trackerId: string]
 }>()
 
 const task = computed(() => props.progress.task)
@@ -65,7 +64,8 @@ const isSessionDuration = computed(() =>
 )
 const goalTracker = computed(() => !step.value ? props.progress.tracker : undefined)
 const isTrackerGoal = computed(() => Boolean(goalTracker.value))
-const isTracking = computed(() => !step.value && task.value.type === 'tracking' && !isTrackerGoal.value)
+const isTrackingTask = computed(() => !step.value && task.value.type === 'tracking')
+const isTracking = computed(() => isTrackingTask.value && !isTrackerGoal.value)
 const isJournal = computed(() => !step.value && task.value.type === 'journal')
 const isDailyTotal = computed(() => !step.value && (
   task.value.type === 'daily_total' || goalTracker.value?.kind === 'number'
@@ -260,8 +260,7 @@ const baseSubtitle = computed(() => {
     return `${props.reviewSet.name} · ${props.reviewSet.mode === 'passive' ? 'Passive' : 'Manual'} · ${props.reviewSet.cardCount} ${cardLabel}`
   }
   if (isTracking.value) {
-    const total = target.value
-    return `${props.progress.value} of ${total} ${total === 1 ? 'tracker' : 'trackers'} logged`
+    return ''
   }
   if (isJournal.value) {
     if (props.progress.value > 0) {
@@ -389,7 +388,7 @@ onBeforeUnmount(() => {
               : scheduleStatus === 'skipped' ? 'Skipped' : 'Not scheduled' }}
           </span>
         </Transition>
-        <p class="task-subtitle text-truncate mt-1">{{ subtitle }}</p>
+        <p v-if="subtitle" class="task-subtitle text-truncate mt-1">{{ subtitle }}</p>
       </div>
 
     </div>
@@ -430,7 +429,7 @@ onBeforeUnmount(() => {
       />
 
       <v-list
-        v-if="isTracking && trackers?.length"
+        v-if="isTrackingTask && trackers?.length"
         class="task-detail-list pa-0 mt-3"
         bg-color="transparent"
         @touchstart.stop
@@ -439,47 +438,29 @@ onBeforeUnmount(() => {
         <template v-for="tracker in trackers" :key="tracker.id">
           <v-list-item
             class="task-detail-item"
-            :class="{ 'task-detail-item--done': tracker.logged }"
+            :class="{
+              'task-detail-item--done': tracker.logged && tracker.active,
+              'task-detail-item--paused': !tracker.active,
+            }"
             :title="tracker.name"
-            :subtitle="tracker.loggedValue
-              ? `${tracker.loggedValue} logged for this date`
-              : tracker.logged ? 'Logged for this date' : 'Not logged for this date'"
-            :disabled="!canLogTracking || busy || progress.locked"
+            :disabled="!tracker.active || !canLogTracking || busy || progress.locked"
             rounded="lg"
-            @click="tracker.kind !== 'duration' && emit('logTracking', progress, tracker.id)"
+            @click="emit('logTracking', progress, tracker.id)"
           >
             <template #prepend>
               <span class="task-detail-item__icon" :style="{ background: tracker.color }">
-                <ContentIcon :icon="tracker.logged ? 'mdi-check-bold' : tracker.icon" size="1.125rem" />
+                <ContentIcon
+                  :icon="!tracker.active ? 'mdi-pause' : tracker.logged ? 'mdi-check-bold' : tracker.icon"
+                  size="1.125rem"
+                />
               </span>
             </template>
           </v-list-item>
-          <div v-if="tracker.kind === 'duration'" class="tracking-duration-actions">
-            <v-btn
-              block
-              variant="tonal"
-              prepend-icon="mdi-plus-minus-variant"
-              :disabled="!canLogTracking || busy || progress.locked"
-              @click="emit('logTracking', progress, tracker.id)"
-            >
-              Log amount
-            </v-btn>
-            <v-btn
-              block
-              variant="tonal"
-              color="secondary"
-              prepend-icon="mdi-timer-outline"
-              :disabled="!canLogTracking || busy || progress.locked"
-              @click="emit('logTrackingTime', progress, tracker.id)"
-            >
-              Log time
-            </v-btn>
-          </div>
         </template>
       </v-list>
 
       <div
-        v-if="isTracking && !canLogTracking && !progress.complete && progress.status === 'pending'"
+        v-if="isTrackingTask && !canLogTracking && !progress.complete && progress.status === 'pending'"
         class="status-banner mt-3 muted"
       >
         <v-icon icon="mdi-calendar-today-outline" size="1rem" /> Select today or an earlier date to log tracking
@@ -617,6 +598,7 @@ onBeforeUnmount(() => {
 .metric-value--updated { animation: metric-value-pulse 560ms cubic-bezier(.22, 1, .36, 1); }
 .metric-target { color: rgb(var(--v-theme-on-surface) / .52); font-size: .72rem; }
 
+.task-detail-list { display: grid; gap: .4rem; }
 .task-detail-item {
   min-height: 2.75rem;
   background: rgba(var(--v-theme-on-surface), .04);
@@ -625,6 +607,10 @@ onBeforeUnmount(() => {
 .task-detail-item--done {
   filter: grayscale(1);
   opacity: .55;
+}
+.task-detail-item--paused {
+  filter: grayscale(1);
+  --v-disabled-opacity: .62;
 }
 .task-detail-item__icon {
   position: relative;
@@ -636,9 +622,6 @@ onBeforeUnmount(() => {
   border-radius: .65rem;
   color: #17200f;
 }
-.tracking-duration-actions { display: grid; margin-top: -.2rem; padding: .2rem .4rem .5rem; gap: .5rem; }
-.tracking-duration-actions .v-btn { min-height: 2.75rem; }
-
 .task-image-deck {
   display: flex;
   flex-wrap: nowrap;

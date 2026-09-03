@@ -897,7 +897,7 @@ export interface TrackingTracker {
   icon: string
 }
 
-export interface TrackingTaskTracker extends Pick<TrackingTracker, 'id' | 'name' | 'kind' | 'icon' | 'color'> {
+export interface TrackingTaskTracker extends Pick<TrackingTracker, 'id' | 'name' | 'kind' | 'icon' | 'color' | 'active'> {
   logged: boolean
   loggedValue?: string
 }

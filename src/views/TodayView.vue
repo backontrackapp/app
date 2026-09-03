@@ -83,6 +83,7 @@ const exactCompletionId = ref('')
 const exactCompletion = computed(() => exactProgress.value?.completionItems?.find(
   item => item.id === exactCompletionId.value,
 ))
+const exactTracker = ref<TrackingTracker>()
 const exactAmountInput = ref('')
 const exactEditingEntry = ref<Entry>()
 const exactLoggingAdditional = ref(false)
@@ -105,6 +106,7 @@ const taskSheet = ref(false)
 const taskSheetMode = ref<'actions' | 'history'>('actions')
 const taskActionProgress = ref<TaskProgress>()
 const taskActionCompletionId = ref('')
+const taskActionQuickLog = ref(false)
 const taskStatusDialog = ref(false)
 const taskStatusUpdating = ref(false)
 const taskSkipDialog = ref(false)
@@ -125,6 +127,14 @@ const trackingSheetTracker = ref<TrackingTracker>()
 const trackingSheetEntry = ref<TrackingEntry>()
 const trackingSheetDate = ref(toDateKey(new Date()))
 const trackingSheetContext = ref('')
+const trackingActionsOpen = ref(false)
+const trackingActionProgress = ref<TaskProgress>()
+const trackingActionTracker = ref<TrackingTracker>()
+const quickLogTrackersOpen = ref(false)
+const quickLogTrackerProgress = ref<TaskProgress>()
+const quickLogTrackers = computed(() => quickLogTrackerProgress.value
+  ? trackingMeta(quickLogTrackerProgress.value)
+  : [])
 const valuePulseVersions = ref<Record<string, number>>({})
 const notScheduledExpanded = ref(false)
 const archiveExpanded = ref(false)
@@ -139,6 +149,27 @@ function changeTaskDate(amount: number) {
   void nextTick(() => {
     if (quickLogStrip.value) quickLogStrip.value.scrollLeft = 0
   })
+}
+
+function scrollQuickLogsFromWheel(event: WheelEvent) {
+  if (event.deltaY === 0 || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return
+
+  const strip = event.currentTarget as HTMLElement
+  const multiplier = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+    ? 16
+    : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+      ? strip.clientWidth
+      : 1
+  const maximumScrollLeft = Math.max(0, strip.scrollWidth - strip.clientWidth)
+  const nextScrollLeft = Math.min(
+    maximumScrollLeft,
+    Math.max(0, strip.scrollLeft + event.deltaY * multiplier),
+  )
+
+  if (nextScrollLeft === strip.scrollLeft) return
+
+  event.preventDefault()
+  strip.scrollLeft = nextScrollLeft
 }
 
 const taskDateSwipe = {
@@ -161,6 +192,17 @@ const exactAmountError = computed(() => {
     return 'Enter a positive amount and use Subtract.'
   }
   return undefined
+})
+const exactCurrentValue = computed(() => {
+  const progress = exactProgress.value
+  if (!progress) return 0
+  if (exactCompletion.value) return exactCompletion.value.value
+  const tracker = exactTracker.value
+  if (tracker && tracker.id !== progress.tracker?.id) {
+    return trackingStore.entriesFor(tracker.id, progress.scheduledDate)
+      .reduce((total, entry) => total + entry.value, 0)
+  }
+  return progress.value
 })
 const lockInDescription = computed(() => {
   const progress = lockInProgress.value
@@ -187,6 +229,7 @@ type TaskMainActionId =
   | 'start-interval'
   | 'start-review'
   | 'start-program'
+  | 'log-tracking-entry'
   | 'log-amount'
   | 'log-with-image'
   | 'log-time'
@@ -427,6 +470,21 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
   }
   if (completionDriven) {
     items.push({ id: 'toggle-complete', title: 'Done', icon: 'mdi-check-bold', disabled: locked })
+  }
+
+  if (progress.task.type === 'tracking') {
+    if (taskActionQuickLog.value) {
+      items.push({
+        id: 'log-tracking-entry',
+        title: 'Log entry',
+        icon: 'mdi-plus-box-outline',
+        disabled: locked
+          || Boolean(progress.sealed)
+          || !trackingCanLog(progress)
+          || !trackingMeta(progress).some(tracker => tracker.active),
+      })
+    }
+    return items
   }
 
   if (taskCanLogAmounts(progress)) {
@@ -924,6 +982,7 @@ function trackingMeta(progress: TaskProgress) {
       icon: tracker.icon,
       color: tracker.color,
       kind: tracker.kind,
+      active: tracker.active,
       logged: entries.length > 0,
       loggedValue: tracker.kind === 'duration' && entries.length
         ? formatTrackingValue(tracker, entries.reduce((total, entry) => total + entry.value, 0))
@@ -940,6 +999,58 @@ function openTrackingLogger(progress: TaskProgress, trackerId: string) {
   trackingSheetDate.value = progress.scheduledDate
   trackingSheetContext.value = progress.programStep?.name || progress.task.name
   trackingSheetOpen.value = true
+}
+
+function selectTrackingLogger(progress: TaskProgress, trackerId: string) {
+  const tracker = trackingStore.trackers.find(item => item.id === trackerId)
+  if (!tracker?.active) return
+  if (tracker.kind !== 'duration') {
+    openTrackingLogger(progress, trackerId)
+    return
+  }
+  trackingActionProgress.value = progress
+  trackingActionTracker.value = tracker
+  trackingActionsOpen.value = true
+}
+
+function openTrackingAmountAction() {
+  const progress = trackingActionProgress.value
+  const tracker = trackingActionTracker.value
+  if (!progress || !tracker) return
+  trackingActionsOpen.value = false
+  void openExact(progress, false, '', tracker)
+}
+
+function openTrackingTimeAction() {
+  const progress = trackingActionProgress.value
+  const tracker = trackingActionTracker.value
+  if (!progress || !tracker) return
+  trackingActionsOpen.value = false
+  openTrackingTimeLogger(progress, tracker.id)
+}
+
+function openQuickLogTrackers(progress: TaskProgress) {
+  quickLogTrackerProgress.value = progress
+  quickLogTrackersOpen.value = true
+}
+
+function selectQuickLogTracker(trackerId: string) {
+  const progress = quickLogTrackerProgress.value
+  const tracker = trackingStore.trackers.find(item => item.id === trackerId)
+  if (
+    !progress
+    || !tracker?.active
+    || !trackingCanLog(progress)
+    || progress.locked
+    || progress.sealed
+    || progressIsBusy(progress)
+  ) return
+  quickLogTrackersOpen.value = false
+  if (tracker.kind === 'number' || tracker.kind === 'duration') {
+    void openExact(progress, false, '', tracker)
+    return
+  }
+  openTrackingLogger(progress, tracker.id)
 }
 
 function openTrackingTimeLogger(progress: TaskProgress, trackerId: string) {
@@ -1014,10 +1125,11 @@ async function confirmBulkReview() {
   }
 }
 
-function openTaskActions(progress: TaskProgress) {
+function openTaskActions(progress: TaskProgress, quickLog = false) {
   taskLogRequest += 1
   taskActionProgress.value = progress
   taskActionCompletionId.value = ''
+  taskActionQuickLog.value = quickLog
   taskSheetMode.value = 'actions'
   taskLogEntries.value = []
   taskTrackerLogEntries.value = []
@@ -1030,6 +1142,7 @@ function openProgramStepRequirementActions(progress: TaskProgress, completionId:
   taskLogRequest += 1
   taskActionProgress.value = progress
   taskActionCompletionId.value = completionId
+  taskActionQuickLog.value = false
   taskSheetMode.value = 'actions'
   taskLogEntries.value = []
   taskTrackerLogEntries.value = []
@@ -1088,6 +1201,10 @@ function runTaskMainAction(action: TaskMainActionItem) {
         ...(progress.occurrence ? { resume: '1', advance: '1' } : {}),
       },
     })
+    return
+  }
+  if (action.id === 'log-tracking-entry') {
+    openQuickLogTrackers(progress)
     return
   }
   if (action.id === 'log-amount') {
@@ -1314,9 +1431,15 @@ async function confirmTaskStatusChange() {
   }
 }
 
-async function openExact(progress: TaskProgress, additional = false, completionId = '') {
+async function openExact(
+  progress: TaskProgress,
+  additional = false,
+  completionId = '',
+  tracker?: TrackingTracker,
+) {
   exactProgress.value = progress
   exactCompletionId.value = completionId
+  exactTracker.value = tracker
   exactEditingEntry.value = undefined
   exactLoggingAdditional.value = additional
   exactAmountInput.value = ''
@@ -1374,6 +1497,7 @@ function editTaskLogEntry(entry: Entry) {
   if (!progress || progress.sealed || busy.value || isHealthConnectEntry(entry)) return
   exactProgress.value = progress
   exactCompletionId.value = entry.programStepCompletion || ''
+  exactTracker.value = undefined
   exactEditingEntry.value = entry
   exactLoggingAdditional.value = false
   exactAmountInput.value = String(Number(entry.value.toFixed(2)))
@@ -1580,12 +1704,12 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
   if (mode === 'set' ? exactAmount.value < 0 : exactAmount.value <= 0) return
   const progress = exactProgress.value
   exactAction.value = mode
-  const tracker = progress.tracker
+  const tracker = exactTracker.value || progress.tracker
   const enteredAmount = tracker?.kind === 'duration'
     ? exactAmount.value * trackingDurationUnitSeconds(tracker.unit)
     : exactAmount.value
   const amount = mode === 'set'
-    ? enteredAmount - (exactCompletion.value?.value ?? progress.value)
+    ? enteredAmount - exactCurrentValue.value
     : mode === 'subtract'
       ? -enteredAmount
       : enteredAmount
@@ -1679,7 +1803,7 @@ async function saveTaskLogEntry() {
 
     <div class="date-swipe-content">
       <section v-if="quickLogProgress.length" class="quick-log-section mb-5" aria-label="Quick log tasks">
-      <div ref="quickLogStrip" class="quick-log-strip">
+      <div ref="quickLogStrip" class="quick-log-strip" @wheel="scrollQuickLogsFromWheel">
         <TaskQuickLogCard
           v-for="item in quickLogProgress"
           :key="visibilityKey(item)"
@@ -1694,7 +1818,7 @@ async function saveTaskLogEntry() {
           :interval-icon="intervalMeta(item)?.icon"
           :review-set-icon="reviewSetMeta(item)?.icon"
           :class="{ 'quick-log-item--draggable': draggableTaskCount(quickLogProgress) > 1 }"
-          @actions="openTaskActions"
+          @actions="progress => openTaskActions(progress, true)"
         />
       </div>
     </section>
@@ -1743,8 +1867,7 @@ async function saveTaskLogEntry() {
                     :trackers="trackingMeta(item)"
                     :can-log-tracking="trackingCanLog(item)"
                     :task-log-images="taskLogImageDeckByTask.get(visibilityKey(item)) || []"
-                    @log-tracking="openTrackingLogger"
-                    @log-tracking-time="openTrackingTimeLogger"
+                    @log-tracking="selectTrackingLogger"
                     @run-program-step-requirement="runProgramStepRequirement"
                     @actions="openTaskActions"
                   />
@@ -1790,8 +1913,7 @@ async function saveTaskLogEntry() {
                 :trackers="trackingMeta(item)"
                 :can-log-tracking="trackingCanLog(item)"
                 :task-log-images="taskLogImageDeckByTask.get(visibilityKey(item)) || []"
-                @log-tracking="openTrackingLogger"
-                @log-tracking-time="openTrackingTimeLogger"
+                @log-tracking="selectTrackingLogger"
                 @run-program-step-requirement="runProgramStepRequirement"
                 @actions="openTaskActions"
               />
@@ -1974,7 +2096,7 @@ async function saveTaskLogEntry() {
         <div class="d-flex align-center justify-space-between mb-5">
           <div class="min-width-0">
             <h2 class="text-h6 font-weight-black">{{ exactEditingEntry ? 'Edit log entry' : exactLoggingAdditional ? 'Log additional value' : 'Log amount' }}</h2>
-            <p class="text-body-2 muted text-truncate mt-1">{{ exactProgress?.programStep?.name || exactProgress?.task.name }}</p>
+            <p class="text-body-2 muted text-truncate mt-1">{{ exactTracker?.name || exactProgress?.programStep?.name || exactProgress?.task.name }}</p>
           </div>
           <v-btn icon="mdi-close" variant="text" aria-label="Close amount logger" @click="exactDialog = false" />
         </div>
@@ -2084,6 +2206,63 @@ async function saveTaskLogEntry() {
       :date="trackingSheetDate"
       :context="trackingSheetContext"
     />
+
+    <ActionBottomSheet
+      v-model="trackingActionsOpen"
+      :title="trackingActionTracker?.name || 'Tracker actions'"
+      hide-title
+      :aria-label="trackingActionTracker ? `${trackingActionTracker.name} logging options` : 'Tracker logging options'"
+    >
+      <v-list-item
+        prepend-icon="mdi-plus-minus-variant"
+        title="Log amount"
+        rounded="lg"
+        @click="openTrackingAmountAction"
+      />
+      <v-list-item
+        prepend-icon="mdi-timer-outline"
+        title="Log time"
+        rounded="lg"
+        @click="openTrackingTimeAction"
+      />
+    </ActionBottomSheet>
+
+    <ActionBottomSheet
+      v-model="quickLogTrackersOpen"
+      title="Log entry"
+      :description="quickLogTrackerProgress?.task.name"
+      aria-label="Choose an assigned tracker to log"
+    >
+      <v-list-item
+        v-for="tracker in quickLogTrackers"
+        :key="tracker.id"
+        class="quick-log-tracker-item"
+        :class="{ 'quick-log-tracker-item--paused': !tracker.active }"
+        :title="tracker.name"
+        :subtitle="!tracker.active
+          ? 'Paused'
+          : tracker.loggedValue
+          ? `${tracker.loggedValue} logged for this date`
+          : tracker.logged ? 'Logged for this date' : 'Not logged for this date'"
+        :disabled="!tracker.active
+          || !quickLogTrackerProgress
+          || !trackingCanLog(quickLogTrackerProgress)
+          || quickLogTrackerProgress.locked
+          || quickLogTrackerProgress.sealed
+          || progressIsBusy(quickLogTrackerProgress)"
+        rounded="lg"
+        @click="selectQuickLogTracker(tracker.id)"
+      >
+        <template #prepend>
+          <span class="quick-log-tracker-icon mr-3" :style="{ background: tracker.color }">
+            <ContentIcon
+              :icon="!tracker.active ? 'mdi-pause' : tracker.icon || 'mdi-checkbox-marked-circle-outline'"
+              size="1.125rem"
+            />
+          </span>
+        </template>
+      </v-list-item>
+    </ActionBottomSheet>
 
     <ActionBottomSheet
       v-model="taskSheet"
@@ -2504,6 +2683,20 @@ async function saveTaskLogEntry() {
   background: rgb(var(--v-theme-error));
 }
 .task-main-action :deep(.v-list-item__prepend > .v-icon) { color: rgb(var(--v-theme-secondary)); }
+.quick-log-tracker-item { min-height: 3.5rem; }
+.quick-log-tracker-item--paused {
+  filter: grayscale(1);
+  --v-disabled-opacity: .62;
+}
+.quick-log-tracker-icon {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: .65rem;
+  color: #17200f;
+}
 .exact-actions {
   display: grid;
   grid-template:

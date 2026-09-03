@@ -298,18 +298,29 @@ const reviewSetItems = computed(() => flashcardStore.reviewSets
     subtitle: `${item.mode === 'passive' ? 'Passive' : 'Manual'} · ${reviewSetCardCount(item)} cards`,
   },
 })))
-const trackingTrackerItems = computed(() => trackingStore.trackers
+const selectableTrackingTrackers = computed(() => trackingStore.trackers
   .filter(tracker => (!tracker.archived && tracker.active) || draft.trackingTrackers?.includes(tracker.id))
-  .sort((a, b) => Number(b.active) - Number(a.active) || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
-  .map(tracker => ({
-    title: tracker.name,
-    value: tracker.id,
-    icon: tracker.icon || 'mdi-checkbox-marked-circle-outline',
-    color: tracker.color,
-    props: {
-      subtitle: `${tracker.role === 'factor' ? 'Factor' : 'Outcome'}${tracker.archived ? ' · Archived' : tracker.active ? '' : ' · Paused'}`,
-    },
-  })))
+  .sort((a, b) => Number(b.active) - Number(a.active) || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)))
+const trackingTrackerItems = computed(() => [
+  { title: 'How I felt', role: 'outcome' as const },
+  { title: 'Things I did', role: 'factor' as const },
+].flatMap((group) => {
+  const items = selectableTrackingTrackers.value
+    .filter(tracker => tracker.role === group.role)
+    .map(tracker => ({
+      type: 'item' as const,
+      title: tracker.name,
+      value: tracker.id,
+      icon: tracker.icon || 'mdi-checkbox-marked-circle-outline',
+      color: tracker.color,
+      props: {
+        subtitle: `${tracker.role === 'factor' ? 'Factor' : 'Outcome'}${tracker.archived ? ' · Archived' : tracker.active ? '' : ' · Paused'}`,
+      },
+    }))
+  return items.length
+    ? [{ type: 'subheader' as const, title: group.title }, ...items]
+    : []
+}))
 
 function removeTrackingTracker(id: string) {
   draft.trackingTrackers = (draft.trackingTrackers ?? []).filter(trackerId => trackerId !== id)
@@ -1031,7 +1042,10 @@ async function deleteTaskPermanently() {
             persistent-hint
           >
             <template #item="{ props: itemProps, item }">
-              <v-list-item v-bind="itemProps">
+              <v-list-subheader v-if="item.raw.type === 'subheader'">
+                {{ item.title }}
+              </v-list-subheader>
+              <v-list-item v-else v-bind="itemProps">
                 <template #prepend>
                   <span class="tracking-attachment-icon mr-3" :style="{ background: item.raw.color }">
                     <ContentIcon :icon="item.raw.icon" size="1.125rem" />
