@@ -228,24 +228,29 @@ function updateSpeechEnabled(enabled: boolean | null) {
             Front and back advance automatically using the durations below; cards count as viewed, not graded.
           </span>
         </p>
+        <div class="mode-indefinite-setting pt-4">
+          <v-divider />
+          <div class="setting-row pt-3">
+            <div>
+              <strong>Run indefinitely</strong>
+              <p>
+                Loop through these cards until
+                {{ settings.mode === 'passive' && timeLimitEnabled
+                  ? 'the time limit is reached or you end the review'
+                  : 'you end the review' }}
+              </p>
+            </div>
+            <v-switch
+              v-model="settings.indefinite"
+              color="secondary"
+              hide-details="auto"
+              inset
+              aria-label="Run review indefinitely"
+            />
+          </div>
+        </div>
         <v-expand-transition>
           <div v-if="settings.mode === 'passive'">
-            <div class="mode-indefinite-setting pt-4">
-              <v-divider />
-              <div class="setting-row pt-3">
-                <div>
-                  <strong>Run indefinitely</strong>
-                  <p>Loop through these cards until the time limit is reached or you end the review</p>
-                </div>
-                <v-switch
-                  v-model="settings.indefinite"
-                  color="secondary"
-                  hide-details="auto"
-                  inset
-                  aria-label="Run review indefinitely"
-                />
-              </div>
-            </div>
             <v-divider class="my-5" />
             <div class="setting-row">
               <div>

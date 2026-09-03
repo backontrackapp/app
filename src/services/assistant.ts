@@ -516,7 +516,6 @@ export function assistantWritePlan(
     draft.sortDirection = nullableChoice(call.arguments.sort_direction, ['asc', 'desc'], 'sort direction')
       ?? draft.sortDirection
     if (draft.mode !== 'passive') {
-      draft.indefinite = false
       draft.timeLimitSeconds = 0
     }
     if (!flashcardReviewSettingsAreValid(draft)) {

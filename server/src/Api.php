@@ -3240,11 +3240,6 @@ final class Api
                 'time_limit_seconds' => 'step:60',
             ]);
         }
-        if ((bool) ($values['indefinite'] ?? false) && ($values['mode'] ?? '') !== 'passive') {
-            throw new ApiException(422, 'Only Passive Review sets can run indefinitely.', [
-                'indefinite' => 'passive-only',
-            ]);
-        }
         foreach (['front_language', 'back_language'] as $field) {
             $language = (string) ($values[$field] ?? '');
             if (
@@ -4712,7 +4707,7 @@ final class Api
             }
 
             $mode = (string) $session['mode_snapshot'];
-            $indefinite = $mode === 'passive' && (bool) $session['indefinite_snapshot'];
+            $indefinite = (bool) $session['indefinite_snapshot'];
             if (in_array($action, ['success', 'error'], true) && $mode !== 'manual') {
                 throw new ApiException(422, 'Passive reviews are viewed rather than graded.');
             }
@@ -4996,7 +4991,7 @@ final class Api
                                     $owner,
                                 );
                             }
-                            if ($action === 'view' && $indefinite) {
+                            if ($indefinite) {
                                 $queue[] = $current;
                             }
                         }
@@ -5019,16 +5014,9 @@ final class Api
                 );
             }
 
-            if (
-                $indefinite
-                && !in_array(
-                    (string) ($session['eject_behavior_snapshot'] ?? 'remove'),
-                    ['replace', 'replace_exclude'],
-                    true,
-                )
-            ) {
-                // Ejected cards permanently leave a looping queue, so its cycle size must
-                // follow the live queue rather than the original session snapshot.
+            if ($indefinite) {
+                // A looping session's cycle size follows its live queue after ejections
+                // and optional replacements.
                 $totalCards = count($queue);
             }
 
@@ -5183,7 +5171,6 @@ final class Api
         $settings['card_sides'] = 'both';
         $settings['invert_faces'] = false;
         if ($settings['mode'] !== 'passive') {
-            $settings['indefinite'] = false;
             $settings['time_limit_seconds'] = 0;
         }
         $this->validateFlashcardSpeechSettings($settings);
@@ -5200,7 +5187,7 @@ final class Api
             $settings['sort_mode'] = (string) $session['sort_snapshot'];
             $settings['sort_direction'] = (string) ($session['sort_direction_snapshot'] ?? 'asc');
 
-            $indefinite = $settings['mode'] === 'passive' && (bool) $settings['indefinite'];
+            $indefinite = (bool) $settings['indefinite'];
             $processed = (int) $session['viewed_count'] + (int) $session['ejected_count'];
             if (!$indefinite && (int) $settings['max_cards'] <= $processed) {
                 throw new ApiException(
@@ -8311,7 +8298,6 @@ final class Api
             $fields['excluded_cards'],
         );
         if ($settings['mode'] !== 'passive') {
-            $settings['indefinite'] = false;
             $settings['time_limit_seconds'] = 0;
         }
         $this->validateFlashcardSpeechSettings($settings);

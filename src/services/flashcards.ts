@@ -768,7 +768,7 @@ export function createFlashcardReviewPreviewSession(
     mode: reviewSet.mode,
     cardSides: DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
     invertFaces: false,
-    indefinite: reviewSet.mode === 'passive' && reviewSet.indefinite,
+    indefinite: reviewSet.indefinite,
     timeLimitSeconds: reviewSet.mode === 'passive' ? reviewSet.timeLimitSeconds || 0 : 0,
     maxCards: reviewSet.maxCards,
     ejectBehavior: reviewSet.ejectBehavior || 'remove',

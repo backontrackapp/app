@@ -687,7 +687,6 @@ final class SyncService
                 true,
             );
             if ($settings['mode'] !== 'passive') {
-                $settings['indefinite'] = false;
                 $settings['time_limit_seconds'] = 0;
             }
             if ((int) $settings['time_limit_seconds'] % 60 !== 0) {

@@ -372,7 +372,7 @@ const shouldHoldReviewAudioFocus = computed(() => Boolean(
   && session.value.queue.length,
 ))
 const sessionSettingsMinimumCards = computed(() => {
-  if (sessionSettingsDraft.mode === 'passive' && sessionSettingsDraft.indefinite) return 1
+  if (sessionSettingsDraft.indefinite) return 1
   return Math.min(100, (session.value?.viewedCount || 0) + (session.value?.ejectedCount || 0) + 1)
 })
 const sessionSettingsAvailableCards = computed(() => store.reviewSets
@@ -758,9 +758,15 @@ async function performAction(
       currentQueueIndex.value = updated.queue.length
         ? (previousQueueIndex + 1) % previousQueueLength
         : 0
-    } else if (action === 'view' && updated.indefinite && updated.queue.length) {
+    } else if (
+      ['success', 'error', 'view'].includes(action)
+      && updated.indefinite
+      && updated.queue.length
+    ) {
       currentQueueIndex.value = (
-        previousQueueIndex + Math.max(1, Math.round(options.viewCount || 1))
+        previousQueueIndex + (action === 'view'
+          ? Math.max(1, Math.round(options.viewCount || 1))
+          : 1)
       ) % updated.queue.length
     } else if (action === 'eject') {
       ejectedQueueIndexes.push(previousQueueIndex)

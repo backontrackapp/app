@@ -1001,7 +1001,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       mode: draft.mode,
       card_sides: DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
       invert_faces: false,
-      indefinite: draft.mode === 'passive' && draft.indefinite,
+      indefinite: draft.indefinite,
       time_limit_seconds: draft.mode === 'passive' ? draft.timeLimitSeconds || 0 : 0,
       max_cards: draft.maxCards,
       eject_behavior: draft.ejectBehavior,
@@ -1249,7 +1249,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     const previous = { ...reviewSet, excludedCards: [...(reviewSet.excludedCards || [])] }
     Object.assign(reviewSet, {
       ...settings,
-      indefinite: settings.mode === 'passive' && settings.indefinite,
+      indefinite: settings.indefinite,
       timeLimitSeconds: settings.mode === 'passive' ? settings.timeLimitSeconds || 0 : 0,
       excludedCards: [...(settings.excludedCards || [])],
     })
@@ -2010,10 +2010,14 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     const sessionSettings = current
       ? {
           ...settings,
+          timeLimitSeconds: settings.mode === 'passive' ? settings.timeLimitSeconds || 0 : 0,
           sortMode: current.sortMode,
           sortDirection: current.sortDirection,
         }
-      : settings
+      : {
+          ...settings,
+          timeLimitSeconds: settings.mode === 'passive' ? settings.timeLimitSeconds || 0 : 0,
+        }
     const previous = current
       ? { ...current, reserveCardIds: [...(current.reserveCardIds || [])] }
       : undefined
@@ -2024,7 +2028,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       let totalCards = current?.totalCards || 0
       let reserveCardIds = [...(current?.reserveCardIds || [])]
       if (current && usingLocalDatabase) {
-        const indefinite = sessionSettings.mode === 'passive' && sessionSettings.indefinite
+        const indefinite = sessionSettings.indefinite
         const reviewSet = reviewSets.value.find(item => item.id === current.reviewSet)
         if (!reviewSet) throw new Error('The Review set for this session is no longer available.')
         let availableCards = reviewSet.accessRole === 'owner'
@@ -2089,7 +2093,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       if (current) {
         Object.assign(current, {
           ...sessionSettings,
-          indefinite: sessionSettings.mode === 'passive' && sessionSettings.indefinite,
+          indefinite: sessionSettings.indefinite,
           queue,
           reserveCardIds,
           totalCards,
@@ -2100,7 +2104,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           mode_snapshot: sessionSettings.mode,
           card_sides_snapshot: DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
           invert_faces_snapshot: false,
-          indefinite_snapshot: sessionSettings.mode === 'passive' && sessionSettings.indefinite,
+          indefinite_snapshot: sessionSettings.indefinite,
           time_limit_seconds_snapshot: sessionSettings.timeLimitSeconds || 0,
           max_cards_snapshot: sessionSettings.maxCards,
           eject_behavior_snapshot: sessionSettings.ejectBehavior,
@@ -2354,7 +2358,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
             viewedCount += 1
             if (action === 'success') successCount += 1
             if (action === 'error') errorCount += 1
-            if (action === 'view' && current.indefinite) queue.push(card)
+            if (current.indefinite) queue.push(card)
           }
           const eventKey = outcome === 'passive'
             ? card.id
@@ -2381,7 +2385,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         }
       }
     }
-    if (current.indefinite && !flashcardEjectLoadsNext(current.ejectBehavior)) {
+    if (current.indefinite) {
       totalCards = queue.length
     }
 
