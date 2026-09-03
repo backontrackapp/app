@@ -114,6 +114,8 @@ Ejecting the current card preserves the remaining card order and advances standa
 
 Opening a Review set and starting its session use the same forward horizontal navigation as interval runners. The welcome screen remains intact while the running session enters, preventing an intermediate session-layout flash during startup. Start, active, and completion screens follow one forward horizontal transition: the next screen enters from the right while the previous screen exits left. The panels remain pinned to the same layout area so completion does not expose an empty frame or trigger a layout jump. Reduced-motion preferences keep the crossfade while disabling directional movement.
 
+Back, Leave, and start-screen Cancel navigation from a standalone Review set always returns to the Tasks home screen, including when the Review set was launched from another section or a program. A completed review's **Done** action can still continue its originating workflow.
+
 The standalone review header reports the current card's position within the live queue. Its position follows previous and next swipes, including while a passive session is paused, while its queue size immediately follows session-setting changes, grading, ejection, undo, card additions, and card removal.
 
 ## Standalone review motion

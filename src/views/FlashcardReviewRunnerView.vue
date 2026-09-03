@@ -314,9 +314,7 @@ const passiveProgress = computed(() => {
   return Math.max(0, Math.min(100, (1 - remainingMs / durationMs) * 100))
 })
 const accuracy = computed(() => session.value ? sessionAccuracy(session.value) : undefined)
-const exitDestination = computed(() => typeof route.query.returnTo === 'string'
-  ? route.query.returnTo
-  : route.query.from === 'tasks' ? '/tasks' : '/flashcards')
+const exitDestination = computed(() => '/tasks')
 const completionDestination = computed(() => (
   session.value?.status === 'completed' && typeof route.query.doneTo === 'string'
     ? route.query.doneTo
@@ -1655,7 +1653,7 @@ async function leaveRunner() {
       <v-icon icon="mdi-alert-circle-outline" color="error" size="46" />
       <h1 class="text-h5 font-weight-black">Review unavailable</h1>
       <p class="muted text-center">{{ error }}</p>
-      <v-btn color="secondary" @click="router.replace(exitDestination)">Back to Flashcards</v-btn>
+      <v-btn color="secondary" @click="router.replace(exitDestination)">Back to Tasks</v-btn>
     </div>
 
     <div

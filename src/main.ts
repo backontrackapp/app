@@ -98,13 +98,18 @@ if (nativePlatform === 'android') {
     return NativeApp.addListener('backButton', () => {
       if (closeTopOverlay()) return
 
+      const backTo = router.currentRoute.value.meta.backTo
+      if (router.currentRoute.value.meta.alwaysBackTo && typeof backTo === 'string') {
+        void router.replace(backTo)
+        return
+      }
+
       const historyState = window.history.state as { back?: unknown } | null
       if (typeof historyState?.back === 'string') {
         router.back()
         return
       }
 
-      const backTo = router.currentRoute.value.meta.backTo
       if (typeof backTo === 'string') {
         void router.replace(backTo)
         return

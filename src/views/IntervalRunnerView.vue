@@ -483,9 +483,7 @@ const hasStarted = computed(() => {
     || item.runtime.remainingMs < initialDurationMs
 })
 const playActionLabel = computed(() => hasStarted.value ? 'Resume' : 'Start')
-const returnTo = computed(() => typeof route.query.returnTo === 'string'
-  ? route.query.returnTo
-  : route.query.from === 'tasks' ? '/tasks' : '/intervals')
+const returnTo = computed(() => '/tasks')
 const doneTo = computed(() => typeof route.query.doneTo === 'string'
   ? route.query.doneTo
   : returnTo.value)
@@ -2566,7 +2564,7 @@ async function runAgain() {
             class="runner-header"
             :class="{ 'runner-header--with-review': flashcardPhase && session.flashcardReview }"
           >
-            <v-btn icon="mdi-chevron-down" variant="text" aria-label="Leave runner" :to="returnTo" />
+            <v-btn icon="mdi-chevron-down" variant="text" aria-label="Leave runner" @click="router.replace(returnTo)" />
             <div class="runner-header__title text-center min-width-0">
               <div class="runner-header__standard-title">
                 <p class="runner-label">Interval {{ current.index + 1 }} of {{ current.totalSteps }}</p>
@@ -2755,7 +2753,7 @@ async function runAgain() {
                   variant="text"
                   class="runner-back-button"
                   aria-label="Leave runner"
-                  :to="returnTo"
+                  @click="router.replace(returnTo)"
                 />
                 <v-btn
                   icon="mdi-dots-vertical"
