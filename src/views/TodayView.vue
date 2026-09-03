@@ -28,7 +28,7 @@ import { isHealthConnectEntry } from '@/services/healthConnectEntries'
 import { formatIntervalDuration, intervalDuration } from '@/services/intervals'
 import { bottomAlignedTaskScrollTop, nextIncompleteTaskKey } from '@/services/nextIncompleteTask'
 import { programStepRequirementName } from '@/services/programStepCompletions'
-import { taskCompletionMarkerColor, toDateKey } from '@/services/schedule'
+import { isTaskScheduled, taskCompletionMarkerColor, toDateKey } from '@/services/schedule'
 import { TASK_CARD_ACTION_ITEMS, taskCanLogAdditionalValue, taskCanLogAmounts, taskIntervalCanStart } from '@/services/taskCardActions'
 import type { TaskCardActionId } from '@/services/taskCardActions'
 import { formatTrackingValue, trackingDurationUnitSeconds } from '@/services/tracking'
@@ -36,6 +36,7 @@ import {
   formatTaskScheduleTime,
   groupTaskProgressBySchedule,
   taskScheduledTime,
+  taskScheduledTimes,
   tasksWithoutProgress,
 } from '@/services/taskScheduleLayout'
 import type { ScheduledTaskProgress } from '@/services/taskScheduleLayout'
@@ -599,11 +600,20 @@ const mainTaskProgress = computed(() => selectedProgress.value.filter(progress =
 const scheduleLayout = computed(() => groupTaskProgressBySchedule(mainTaskProgress.value))
 const allDayProgress = computed(() => scheduleLayout.value.allDay)
 const timedProgressGroups = computed(() => scheduleLayout.value.timed)
+function isCurrentQuickLogInstance(progress: TaskProgress) {
+  if (!isTaskScheduled(progress.task, parseISO(progress.scheduledDate))) return false
+
+  const scheduledTimes = taskScheduledTimes(progress.task)
+  return scheduledTimes.length
+    ? Boolean(progress.scheduledTime && scheduledTimes.includes(progress.scheduledTime))
+    : !progress.scheduledTime
+}
 const quickLogProgress = computed(() => selectedProgress.value
   .filter(progress => (
     taskSupportsQuickLog(progress.task.type)
       && progress.task.quickLogEnabled
       && progress.status !== 'rescheduled'
+      && isCurrentQuickLogInstance(progress)
   ))
   .sort((left, right) => (
     (left.task.quickLogSortOrder ?? left.task.sortOrder)
