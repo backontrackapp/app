@@ -5,6 +5,7 @@ import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import DateTimePickerField from '@/components/DateTimePickerField.vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
 import NumberPadField from '@/components/NumberPadField.vue'
+import { trackingDurationUnitSeconds } from '@/services/tracking'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useTrackingStore } from '@/stores/tracking'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
@@ -47,8 +48,9 @@ function selectedLogTime() {
 function resetFields() {
   if (!props.modelValue || !props.tracker) return
   const tracker = props.tracker
+  const durationUnitSeconds = trackingDurationUnitSeconds(tracker.unit)
   value.value = props.entry
-    ? tracker.kind === 'duration' ? props.entry.value / 60 : props.entry.value
+    ? tracker.kind === 'duration' ? props.entry.value / durationUnitSeconds : props.entry.value
     : tracker.kind === 'rating' ? tracker.scaleMin : 1
   const when = props.entry ? new Date(props.entry.occurredAt) : selectedLogTime()
   occurredLocal.value = format(when, "yyyy-MM-dd'T'HH:mm")
@@ -70,12 +72,13 @@ async function save(explicitValue?: number) {
   try {
     const localDate = new Date(occurredLocal.value)
     const storedValue = explicitValue ?? value.value
+    const durationUnitSeconds = trackingDurationUnitSeconds(tracker.unit)
     const draft = {
       tracker: tracker.id,
       occurredAt: localDate.toISOString(),
       localDate: format(localDate, 'yyyy-MM-dd'),
       timezoneOffset: localDate.getTimezoneOffset(),
-      value: tracker.kind === 'duration' ? storedValue * 60 : storedValue,
+      value: tracker.kind === 'duration' ? storedValue * durationUnitSeconds : storedValue,
       note: note.value.trim(),
     }
     const persistence = props.entry
@@ -143,7 +146,7 @@ async function remove() {
         <NumberPadField
           v-else-if="tracker.kind === 'duration'"
           v-model="value"
-          title="Minutes"
+          :title="tracker.unit === 'hours' ? 'Hours' : 'Minutes'"
           :min="0"
         />
         <v-textarea

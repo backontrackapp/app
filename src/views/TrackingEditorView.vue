@@ -10,7 +10,7 @@ import FormActionBar from '@/components/FormActionBar.vue'
 import NumberPadField from '@/components/NumberPadField.vue'
 import { contentRetirementActions, type ContentRetirementActionId } from '@/services/contentRetirementActions'
 import { getHealthConnectStatus } from '@/services/healthConnect'
-import { defaultAggregation, TRACKING_PRESETS, trackerDraftFromPreset } from '@/services/tracking'
+import { defaultAggregation, TRACKING_PRESETS, trackerDraftFromPreset, trackingDurationUnitSeconds } from '@/services/tracking'
 import { useTrackingStore } from '@/stores/tracking'
 import type { TrackerKind, TrackingTrackerDraft } from '@/types/domain'
 
@@ -40,9 +40,13 @@ const kindOptions: Array<{ value: TrackerKind; title: string; subtitle: string; 
   { value: 'event', title: 'Event', subtitle: 'Log only when it happens; missing days count as not occurred', icon: 'mdi-counter' },
   { value: 'number', title: 'Number', subtitle: 'Any measured numeric value', icon: 'mdi-numeric' },
   { value: 'rating', title: 'Rating', subtitle: 'A bounded scale, such as 1–10', icon: 'mdi-star-outline' },
-  { value: 'duration', title: 'Duration', subtitle: 'Minutes spent on something', icon: 'mdi-timer-outline' },
+  { value: 'duration', title: 'Duration', subtitle: 'Time spent on something', icon: 'mdi-timer-outline' },
 ]
 const customUnitValue = 'custom'
+const durationUnitOptions = [
+  { title: 'Minutes', value: 'minutes' },
+  { title: 'Hours', value: 'hours' },
+]
 
 const draft = reactive<TrackingTrackerDraft>({
   name: '',
@@ -66,30 +70,33 @@ const draft = reactive<TrackingTrackerDraft>({
 })
 
 const scaleUnitValue = computed(() => `/ ${draft.scaleMax}`)
-const unitOptions = computed(() => [
-  { title: 'Count', value: 'count' },
-  { title: 'Times', value: 'times' },
-  { title: 'Sessions', value: 'sessions' },
-  { title: 'Steps', value: 'steps' },
-  { title: 'Kilograms (kg)', value: 'kg' },
-  { title: 'Pounds (lb)', value: 'lb' },
-  { title: 'Grams (g)', value: 'g' },
-  { title: 'Litres (L)', value: 'L' },
-  { title: 'Millilitres (mL)', value: 'mL' },
-  { title: 'Calories (kcal)', value: 'kcal' },
-  { title: 'Percent (%)', value: '%' },
-  { title: 'Minutes', value: 'minutes' },
-  { title: 'Hours', value: 'hours' },
-  ...(draft.kind === 'rating' ? [{
-    title: `Out of ${draft.scaleMin}–${draft.scaleMax}`,
-    value: scaleUnitValue.value,
-  }] : []),
-  { title: 'Custom', value: customUnitValue },
-])
-
 const isEditing = computed(() => Boolean(route.params.id))
 const hasEntries = computed(() => Boolean(draft.id && store.entries.some((entry) => entry.tracker === draft.id)))
 const measurementLocked = computed(() => isEditing.value && hasEntries.value)
+const loggedDurationUnitEditable = computed(() => measurementLocked.value
+  && draft.kind === 'duration')
+const unitLocked = computed(() => measurementLocked.value && !loggedDurationUnitEditable.value)
+const unitOptions = computed(() => loggedDurationUnitEditable.value
+  ? durationUnitOptions
+  : [
+      { title: 'Count', value: 'count' },
+      { title: 'Times', value: 'times' },
+      { title: 'Sessions', value: 'sessions' },
+      { title: 'Steps', value: 'steps' },
+      { title: 'Kilograms (kg)', value: 'kg' },
+      { title: 'Pounds (lb)', value: 'lb' },
+      { title: 'Grams (g)', value: 'g' },
+      { title: 'Litres (L)', value: 'L' },
+      { title: 'Millilitres (mL)', value: 'mL' },
+      { title: 'Calories (kcal)', value: 'kcal' },
+      { title: 'Percent (%)', value: '%' },
+      ...durationUnitOptions,
+      ...(draft.kind === 'rating' ? [{
+        title: `Out of ${draft.scaleMin}–${draft.scaleMax}`,
+        value: scaleUnitValue.value,
+      }] : []),
+      { title: 'Custom', value: customUnitValue },
+    ])
 const canConfigureUnit = computed(() => draft.kind !== 'yes_no'
   && draft.source !== 'health_connect_steps')
 const signature = computed(() => JSON.stringify(draft))
@@ -103,9 +110,9 @@ const sourceOptions = computed(() => [
   },
 ])
 const targetValueModel = computed<number>({
-  get: () => draft.kind === 'duration' ? draft.targetValue / 60 : draft.targetValue,
+  get: () => draft.kind === 'duration' ? draft.targetValue / trackingDurationUnitSeconds(draft.unit) : draft.targetValue,
   set: (value) => {
-    draft.targetValue = draft.kind === 'duration' ? value * 60 : value
+    draft.targetValue = draft.kind === 'duration' ? value * trackingDurationUnitSeconds(draft.unit) : value
   },
 })
 const unitSelection = computed({
@@ -127,6 +134,7 @@ async function markFormReady() {
 }
 
 watch(() => draft.kind, (kind) => {
+  if (!ready.value) return
   if (measurementLocked.value) return
   customUnitSelected.value = false
   draft.dailyAggregation = defaultAggregation(kind)
@@ -279,7 +287,12 @@ function runRetirementAction(action: ContentRetirementActionId) {
   <main class="app-page app-page--editor tracking-editor">
     <v-alert v-if="error" type="error" variant="tonal" class="mb-4">{{ error }}</v-alert>
     <v-alert v-if="measurementLocked" type="info" variant="tonal" density="compact" class="mb-4">
-      Measurement type, unit, scale, and daily calculation are locked because this tracker has logs.
+      <template v-if="loggedDurationUnitEditable">
+        Measurement type and daily calculation are locked because this tracker has logs. You can still switch its duration unit between minutes and hours because saved values remain in seconds.
+      </template>
+      <template v-else>
+        Measurement type, unit, scale, and daily calculation are locked because this tracker has logs.
+      </template>
     </v-alert>
 
     <AppForm ref="form" validate-on="lazy" @submit.prevent="save">
@@ -327,14 +340,14 @@ function runRetirementAction(action: ContentRetirementActionId) {
         <p v-if="draft.kind === 'number' && !healthConnectConnected" class="field-help">
           Connect Health Connect in Settings to use step data.
         </p>
-  <v-select
-    v-if="canConfigureUnit"
-    v-model="unitSelection"
-    label="Unit or scale label (optional)"
-    placeholder="None"
-    persistent-placeholder
-    :items="unitOptions"
-          :disabled="measurementLocked"
+        <v-select
+          v-if="canConfigureUnit"
+          v-model="unitSelection"
+          label="Unit or scale label (optional)"
+          placeholder="None"
+          persistent-placeholder
+          :items="unitOptions"
+          :disabled="unitLocked"
           variant="outlined"
         >
           <template #append-inner>
@@ -404,7 +417,7 @@ function runRetirementAction(action: ContentRetirementActionId) {
         </div>
         <NumberPadField
           v-model="targetValueModel"
-          :title="draft.kind === 'duration' ? 'Target minutes (optional)' : 'Target (optional)'"
+          :title="draft.kind === 'duration' ? `Target ${draft.unit === 'hours' ? 'hours' : 'minutes'} (optional)` : 'Target (optional)'"
         />
         <template v-if="draft.targetValue > 0">
           <v-select

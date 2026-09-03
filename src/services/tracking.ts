@@ -386,6 +386,10 @@ export function formatNumber(value: number) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value)
 }
 
+export function trackingDurationUnitSeconds(unit: string) {
+  return unit === 'hours' ? 3600 : 60
+}
+
 export function formatTrackingValue(tracker: TrackingTracker, value: number) {
   if (tracker.kind === 'yes_no') return value > 0 ? 'Yes' : 'No'
   if (tracker.kind === 'event') return value === 0 ? 'Not occurred' : `${formatNumber(value)} ${value === 1 ? 'time' : 'times'}`

@@ -13,6 +13,7 @@ import {
   buildTrackingInsight,
   dateRangeKeys,
   defaultTrackingInsightRangePreset,
+  trackingDurationUnitSeconds,
   trackingDailyValuesForRange,
   type TrackingInsightResult,
 } from '@/services/tracking'
@@ -393,7 +394,9 @@ function trackerDailyValues(trackerId: string, start: string, end: string) {
   const tracker = tracking.trackers.find((item) => item.id === trackerId)
   if (!tracker) return []
   return trackingDailyValuesForRange(tracker, tracking.entries, start, end)
-    .map((item) => tracker.kind === 'duration' ? { ...item, value: item.value / 60 } : item)
+    .map((item) => tracker.kind === 'duration'
+      ? { ...item, value: item.value / trackingDurationUnitSeconds(tracker.unit) }
+      : item)
 }
 </script>
 
