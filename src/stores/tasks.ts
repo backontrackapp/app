@@ -501,7 +501,7 @@ export const useTaskStore = defineStore('tasks', () => {
     const isOccurrenceDriven = !step
       && ['check', 'interval', 'flashcards'].includes(task.type)
       && !isSessionDuration
-    const manuallyCompleted = isSessionDuration && occurrenceComplete && occurrenceSealed
+    const manuallyCompleted = !step && occurrenceComplete && occurrenceSealed
     const manuallyCompletedStep = Boolean(step && occurrenceComplete && occurrenceSealed)
     const isDailyTotal = !step && task.type === 'daily_total'
     const isDurationTotal = !step && task.type === 'duration'

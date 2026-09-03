@@ -561,6 +561,25 @@ const reviewProgramItems = computed(() => reviewItems.value.filter(item => (
   item.task.type === 'program' && Boolean(item.programStep)
 )))
 const reviewCarryItems = computed(() => reviewItems.value.filter(item => item.task.type !== 'program'))
+function reviewCompletionAction(item: TaskProgress) {
+  if (item.programStep) {
+    return { title: 'Complete', icon: 'mdi-check-circle-outline' }
+  }
+  if (
+    ['duration', 'daily_total', 'step_counter'].includes(item.task.type)
+    || Boolean(item.tracker)
+    || (
+      ['interval', 'flashcards'].includes(item.task.type)
+      && item.task.sessionGoalType === 'duration'
+    )
+  ) {
+    return { title: 'Lock in numbers', icon: 'mdi-lock-check-outline' }
+  }
+  if (item.task.type === 'check') {
+    return { title: 'Done', icon: 'mdi-check-bold' }
+  }
+  return { title: 'Complete', icon: 'mdi-check-circle-outline' }
+}
 const reviewBulkPresentation = computed(() => ({
   missed: {
     title: 'Mark all open work missed?',
@@ -960,11 +979,13 @@ async function runForProgress(progress: TaskProgress, action: () => Promise<void
   }
 }
 
-async function resolveReview(item: TaskProgress, status: 'missed' | 'carried') {
+async function resolveReview(item: TaskProgress, status: 'completed' | 'missed' | 'carried') {
   if (status === 'carried' && item.task.type === 'program') return
-  const update = runForProgress(item, () => store.setStatus(item, status))
+  await runForProgress(item, () => store.setStatus(item, status))
+}
+
+function closeReviewWhenEmpty() {
   if (!reviewItems.value.length) reviewSheet.value = false
-  await update
 }
 
 function requestBulkReview(action: 'missed' | 'carried' | 'shift') {
@@ -2289,54 +2310,66 @@ async function saveTaskLogEntry() {
           </v-col>
         </v-row>
       </div>
-      <div v-for="item in reviewItems" :key="`${item.scheduledDate}-${item.task.id}-${item.programStep?.id || ''}`" class="review-row px-2 py-3">
-        <div class="review-row__summary">
-          <span
-            class="review-row__icon"
-            :style="{ background: item.task.color || taskPresentation(item).color }"
-          >
-            <ContentIcon :icon="progressDisplayIcon(item)" size="1.25rem" />
-          </span>
-          <div class="review-row__copy flex-grow-1">
-            <strong>{{ item.programStep?.name || item.task.name }}</strong>
-            <p class="text-caption muted">
-              {{ format(parseISO(item.scheduledDate), 'EEE, MMM d') }} · Choose how this attempt ends.
-            </p>
+      <v-expand-transition group @after-leave="closeReviewWhenEmpty">
+        <div v-for="item in reviewItems" :key="`${item.scheduledDate}-${item.task.id}-${item.programStep?.id || ''}`" class="review-row px-2 py-3">
+          <div class="review-row__summary">
+            <span
+              class="review-row__icon"
+              :style="{ background: item.task.color || taskPresentation(item).color }"
+            >
+              <ContentIcon :icon="progressDisplayIcon(item)" size="1.25rem" />
+            </span>
+            <div class="review-row__copy flex-grow-1">
+              <strong>{{ item.programStep?.name || item.task.name }}</strong>
+              <p class="text-caption muted">
+                {{ format(parseISO(item.scheduledDate), 'EEE, MMM d') }} · Choose how this attempt ends.
+              </p>
+            </div>
+          </div>
+          <div class="review-actions">
+            <v-btn
+              size="large"
+              variant="flat"
+              color="secondary"
+              :prepend-icon="reviewCompletionAction(item).icon"
+              :disabled="reviewBulkUpdating || progressIsBusy(item)"
+              @click="resolveReview(item, 'completed')"
+            >
+              {{ reviewCompletionAction(item).title }}
+            </v-btn>
+            <v-btn
+              size="large"
+              variant="tonal"
+              color="error"
+              prepend-icon="mdi-close-circle-outline"
+              :disabled="reviewBulkUpdating || progressIsBusy(item)"
+              @click="resolveReview(item, 'missed')"
+            >
+              Mark missed
+            </v-btn>
+            <v-btn
+              v-if="item.task.type !== 'program'"
+              size="large"
+              variant="tonal"
+              prepend-icon="mdi-arrow-right-bold"
+              :disabled="reviewBulkUpdating || progressIsBusy(item)"
+              @click="resolveReview(item, 'carried')"
+            >
+              Carry forward
+            </v-btn>
+            <v-btn
+              v-if="item.task.type === 'program' && item.programStep"
+              size="large"
+              variant="tonal"
+              prepend-icon="mdi-calendar-arrow-right"
+              :disabled="reviewBulkUpdating || progressIsBusy(item)"
+              @click="runForProgress(item, () => store.shiftProgram(item))"
+            >
+              Shift program
+            </v-btn>
           </div>
         </div>
-        <div class="review-actions">
-          <v-btn
-            size="large"
-            variant="tonal"
-            color="error"
-            prepend-icon="mdi-close-circle-outline"
-            :disabled="reviewBulkUpdating || progressIsBusy(item)"
-            @click="resolveReview(item, 'missed')"
-          >
-            Mark missed
-          </v-btn>
-          <v-btn
-            v-if="item.task.type !== 'program'"
-            size="large"
-            variant="tonal"
-            prepend-icon="mdi-arrow-right-bold"
-            :disabled="reviewBulkUpdating || progressIsBusy(item)"
-            @click="resolveReview(item, 'carried')"
-          >
-            Carry forward
-          </v-btn>
-          <v-btn
-            v-if="item.task.type === 'program' && item.programStep"
-            size="large"
-            variant="tonal"
-            prepend-icon="mdi-calendar-arrow-right"
-            :disabled="reviewBulkUpdating || progressIsBusy(item)"
-            @click="runForProgress(item, () => store.shiftProgram(item))"
-          >
-            Shift program
-          </v-btn>
-        </div>
-      </div>
+      </v-expand-transition>
     </ActionBottomSheet>
 
     <ActionBottomSheet
