@@ -260,7 +260,8 @@ const baseSubtitle = computed(() => {
     return `${props.reviewSet.name} · ${props.reviewSet.mode === 'passive' ? 'Passive' : 'Manual'} · ${props.reviewSet.cardCount} ${cardLabel}`
   }
   if (isTracking.value) {
-    return ''
+    const total = target.value
+    return `${props.progress.value} of ${total} ${total === 1 ? 'tracker' : 'trackers'} logged`
   }
   if (isJournal.value) {
     if (props.progress.value > 0) {
@@ -394,7 +395,7 @@ onBeforeUnmount(() => {
     </div>
 
     <div v-if="hasPersistentDetails" class="task-card-body">
-      <div v-if="isNumeric || isSessionDuration" class="metric-row mt-4">
+      <div v-if="(isNumeric || isSessionDuration) && !isTrackingTask" class="metric-row mt-4">
         <div>
           <span
             class="metric-value"
@@ -415,7 +416,7 @@ onBeforeUnmount(() => {
         :bg-opacity="0.14"
         rounded
         style="height: 0.5625rem; --v-progress-linear-height: 0.5625rem"
-        :class="isTracking || hasMultipleStepCompletions ? 'mt-4' : 'mt-2'"
+        :class="isTrackingTask || hasMultipleStepCompletions ? 'mt-4' : 'mt-2'"
       />
 
       <ProgramRequirementList
@@ -443,6 +444,11 @@ onBeforeUnmount(() => {
               'task-detail-item--paused': !tracker.active,
             }"
             :title="tracker.name"
+            :subtitle="!tracker.active
+              ? 'Paused'
+              : tracker.loggedValue
+              ? `${tracker.loggedValue} logged for this date`
+              : tracker.logged ? 'Logged for this date' : 'Not logged for this date'"
             :disabled="!tracker.active || !canLogTracking || busy || progress.locked"
             rounded="lg"
             @click="emit('logTracking', progress, tracker.id)"
@@ -472,7 +478,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div
-        v-if="!progress.locked && numericGoalStatus"
+        v-if="!isTrackingTask && !progress.locked && numericGoalStatus"
         :class="['status-banner', 'mt-3', numericGoalStatus.tone]"
       >
         <span class="status-banner__label">
