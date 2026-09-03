@@ -649,20 +649,27 @@ function releaseLeavingPage(element: Element) {
             rel="noopener noreferrer"
           >
             <aside class="desktop-sidebar__ring-promo" aria-label="BackOnTrack Ring">
-              <img
-                class="desktop-sidebar__ring-image"
-                src="/images/backontrack-ring.png"
-                alt="BackOnTrack Ring"
-                width="256"
-                height="256"
-              />
-              <div class="desktop-sidebar__ring-details">
-                <p class="desktop-sidebar__ring-title mb-1">BackOnTrack Ring</p>
-                <p class="desktop-sidebar__ring-copy text-medium-emphasis mb-2">
-                  Control flashcards and intervals at your fingertips.
-                </p>
-                <p class="desktop-sidebar__ring-price mb-0">$49.99</p>
+              <p class="desktop-sidebar__ring-preorder px-3 py-2 mb-0">Available in preorder</p>
+              <div class="desktop-sidebar__ring-content pa-3">
+                <img
+                  class="desktop-sidebar__ring-image"
+                  src="/images/backontrack-ring.png"
+                  alt="BackOnTrack Ring"
+                  width="256"
+                  height="256"
+                />
+                <div class="desktop-sidebar__ring-details">
+                  <p class="desktop-sidebar__ring-title mb-1">BackOnTrack Ring</p>
+                  <p class="desktop-sidebar__ring-copy text-medium-emphasis mb-2">
+                    Control flashcards and intervals at your fingertips.
+                  </p>
+                  <p class="desktop-sidebar__ring-price mb-0">$49.99</p>
+                </div>
               </div>
+              <p class="desktop-sidebar__ring-cta px-3 py-2 mb-0">
+                Preorder now
+                <v-icon icon="mdi-arrow-top-right" size="12" aria-hidden="true" />
+              </p>
             </aside>
           </v-btn>
         </div>
@@ -1165,18 +1172,23 @@ function releaseLeavingPage(element: Element) {
 }
 
 .desktop-sidebar__ring-promo {
-  display: flex;
+  display: block;
   width: 100%;
   min-width: 0;
   margin-top: auto;
-  align-items: center;
-  gap: .5rem;
+  overflow: hidden;
   border: 1px solid rgba(var(--v-theme-secondary), .24);
   border-radius: 0.5rem;
-  padding: .75rem;
   background:
     linear-gradient(135deg, rgba(var(--v-theme-secondary), .16), transparent 72%),
     rgba(var(--v-theme-surface-variant), .52);
+}
+
+.desktop-sidebar__ring-content {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: .5rem;
 }
 
 .desktop-sidebar__ring-image {
@@ -1192,6 +1204,19 @@ function releaseLeavingPage(element: Element) {
   min-width: 0;
   white-space: normal;
   overflow-wrap: break-word;
+}
+
+.desktop-sidebar__ring-preorder {
+  display: block;
+  width: 100%;
+  border-bottom: 1px solid rgba(var(--v-theme-secondary), .24);
+  color: rgb(var(--v-theme-secondary));
+  background: rgba(var(--v-theme-secondary), .12);
+  font-size: .625rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  line-height: 1.2;
+  text-transform: uppercase;
 }
 
 .desktop-sidebar__ring-title,
@@ -1210,6 +1235,21 @@ function releaseLeavingPage(element: Element) {
 
 .desktop-sidebar__ring-price {
   color: rgb(var(--v-theme-secondary));
+}
+
+.desktop-sidebar__ring-cta {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: .125rem;
+  border-top: 1px solid rgba(var(--v-theme-secondary), .24);
+  color: rgb(var(--v-theme-on-secondary));
+  background: rgb(var(--v-theme-secondary));
+  font-size: .625rem;
+  font-weight: 800;
+  letter-spacing: .02em;
+  line-height: 1.2;
 }
 
 .desktop-sidebar__nav-item {
