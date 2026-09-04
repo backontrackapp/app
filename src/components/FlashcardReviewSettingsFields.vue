@@ -184,7 +184,6 @@ watch(() => [settings.value.cardSides, settings.value.invertFaces], () => {
 
 function updateMode(mode: 'manual' | 'passive') {
   settings.value.mode = mode
-  settings.value.indefinite = mode === 'passive'
   settings.value.timeLimitSeconds = mode === 'passive'
     ? settings.value.timeLimitSeconds || DEFAULT_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS
     : 0

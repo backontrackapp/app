@@ -999,7 +999,7 @@ final class SyncService
                 'mode' => 'manual',
                 'card_sides' => 'both',
                 'invert_faces' => false,
-                'indefinite' => false,
+                'indefinite' => true,
                 'time_limit_seconds' => 0,
                 'max_cards' => $maxCards,
                 'eject_behavior' => 'replace_exclude',

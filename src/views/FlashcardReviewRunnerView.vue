@@ -113,7 +113,7 @@ const sessionSettingsDraft = reactive<FlashcardReviewSettings>({
   mode: 'manual',
   cardSides: 'both',
   invertFaces: false,
-  indefinite: false,
+  indefinite: true,
   timeLimitSeconds: 0,
   maxCards: 20,
   ejectBehavior: 'remove',

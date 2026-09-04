@@ -197,7 +197,7 @@ function localCreateDefaults(resource: string, body: Record<string, unknown>) {
       ...body,
     }
   }
-  if (resource === 'flashcard_review_sets') return { created_at: now, updated_at: now, ...body }
+  if (resource === 'flashcard_review_sets') return { indefinite: true, created_at: now, updated_at: now, ...body }
   if (resource === 'journal_entries') {
     return {
       color: '#C7F464', image_url: '', image_file: '', task_snapshot: '', tracker_snapshot: {},
@@ -622,7 +622,7 @@ class ApiClient {
         assigned_cards: [...new Set([...body.existing_card_ids, ...cards.map(card => card.id)])],
         excluded_cards: [],
         ...flashcardReviewSettingsBody(input.settings || {
-          mode: 'manual', cardSides: 'both', indefinite: false, timeLimitSeconds: 0,
+          mode: 'manual', cardSides: 'both', indefinite: true, timeLimitSeconds: 0,
           maxCards: Math.min(100, Math.max(1, Number(input.maxCards) || 12)),
           ejectBehavior: 'replace_exclude', ejectExcludeAfter: DEFAULT_FLASHCARD_EJECT_EXCLUDE_AFTER,
           frontSeconds: 5, backSeconds: 5,

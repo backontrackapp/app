@@ -1083,7 +1083,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         mode: 'manual',
         cardSides: DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
         invertFaces: false,
-        indefinite: false,
+        indefinite: true,
         timeLimitSeconds: 0,
         maxCards: destination.maxCards || DEFAULT_FLASHCARD_SESSION_CARDS,
         ejectBehavior: 'replace_exclude',

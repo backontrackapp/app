@@ -3005,7 +3005,7 @@ final class Api
                 'assigned_cards' => [],
                 'card_sides' => 'both',
                 'invert_faces' => false,
-                'indefinite' => false,
+                'indefinite' => true,
                 'max_cards' => 12,
                 'eject_exclude_after' => 3,
                 'front_seconds' => 5,
