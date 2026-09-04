@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { format } from 'date-fns'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
-import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import ContentIcon from '@/components/ContentIcon.vue'
 import EmptyStateCard from '@/components/EmptyStateCard.vue'
 import { nextScheduledDates } from '@/services/schedule'
@@ -23,20 +22,8 @@ const intervalStore = useIntervalStore()
 const flashcardStore = useFlashcardStore()
 const router = useRouter()
 const { tasks, steps, loading, error } = storeToRefs(store)
-const filter = ref<'active' | 'paused'>('active')
-const pendingStatusTask = ref<Task>()
-const statusDialog = ref(false)
-const updatingStatus = ref(false)
 const reorderingTasks = ref(false)
-const statusDirection = ref<'forward' | 'back'>('forward')
-
-watch(filter, (status, previousStatus) => {
-  statusDirection.value = status === 'paused' && previousStatus === 'active' ? 'forward' : 'back'
-})
-
-const visibleTasks = computed(() => tasks.value.filter((task) =>
-  !task.archived && task.active === (filter.value === 'active'),
-))
+const visibleTasks = computed(() => tasks.value.filter(task => !task.archived))
 
 onMounted(() => {
   if (!tasks.value.length) store.load().catch(() => undefined)
@@ -54,7 +41,6 @@ function attachedReviewSetName(task: Task) {
 }
 
 function taskIcon(task: Task) {
-  if (!task.active) return 'mdi-pause'
   const interval = intervalStore.templates.find(item => item.id === task.intervalTemplate)
   const reviewSet = flashcardStore.reviewSets.find(item => item.id === task.flashcardReviewSet)
   return taskDisplayIcon(task, {
@@ -86,11 +72,6 @@ function targetLabel(task: Task) {
   return `${task.targetValue} ${task.customUnit || task.unit || ''}`.trim()
 }
 
-function requestStatusChange(task: Task) {
-  pendingStatusTask.value = task
-  statusDialog.value = true
-}
-
 async function reorderVisibleTasks(result: LongPressDragResult) {
   reorderingTasks.value = true
   try {
@@ -99,18 +80,6 @@ async function reorderVisibleTasks(result: LongPressDragResult) {
     // The store restores the previous order and exposes the save error.
   } finally {
     reorderingTasks.value = false
-  }
-}
-
-async function confirmStatusChange() {
-  if (!pendingStatusTask.value) return
-  updatingStatus.value = true
-  try {
-    await store.toggleTaskActive(pendingStatusTask.value)
-    statusDialog.value = false
-    pendingStatusTask.value = undefined
-  } finally {
-    updatingStatus.value = false
   }
 }
 </script>
@@ -125,10 +94,6 @@ async function confirmStatusChange() {
     </v-alert>
 
     <div class="manage-controls mb-4">
-      <v-tabs v-model="filter" color="secondary" density="comfortable" class="manage-status-tabs">
-        <v-tab value="active">Active</v-tab>
-        <v-tab value="paused">Paused</v-tab>
-      </v-tabs>
       <span class="text-caption muted">{{ visibleTasks.length }} total</span>
       <v-btn
         icon="mdi-plus"
@@ -138,166 +103,85 @@ async function confirmStatusChange() {
       />
     </div>
 
-    <div class="manage-status-stage">
-      <transition :name="`manage-slide-${statusDirection}`">
-        <div :key="filter" class="manage-status-content">
-          <div v-if="visibleTasks.length" class="manage-list">
-            <v-card
-              v-for="task in visibleTasks"
-              :key="task.id"
-              v-long-press-drag="{
-                id: task.id,
-                group: `manage-tasks-${filter}`,
-                disabled: visibleTasks.length < 2 || updatingStatus || reorderingTasks,
-                onDrop: reorderVisibleTasks,
-              }"
-              class="manage-card surface-card pa-4"
-              @click="router.push(`/tasks/${task.id}`)"
-            >
-              <div class="d-flex align-start ga-3">
-                <div class="type-icon" :style="{ background: task.color || TASK_TYPE_PRESENTATION[task.type].color }">
-                  <ContentIcon :icon="taskIcon(task)" size="1.3125rem" />
-                </div>
-                <div class="flex-grow-1 min-width-0">
-                  <div class="d-flex align-center ga-2">
-                    <h2 class="text-body-1 font-weight-black text-truncate">{{ task.name }}</h2>
-                    <v-icon v-if="task.mandatory" icon="mdi-shield-check" color="primary" size="15" />
-                  </div>
-                  <p class="text-caption muted mt-1">{{ TASK_TYPE_PRESENTATION[task.type].title }} · {{ scheduleLabel(task) }}</p>
-                  <div v-if="task.type === 'program'" class="step-preview mt-3">
-                    <span
-                      v-for="step in steps.filter(item => item.active && item.task === task.id).slice(0, 4)"
-                      :key="step.id"
-                    >
-                      {{ step.name }}
-                    </span>
-                  </div>
-                  <p v-else-if="task.type === 'interval'" class="target-copy mt-3">
-                    <v-icon icon="mdi-timer-play-outline" size="15" class="mr-1" />
-                    {{ attachedIntervalName(task) }}
-                  </p>
-                  <p v-else-if="task.type === 'flashcards'" class="target-copy mt-3">
-                    <v-icon icon="mdi-cards-playing-outline" size="15" class="mr-1" />
-                    {{ attachedReviewSetName(task) }}
-                  </p>
-                  <p v-else-if="goalTracker(task) || task.targetValue" class="target-copy mt-3">
-                    Target: <strong>{{ targetLabel(task) }}</strong>
-                    <span v-if="goalTracker(task)?.trackingWindow === 'week' || task.goalPeriod === 'week'"> / week</span>
-                  </p>
-                </div>
-                <v-btn
-                  :icon="task.active ? 'mdi-pause' : 'mdi-play'"
-                  :color="task.active ? undefined : 'secondary'"
-                  variant="tonal"
-                  size="small"
-                  :aria-label="task.active ? `Pause ${task.name}` : `Activate ${task.name}`"
-                  @touchstart.stop
-                  @click.stop="requestStatusChange(task)"
-                />
-              </div>
-              <v-divider class="my-3" />
-              <div class="text-caption">
-                <span class="muted">
-                  <v-icon icon="mdi-calendar-blank-outline" size="15" class="mr-1" />
-                  Next: {{ nextLabel(task) }}
-                </span>
-              </div>
-            </v-card>
+    <div v-if="visibleTasks.length" class="manage-list">
+      <v-card
+        v-for="task in visibleTasks"
+        :key="task.id"
+        v-long-press-drag="{
+          id: task.id,
+          group: 'manage-tasks',
+          disabled: visibleTasks.length < 2 || reorderingTasks,
+          onDrop: reorderVisibleTasks,
+        }"
+        class="manage-card surface-card pa-4"
+        @click="router.push(`/tasks/${task.id}`)"
+      >
+        <div class="d-flex align-start ga-3">
+          <div class="type-icon" :style="{ background: task.color || TASK_TYPE_PRESENTATION[task.type].color }">
+            <ContentIcon :icon="taskIcon(task)" size="1.3125rem" />
           </div>
-
-          <EmptyStateCard
-            v-else-if="!loading"
-            :icon="filter === 'active' ? 'mdi-clipboard-plus-outline' : 'mdi-pause-circle-outline'"
-            :title="filter === 'active' ? 'Build your first routine' : 'Nothing paused'"
-            :subtitle="filter === 'active' ? 'Choose a task style and make it yours.' : 'Paused tasks will wait here without losing history.'"
-          >
-            <template #button>
-              <v-btn
-                v-if="filter === 'active'"
-                color="secondary"
-                to="/tasks/new"
+          <div class="flex-grow-1 min-width-0">
+            <div class="d-flex align-center ga-2">
+              <h2 class="text-body-1 font-weight-black text-truncate">{{ task.name }}</h2>
+              <v-icon v-if="task.mandatory" icon="mdi-shield-check" color="primary" size="15" />
+            </div>
+            <p class="text-caption muted mt-1">{{ TASK_TYPE_PRESENTATION[task.type].title }} · {{ scheduleLabel(task) }}</p>
+            <div v-if="task.type === 'program'" class="step-preview mt-3">
+              <span
+                v-for="step in steps.filter(item => item.active && item.task === task.id).slice(0, 4)"
+                :key="step.id"
               >
-                Create task
-              </v-btn>
-            </template>
-          </EmptyStateCard>
+                {{ step.name }}
+              </span>
+            </div>
+            <p v-else-if="task.type === 'interval'" class="target-copy mt-3">
+              <v-icon icon="mdi-timer-play-outline" size="15" class="mr-1" />
+              {{ attachedIntervalName(task) }}
+            </p>
+            <p v-else-if="task.type === 'flashcards'" class="target-copy mt-3">
+              <v-icon icon="mdi-cards-playing-outline" size="15" class="mr-1" />
+              {{ attachedReviewSetName(task) }}
+            </p>
+            <p v-else-if="goalTracker(task) || task.targetValue" class="target-copy mt-3">
+              Target: <strong>{{ targetLabel(task) }}</strong>
+              <span v-if="goalTracker(task)?.trackingWindow === 'week' || task.goalPeriod === 'week'"> / week</span>
+            </p>
+          </div>
         </div>
-      </transition>
+        <v-divider class="my-3" />
+        <div class="text-caption">
+          <span class="muted">
+            <v-icon icon="mdi-calendar-blank-outline" size="15" class="mr-1" />
+            Next: {{ nextLabel(task) }}
+          </span>
+        </div>
+      </v-card>
     </div>
 
-    <ConfirmDialog
-      v-model="statusDialog"
-      :title="pendingStatusTask?.active ? 'Pause this task?' : 'Activate this task?'"
-      :message="pendingStatusTask?.active
-        ? `${pendingStatusTask?.name || 'This task'} will stop appearing in your schedule until you activate it again. Its history will be preserved.`
-        : `${pendingStatusTask?.name || 'This task'} will return to its schedule based on its recurrence settings.`"
-      :confirm-text="pendingStatusTask?.active ? 'Pause task' : 'Activate task'"
-      :confirm-color="pendingStatusTask?.active ? 'warning' : 'secondary'"
-      :icon="pendingStatusTask?.active ? 'mdi-pause' : 'mdi-play'"
-      :loading="updatingStatus"
-      @confirm="confirmStatusChange"
-    />
+    <EmptyStateCard
+      v-else-if="!loading"
+      icon="mdi-clipboard-plus-outline"
+      title="Build your first routine"
+      subtitle="Choose a task style and make it yours."
+    >
+      <template #button>
+        <v-btn
+          color="secondary"
+          to="/tasks/new"
+        >
+          Create task
+        </v-btn>
+      </template>
+    </EmptyStateCard>
   </main>
 </template>
 
 <style scoped>
 .manage-controls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: .75rem;
-}
-
-.manage-status-tabs {
-  width: auto;
-  min-width: 0;
-}
-
-.manage-status-stage {
-  display: grid;
-  width: 100%;
-  min-width: 0;
-  overflow-x: clip;
-}
-
-.manage-status-content {
-  width: 100%;
-  min-width: 0;
-  grid-area: 1 / 1;
-}
-
-.manage-slide-forward-enter-active,
-.manage-slide-forward-leave-active,
-.manage-slide-back-enter-active,
-.manage-slide-back-leave-active {
-  transition:
-    opacity 240ms ease,
-    transform 240ms cubic-bezier(.22, 1, .36, 1);
-}
-
-.manage-slide-forward-leave-active,
-.manage-slide-back-leave-active {
-  pointer-events: none;
-}
-
-.manage-slide-forward-enter-from {
-  opacity: 0;
-  transform: translateX(1.5rem);
-}
-
-.manage-slide-forward-leave-to {
-  opacity: 0;
-  transform: translateX(-1rem);
-}
-
-.manage-slide-back-enter-from {
-  opacity: 0;
-  transform: translateX(-1.5rem);
-}
-
-.manage-slide-back-leave-to {
-  opacity: 0;
-  transform: translateX(1rem);
 }
 
 .type-icon {
@@ -346,16 +230,6 @@ async function confirmStatusChange() {
 @media (min-width: 700px) {
   .manage-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 420px) {
-  .manage-controls {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .manage-controls > .muted {
-    display: none;
   }
 }
 </style>

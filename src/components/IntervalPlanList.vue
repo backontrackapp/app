@@ -149,16 +149,17 @@ function runTemplateAction(action: IntervalTemplateAction, template: IntervalTem
     :aria-label="selectedTemplate ? `${selectedTemplate.name} actions` : 'Interval actions'"
   >
     <template v-if="selectedTemplate">
-      <v-list-item
-        v-for="item in INTERVAL_TEMPLATE_ACTIONS"
-        :key="item.action"
-        :prepend-icon="item.icon"
-        :title="item.title"
-        :base-color="item.color"
-        :class="{ 'font-weight-bold': item.action === 'play' }"
-        rounded="lg"
-        @click="runTemplateAction(item.action, selectedTemplate)"
-      />
+      <template v-for="item in INTERVAL_TEMPLATE_ACTIONS" :key="item.action">
+        <v-divider v-if="'divider' in item && item.divider" class="my-2" />
+        <v-list-item
+          :prepend-icon="item.icon"
+          :title="item.title"
+          :base-color="item.color"
+          :class="{ 'font-weight-bold': item.action === 'play' }"
+          rounded="lg"
+          @click="runTemplateAction(item.action, selectedTemplate)"
+        />
+      </template>
     </template>
   </ActionBottomSheet>
 

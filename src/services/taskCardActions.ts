@@ -12,21 +12,6 @@ export const TASK_CARD_ACTION_ITEMS = [
     title: 'Duplicate',
     icon: 'mdi-content-copy',
   },
-  {
-    id: 'skip-task',
-    title: 'Skip',
-    icon: 'mdi-skip-next-outline',
-  },
-  {
-    id: 'toggle-task-status',
-    title: 'Pause task',
-    icon: 'mdi-pause',
-  },
-  {
-    id: 'view-log-history',
-    title: 'Log history',
-    icon: 'mdi-history',
-  },
 ] as const
 
 export type TaskCardActionId = typeof TASK_CARD_ACTION_ITEMS[number]['id']

@@ -21,12 +21,10 @@ const title = computed(() => props.progress.programStep?.name || task.value.name
 const presentation = computed(() => TASK_TYPE_PRESENTATION[task.value.type])
 const goalTracker = computed(() => props.progress.tracker)
 const isTrackerGoal = computed(() => Boolean(goalTracker.value))
-const displayIcon = computed(() => task.value.active
-  ? task.value.icon || goalTracker.value?.icon || taskDisplayIcon(task.value, {
-      intervalIcon: props.intervalIcon,
-      reviewSetIcon: props.reviewSetIcon,
-    })
-  : 'mdi-pause')
+const displayIcon = computed(() => task.value.icon || goalTracker.value?.icon || taskDisplayIcon(task.value, {
+  intervalIcon: props.intervalIcon,
+  reviewSetIcon: props.reviewSetIcon,
+}))
 const taskColor = computed(() => task.value.color || presentation.value.color)
 const completionItems = computed(() => props.progress.completionItems || [])
 const hasMultipleCompletions = computed(() => completionItems.value.length > 1)

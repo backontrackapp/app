@@ -1568,7 +1568,7 @@ async function deleteTaskPermanently() {
       v-model="archiveDialog"
       :title="draft.archived ? 'Restore this task?' : 'Archive this task?'"
       :message="draft.archived
-        ? 'This task will return to the Tasks view with its previous active or paused state.'
+        ? 'This task will return to its schedule with its settings and history preserved.'
         : 'This task will leave your schedule, while its settings, logged entries, and history remain available.'"
       :confirm-text="draft.archived ? 'Restore task' : 'Archive task'"
       :confirm-color="draft.archived ? 'secondary' : 'warning'"

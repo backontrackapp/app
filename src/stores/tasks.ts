@@ -79,8 +79,9 @@ function mapTask(record: Record<string, any>): Task {
     color: record.color || undefined,
     mandatory: record.mandatory,
     reviewWhenMissed: record.review_when_missed,
-    active: record.active,
-    archived: record.archived === true,
+    active: true,
+    // Older offline snapshots can still contain paused tasks until they sync.
+    archived: record.archived === true || record.active === false,
     scheduleMode: record.schedule_mode === 'time_based' ? 'time_based' : 'all_day',
     scheduledTime: record.schedule_mode === 'time_based' ? effectiveScheduledTimes[0] : undefined,
     scheduledTimes: record.schedule_mode === 'time_based' ? effectiveScheduledTimes : [],
@@ -515,7 +516,7 @@ export const useTaskStore = defineStore('tasks', () => {
       || isTrackerDurationTotal
       || isSessionDuration
     ) && occurrenceSealed
-    const complete = occurrenceSkipped
+    const complete = occurrenceSkipped || (completionState.__taskUndone === true && !occurrenceComplete)
       ? false
       : completionItems
         ? manuallyCompletedStep || (completionItems.length > 0 && completionItems.every(item => item.complete))
@@ -1244,6 +1245,9 @@ export const useTaskStore = defineStore('tasks', () => {
       && (!scheduledTime || item.scheduledTime === scheduledTime)
     ))
     if (!progress) return undefined
+    if (preserveRecordedCompletion && progress.occurrence?.completionState?.__taskUndone === true) {
+      return progress.occurrence
+    }
     if (programStepId && programStepCompletionId) {
       if (
         preserveRecordedCompletion
@@ -1743,6 +1747,23 @@ export const useTaskStore = defineStore('tasks', () => {
     }
   }
 
+  async function setTaskCompleted(progress: TaskProgress, complete: boolean) {
+    const key = occurrenceStatusKey(
+      progress.task.id, progress.scheduledDate, progress.programStep?.id, progress.scheduledTime,
+    )
+    await updateOccurrenceOptimistically(progress, {
+      status: complete ? 'completed' : 'pending',
+      sealed: complete,
+      completedAt: complete ? new Date().toISOString() : '',
+      completionState: {
+        ...(progress.occurrence?.completionState || {}),
+        ...(optimisticOccurrencePatches.value[key]?.completionState || {}),
+        __taskUndone: !complete,
+      },
+    })
+    void syncTaskReminders()
+  }
+
   async function setStatus(progress: TaskProgress, status: Occurrence['status']) {
     if (status === 'carried' && (progress.task.type === 'program' || progress.programStep)) {
       throw new Error('Programs can only be marked missed or shifted.')
@@ -1789,7 +1810,7 @@ export const useTaskStore = defineStore('tasks', () => {
       color: draft.color || '#C7F464',
       mandatory: draft.mandatory,
       review_when_missed: draft.reviewWhenMissed,
-      active: draft.active,
+      active: true,
       archived: draft.archived === true,
       schedule_mode: draft.scheduleMode === 'time_based' ? 'time_based' : 'all_day',
       scheduled_time: scheduledTimes[0] || '',
@@ -1973,25 +1994,12 @@ export const useTaskStore = defineStore('tasks', () => {
     return results.some(result => result.totalItems > 0)
   }
 
-  async function toggleTaskActive(task: Task) {
-    const previous = { ...task }
-    task.active = !task.active
-    try {
-      const record = await api.collection('tasks').update(task.id, { active: task.active })
-      Object.assign(task, mapTask(record))
-    } catch (cause) {
-      Object.assign(task, previous)
-      throw cause
-    } finally {
-      void syncTaskReminders()
-    }
-  }
-
   async function setTaskArchived(task: Task, archived: boolean) {
     const previous = { ...task }
     task.archived = archived
+    task.active = true
     try {
-      const record = await api.collection('tasks').update(task.id, { archived })
+      const record = await api.collection('tasks').update(task.id, { archived, active: true })
       Object.assign(task, mapTask(record))
     } catch (cause) {
       Object.assign(task, previous)
@@ -2008,34 +2016,6 @@ export const useTaskStore = defineStore('tasks', () => {
         .some(step => step.id === progress.programStep?.id)
     }
     return progress.task.type !== 'program' && isTaskScheduled(progress.task, date)
-  }
-
-  async function toggleSkipped(progress: TaskProgress, skipped: boolean) {
-    if (skipped) {
-      await setStatus(progress, 'skipped')
-      return
-    }
-    const occurrence = occurrenceFor(
-      progress.task,
-      parseISO(progress.scheduledDate),
-      progress.programStep,
-      progress.scheduledTime,
-    )
-    if (!occurrence || occurrence.status !== 'skipped') return
-    if (progressIsScheduled(progress)) {
-      await setStatus(progress, 'pending')
-      return
-    }
-    const index = occurrences.value.indexOf(occurrence)
-    occurrences.value.splice(index, 1)
-    try {
-      await api.collection('occurrences').delete(occurrence.id)
-    } catch (cause) {
-      occurrences.value.splice(index, 0, occurrence)
-      throw cause
-    } finally {
-      void syncTaskReminders()
-    }
   }
 
   function upsertOccurrenceRecord(record: Record<string, any>) {
@@ -2446,15 +2426,14 @@ export const useTaskStore = defineStore('tasks', () => {
     updateTaskLogImage,
     archiveTaskLogImage,
     setStatus,
+    setTaskCompleted,
     progressIsScheduled,
-    toggleSkipped,
     shiftProgram,
     undoReviewResolution,
     bulkResolveReview,
     saveTask,
     programStepHasReferences,
     reorderQuickLogs,
-    toggleTaskActive,
     setTaskArchived,
     upsertOccurrenceRecord,
     upsertEntryRecord,

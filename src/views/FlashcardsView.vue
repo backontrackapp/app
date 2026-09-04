@@ -612,7 +612,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
     >
       <template v-if="selectedReviewSet">
         <template v-for="item in selectedActions" :key="item.action">
-          <v-divider v-if="item.divider" class="my-1" />
+          <v-divider v-if="item.divider" class="my-2" />
           <v-list-item
             :prepend-icon="item.icon"
             :title="item.title"

@@ -1,5 +1,7 @@
 # Intervals
 
+Interval action menus separate **Play** from Edit and Duplicate with a divider matching the Tasks menu.
+
 Saved intervals support an optional emoji and selectable color as visual anchors. The editor places the shared emoji selector button directly above the color picker. Active interval cards show the selected emoji against that color and fall back to the timer icon when no emoji is selected; archived cards retain their archive status icon. Duplicating an interval preserves both its emoji and color.
 
 The interval editor includes an optional template description. It is saved with the interval and is preserved when the template is duplicated or edited.

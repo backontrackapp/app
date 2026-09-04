@@ -25,7 +25,7 @@ const props = defineProps<{
   canLogTracking?: boolean
   syncing?: boolean
   stepCountError?: string
-  scheduleStatus?: 'not-scheduled' | 'paused' | 'skipped'
+  scheduleStatus?: 'not-scheduled' | 'skipped'
   timeLabel?: string
   taskLogImages?: TaskLogImage[]
 }>()
@@ -209,7 +209,6 @@ const numericGoalStatus = computed(() => {
 
 const taskTypePresentation = computed(() => TASK_TYPE_PRESENTATION[task.value.type])
 const taskColor = computed(() => task.value.color || taskTypePresentation.value.color)
-const isPausedTask = computed(() => props.scheduleStatus === 'paused')
 const isSkippedTask = computed(() => props.scheduleStatus === 'skipped')
 const isResolvedInactive = computed(() => ['missed', 'skipped', 'rescheduled'].includes(props.progress.status))
 const stateColor = computed(() => {
@@ -222,7 +221,6 @@ const stateColor = computed(() => {
   return taskColor.value
 })
 const stateIcon = computed(() => {
-  if (isPausedTask.value || !task.value.active) return 'mdi-pause'
   if (isSkippedTask.value) return 'mdi-skip-next-outline'
   if (props.progress.complete) return 'mdi-check-bold'
   if (props.progress.locked) return 'mdi-lock-outline'
@@ -232,14 +230,11 @@ const stateIcon = computed(() => {
   })
 })
 const showingTaskIcon = computed(() =>
-  task.value.active
-  && !isPausedTask.value
-  && !isSkippedTask.value
+  !isSkippedTask.value
   && !props.progress.complete
   && !props.progress.locked,
 )
 const stateIconColor = computed(() => {
-  if (isPausedTask.value || !task.value.active) return 'on-surface'
   if (isSkippedTask.value) return 'warning'
   if (showingTaskIcon.value) return '#191C19'
   if (props.progress.complete) return 'white'
@@ -355,8 +350,7 @@ onBeforeUnmount(() => {
           class="check-control check-control--status"
           :class="{
             'check-control--type': showingTaskIcon,
-            'check-control--done': progress.complete && !isPausedTask,
-            'check-control--paused': isPausedTask || !task.active,
+            'check-control--done': progress.complete,
           }"
           :style="{ '--task-color': taskColor }"
           aria-hidden="true"
@@ -384,9 +378,7 @@ onBeforeUnmount(() => {
         <h3 class="task-title">{{ title }}</h3>
         <Transition name="task-tag">
           <span v-if="scheduleStatus" :key="scheduleStatus" class="schedule-status mt-1">
-            {{ scheduleStatus === 'paused'
-              ? 'Paused'
-              : scheduleStatus === 'skipped' ? 'Skipped' : 'Not scheduled' }}
+            {{ scheduleStatus === 'skipped' ? 'Skipped' : 'Not scheduled' }}
           </span>
         </Transition>
         <p v-if="subtitle" class="task-subtitle text-truncate mt-1">{{ subtitle }}</p>
@@ -564,7 +556,6 @@ onBeforeUnmount(() => {
 
 .check-control--done { background: transparent; color: var(--task-color); }
 .check-control--type { background: var(--task-color); color: #191c19; }
-.check-control--paused { background: rgb(var(--v-theme-on-surface) / .14); }
 
 .task-required-badge {
   position: absolute;

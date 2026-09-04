@@ -24,12 +24,11 @@ import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { reviewSetCardCount } from '@/services/flashcards'
 import { exercisePresentationById } from '@/services/exercisePresentations'
 import { isNativeHealthConnectSupported } from '@/services/healthConnect'
-import { isHealthConnectEntry } from '@/services/healthConnectEntries'
 import { formatIntervalDuration, intervalDuration } from '@/services/intervals'
 import { bottomAlignedTaskScrollTop, nextIncompleteTaskKey } from '@/services/nextIncompleteTask'
 import { programStepRequirementName } from '@/services/programStepCompletions'
 import { isTaskScheduled, taskCompletionMarkerColor, toDateKey } from '@/services/schedule'
-import { TASK_CARD_ACTION_ITEMS, taskCanLogAdditionalValue, taskCanLogAmounts, taskIntervalCanStart } from '@/services/taskCardActions'
+import { TASK_CARD_ACTION_ITEMS, taskCanLogAmounts, taskIntervalCanStart } from '@/services/taskCardActions'
 import type { TaskCardActionId } from '@/services/taskCardActions'
 import { formatTrackingValue, trackingDurationUnitSeconds } from '@/services/tracking'
 import {
@@ -48,12 +47,10 @@ import { useJournalStore } from '@/stores/journal'
 import { useTaskStore } from '@/stores/tasks'
 import { useTrackingStore } from '@/stores/tracking'
 import type {
-  Entry,
   TaskLogImage,
   ProgramStepCompletionProgress,
   ProgramStepRequirementListItem,
   TaskProgress,
-  TrackingEntry,
   TrackingTracker,
 } from '@/types/domain'
 
@@ -86,10 +83,9 @@ const exactCompletion = computed(() => exactProgress.value?.completionItems?.fin
 ))
 const exactTracker = ref<TrackingTracker>()
 const exactAmountInput = ref('')
-const exactEditingEntry = ref<Entry>()
 const exactLoggingAdditional = ref(false)
 const exactError = ref('')
-const exactAction = ref<'add' | 'subtract' | 'set' | 'save'>()
+const exactAction = ref<'add' | 'subtract' | 'set'>()
 const imageLogSheet = ref(false)
 const imageLogProgress = ref<TaskProgress>()
 const imageLogCompletionId = ref('')
@@ -104,28 +100,15 @@ const reviewBulkAction = ref<'missed' | 'carried' | 'shift'>('missed')
 const reviewBulkItems = ref<TaskProgress[]>([])
 const reviewBulkUpdating = ref(false)
 const taskSheet = ref(false)
-const taskSheetMode = ref<'actions' | 'history'>('actions')
 const taskActionProgress = ref<TaskProgress>()
 const taskActionCompletionId = ref('')
 const taskActionQuickLog = ref(false)
-const taskStatusDialog = ref(false)
-const taskStatusUpdating = ref(false)
-const taskSkipDialog = ref(false)
-const taskSkipUpdating = ref(false)
-const taskLogEntries = ref<Entry[]>([])
-const taskTrackerLogEntries = ref<TrackingEntry[]>([])
-const taskLogLoading = ref(false)
-const taskLogError = ref('')
-const taskLogDeleteDialog = ref(false)
-const taskLogDeleteEntry = ref<Entry>()
-let taskLogRequest = 0
 const activeIntervalSheet = ref(false)
 const activeReviewSheet = ref(false)
 const intervalStartError = ref('')
 const flashcardStartError = ref('')
 const trackingSheetOpen = ref(false)
 const trackingSheetTracker = ref<TrackingTracker>()
-const trackingSheetEntry = ref<TrackingEntry>()
 const trackingSheetDate = ref(toDateKey(new Date()))
 const trackingSheetContext = ref('')
 const trackingActionsOpen = ref(false)
@@ -184,12 +167,10 @@ const exactAmount = computed(() => {
   const value = Number(exactAmountInput.value)
   return Number.isFinite(value) ? value : null
 })
-const exactCanLogAmount = computed(() => exactAmount.value !== null && exactAmount.value !== 0)
 const exactCanAdjustAmount = computed(() => exactAmount.value !== null && exactAmount.value > 0)
 const exactCanSetAmount = computed(() => exactAmount.value !== null && exactAmount.value >= 0)
 const exactAmountError = computed(() => {
-  if (exactEditingEntry.value && exactAmount.value === 0) return 'Amount cannot be zero.'
-  if (!exactEditingEntry.value && exactAmount.value !== null && exactAmount.value < 0) {
+  if (exactAmount.value !== null && exactAmount.value < 0) {
     return 'Enter a positive amount and use Subtract.'
   }
   return undefined
@@ -220,9 +201,6 @@ const taskActionTitle = computed(() =>
     || taskActionProgress.value?.task.name
     || 'Task actions',
 )
-const taskSheetDescription = computed(() => taskSheetMode.value === 'history'
-  ? `${taskActionTitle.value} · ${format(selectedDate.value, 'EEEE, MMMM d')}`
-  : undefined)
 type TaskMainActionId =
   | 'toggle-complete'
   | 'undo-resolution'
@@ -372,10 +350,17 @@ const taskActionIsScheduled = computed(() => {
 const taskActionCompletion = computed(() => taskActionProgress.value?.completionItems?.find(
   item => item.id === taskActionCompletionId.value,
 ))
-const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
+const availableTaskMainActionItems = computed<TaskMainActionItem[]>(() => {
   const progress = taskActionProgress.value
-  if (!progress || !taskActionIsScheduled.value || progress.status === 'skipped') return []
-  const items: TaskMainActionItem[] = []
+  if (!progress) return []
+  const items: TaskMainActionItem[] = taskActionCompletion.value ? [] : [{
+    id: 'toggle-complete',
+    title: progress.complete ? 'Undone' : 'Done',
+    icon: progress.complete ? 'mdi-undo-variant' : 'mdi-check-bold',
+    disabled: Boolean(progress.locked)
+      || isAfter(parseISO(progress.scheduledDate), startOfDay(new Date())),
+  }]
+  if (!taskActionIsScheduled.value || progress.status === 'skipped') return items
   if (progress.status === 'missed' || progress.status === 'rescheduled') {
     const beforeYesterday = isBefore(
       parseISO(progress.scheduledDate),
@@ -383,6 +368,7 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
     )
     if (beforeYesterday) {
       return [
+        ...items,
         {
           id: 'undo-resolution',
           title: 'Undo this day only',
@@ -399,7 +385,7 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
         },
       ]
     }
-    return [{
+    return [...items, {
       id: 'undo-resolution',
       title: progress.status === 'rescheduled' ? 'Undo shift' : 'Undo missed',
       icon: 'mdi-backup-restore',
@@ -427,25 +413,12 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
         disabled: locked,
       })
     }
-    const canMarkIncomplete = progress.complete && (
-      progress.sealed
-      || Boolean(progress.completionItems?.some(item => item.type !== 'quantity' && item.complete))
-    )
-    if (canMarkIncomplete) {
-      items.push({
-        id: 'toggle-complete',
-        title: 'Mark incomplete',
-        icon: 'mdi-undo-variant',
-        disabled: false,
-      })
-    }
     return items
   }
-  const completionType = progress.programStep?.completionType || progress.task.type
+  const completionType = progress.task.type
   const completionDriven = ['check', 'interval', 'flashcards'].includes(completionType)
 
   if (completionDriven && progress.complete) {
-    items.push({ id: 'toggle-complete', title: 'Mark incomplete', icon: 'mdi-undo-variant', disabled: locked })
     return items
   }
 
@@ -469,20 +442,24 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
       disabled: locked || !reviewSetMeta(progress)?.cardCount,
     })
   }
-  if (completionDriven) {
-    items.push({ id: 'toggle-complete', title: 'Done', icon: 'mdi-check-bold', disabled: locked })
-  }
 
   if (progress.task.type === 'tracking') {
-    if (taskActionQuickLog.value) {
+    if (taskActionQuickLog.value && !progress.sealed) {
       items.push({
         id: 'log-tracking-entry',
         title: 'Log entry',
         icon: 'mdi-plus-box-outline',
         disabled: locked
-          || Boolean(progress.sealed)
           || !trackingCanLog(progress)
           || !trackingMeta(progress).some(tracker => tracker.active),
+      })
+    }
+    if (progress.tracker && progress.tracker.source !== 'health_connect_steps') {
+      items.push({
+        id: 'toggle-total-lock',
+        title: progress.sealed ? 'Unlock numbers' : 'Lock in numbers',
+        icon: progress.sealed ? 'mdi-lock-open-variant-outline' : 'mdi-lock-check-outline',
+        disabled: locked,
       })
     }
     return items
@@ -518,7 +495,7 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
   )) {
     items.push({
       id: 'toggle-total-lock',
-      title: progress.sealed ? 'Unlock total' : 'Lock in total',
+      title: progress.sealed ? 'Unlock numbers' : 'Lock in numbers',
       icon: progress.sealed ? 'mdi-lock-open-variant-outline' : 'mdi-lock-check-outline',
       disabled: locked,
     })
@@ -543,34 +520,11 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
   }
   return items
 })
-const taskCardActionItems = computed(() => {
-  if (taskActionCompletion.value) return []
-  return TASK_CARD_ACTION_ITEMS.filter((action) =>
-    action.id === 'skip-task'
-      ? taskActionIsScheduled.value
-      : action.id !== 'view-log-history'
-        || taskCanLogAmounts(taskActionProgress.value)
-        || (taskCanLogAdditionalValue(taskActionProgress.value) && taskActionProgress.value
-          ? store.entriesFor(
-              taskActionProgress.value.task,
-              parseISO(taskActionProgress.value.scheduledDate),
-              taskActionProgress.value.programStep,
-            ).length > 0
-          : false),
-  ).map(action => action.id === 'toggle-task-status'
-    ? {
-        ...action,
-        title: taskActionProgress.value?.task.active ? 'Pause task' : 'Unpause task',
-        icon: taskActionProgress.value?.task.active ? 'mdi-pause' : 'mdi-play',
-      }
-    : action.id === 'skip-task'
-      ? {
-          ...action,
-          title: taskActionProgress.value?.status === 'skipped' ? 'Unskip' : 'Skip',
-          icon: taskActionProgress.value?.status === 'skipped' ? 'mdi-backup-restore' : 'mdi-skip-next-outline',
-        }
-      : action)
-})
+const taskMainActionItems = computed(() => [
+  ...availableTaskMainActionItems.value.filter(action => action.id !== 'toggle-complete'),
+  ...availableTaskMainActionItems.value.filter(action => action.id === 'toggle-complete'),
+])
+const taskCardActionItems = computed(() => taskActionCompletion.value ? [] : TASK_CARD_ACTION_ITEMS)
 const visibleWeekDates = computed(() => Array.from(
   { length: 7 },
   (_, index) => addDays(visibleWeekStart.value, index),
@@ -938,7 +892,6 @@ function scheduledProgressKey(progress: ScheduledTaskProgress) {
 }
 
 function notScheduledSubtitle(progress: TaskProgress) {
-  if (!progress.task.active) return 'Paused'
   const time = taskTimeLabel(progress)
   return time ? `Not scheduled · ${time}` : 'Not scheduled for this day'
 }
@@ -1005,7 +958,6 @@ function openTrackingLogger(progress: TaskProgress, trackerId: string) {
   const tracker = trackingStore.trackers.find(item => item.id === trackerId)
   if (!tracker) return
   trackingSheetTracker.value = tracker
-  trackingSheetEntry.value = undefined
   trackingSheetDate.value = progress.scheduledDate
   trackingSheetContext.value = progress.programStep?.name || progress.task.name
   trackingSheetOpen.value = true
@@ -1141,28 +1093,16 @@ async function confirmBulkReview() {
 }
 
 function openTaskActions(progress: TaskProgress, quickLog = false) {
-  taskLogRequest += 1
   taskActionProgress.value = progress
   taskActionCompletionId.value = ''
   taskActionQuickLog.value = quickLog
-  taskSheetMode.value = 'actions'
-  taskLogEntries.value = []
-  taskTrackerLogEntries.value = []
-  taskLogLoading.value = false
-  taskLogError.value = ''
   taskSheet.value = true
 }
 
 function openProgramStepRequirementActions(progress: TaskProgress, completionId: string) {
-  taskLogRequest += 1
   taskActionProgress.value = progress
   taskActionCompletionId.value = completionId
   taskActionQuickLog.value = false
-  taskSheetMode.value = 'actions'
-  taskLogEntries.value = []
-  taskTrackerLogEntries.value = []
-  taskLogLoading.value = false
-  taskLogError.value = ''
   taskSheet.value = true
 }
 
@@ -1192,9 +1132,7 @@ function runTaskMainAction(action: TaskMainActionItem) {
       void runForProgress(progress, () => store.setProgramStepCompletion(progress, completionId, false))
       return
     }
-    void runForProgress(progress, () => progress.programStep
-      ? store.markProgramStepIncomplete(progress)
-      : store.setStatus(progress, progress.complete ? 'pending' : 'completed'))
+    void runForProgress(progress, () => store.setTaskCompleted(progress, !progress.complete))
     return
   }
   if (action.id === 'start-interval') {
@@ -1237,7 +1175,12 @@ function runTaskMainAction(action: TaskMainActionItem) {
     return
   }
   if (action.id === 'toggle-total-lock') {
-    void runForProgress(progress, () => store.setTotalSealed(progress))
+    if (progress.sealed) {
+      void runForProgress(progress, () => store.setTotalSealed(progress))
+    } else {
+      lockInProgress.value = progress
+      lockInSheet.value = true
+    }
     return
   }
   if (action.id === 'sync-steps') {
@@ -1292,105 +1235,7 @@ function runProgramStepRequirement(progress: TaskProgress, completionId: string)
   void startFlashcardTask(progress, completion)
 }
 
-function taskEntryKindLabel(entry: Entry) {
-  if (isHealthConnectEntry(entry)) return 'Health Connect'
-  if (entry.kind === 'duration') return 'Duration'
-  if (entry.kind === 'adjustment') return 'Adjustment'
-  return 'Quantity'
-}
-
-function taskEntryIcon(entry: Entry) {
-  if (isHealthConnectEntry(entry)) return 'mdi-heart-pulse'
-  if (entry.kind === 'duration') return 'mdi-timer-outline'
-  if (entry.kind === 'adjustment') return 'mdi-plus-minus-variant'
-  return 'mdi-chart-donut'
-}
-
-function taskEntryImage(entry: Entry) {
-  if (!entry.taskLogImage) return undefined
-  return store.taskLogImages.find(item => item.id === entry.taskLogImage)?.image
-}
-
-function taskEntryValue(entry: Entry) {
-  const value = Number(entry.value.toFixed(2))
-  return `${value}${entry.unit ? ` ${entry.unit}` : ''}`
-}
-
-function taskEntryTime(entry: Entry) {
-  const created = new Date(entry.createdAt)
-  return Number.isNaN(created.getTime()) ? 'Logged entry' : format(created, 'h:mm a')
-}
-
-function taskEntrySubtitle(entry: Entry) {
-  return [
-    taskEntryTime(entry),
-    ...(entry.label || entry.note ? [taskEntryKindLabel(entry)] : []),
-  ].join(' · ')
-}
-
-function trackingEntryTime(entry: TrackingEntry) {
-  const occurred = new Date(entry.occurredAt)
-  return Number.isNaN(occurred.getTime()) ? 'Logged entry' : format(occurred, 'h:mm a')
-}
-
-function editTrackingLogEntry(entry: TrackingEntry) {
-  const progress = taskActionProgress.value
-  if (!progress?.tracker || progress.sealed || entry.sourceType === 'health_connect') return
-  trackingSheetTracker.value = progress.tracker
-  trackingSheetEntry.value = entry
-  trackingSheetDate.value = progress.scheduledDate
-  trackingSheetContext.value = progress.programStep?.name || progress.task.name
-  trackingSheetOpen.value = true
-}
-
-async function openTaskLogHistory() {
-  const progress = taskActionProgress.value
-  if (!progress || taskLogLoading.value) return
-  const request = ++taskLogRequest
-  taskSheetMode.value = 'history'
-  taskLogLoading.value = true
-  taskLogError.value = ''
-  try {
-    if (progress.tracker) {
-      await trackingStore.loadRange(progress.scheduledDate, progress.scheduledDate)
-      if (request === taskLogRequest) {
-        taskLogEntries.value = []
-        taskTrackerLogEntries.value = trackingStore.entriesFor(
-          progress.tracker.id,
-          progress.scheduledDate,
-        )
-      }
-      return
-    }
-    const [entries] = await Promise.all([
-      store.loadEntriesForDay(
-        progress.task.id,
-        progress.scheduledDate,
-        progress.programStep?.id,
-        progress.scheduledTime ? progress.occurrence?.id : undefined,
-      ),
-      store.loadTaskLogImages(progress.task.id).catch(() => []),
-    ])
-    if (request === taskLogRequest) {
-      taskLogEntries.value = entries
-      taskTrackerLogEntries.value = []
-    }
-  } catch (cause) {
-    if (request === taskLogRequest) {
-      taskLogError.value = cause instanceof Error ? cause.message : 'Could not load this log history.'
-    }
-  } finally {
-    if (request === taskLogRequest) taskLogLoading.value = false
-  }
-}
-
 function runTaskCardAction(action: TaskCardActionId) {
-  if (action === 'skip-task') {
-    if (!taskActionProgress.value) return
-    taskSheet.value = false
-    taskSkipDialog.value = true
-    return
-  }
   if (action === 'edit-task') {
     const progress = taskActionProgress.value
     if (!progress) return
@@ -1409,46 +1254,6 @@ function runTaskCardAction(action: TaskCardActionId) {
     void router.push({ name: 'task-new', query: { duplicate: taskId } })
     return
   }
-  if (action === 'toggle-task-status') {
-    if (!taskActionProgress.value) return
-    taskSheet.value = false
-    taskStatusDialog.value = true
-    return
-  }
-  if (action === 'view-log-history') void openTaskLogHistory()
-}
-
-async function confirmTaskSkipChange() {
-  const progress = taskActionProgress.value
-  if (!progress || taskSkipUpdating.value) return
-  const skipping = progress.status !== 'skipped'
-  taskSkipUpdating.value = true
-  taskSkipDialog.value = false
-  try {
-    await store.toggleSkipped(progress, skipping)
-    taskActionProgress.value = undefined
-  } catch (cause) {
-    taskSkipDialog.value = true
-    store.error = cause instanceof Error ? cause.message : 'Could not update this task.'
-  } finally {
-    taskSkipUpdating.value = false
-  }
-}
-
-async function confirmTaskStatusChange() {
-  const task = taskActionProgress.value?.task
-  if (!task || taskStatusUpdating.value) return
-  taskStatusUpdating.value = true
-  taskStatusDialog.value = false
-  try {
-    await store.toggleTaskActive(task)
-    taskActionProgress.value = undefined
-  } catch (cause) {
-    taskStatusDialog.value = true
-    store.error = cause instanceof Error ? cause.message : 'Could not update this task.'
-  } finally {
-    taskStatusUpdating.value = false
-  }
 }
 
 async function openExact(
@@ -1460,7 +1265,6 @@ async function openExact(
   exactProgress.value = progress
   exactCompletionId.value = completionId
   exactTracker.value = tracker
-  exactEditingEntry.value = undefined
   exactLoggingAdditional.value = additional
   exactAmountInput.value = ''
   exactAction.value = undefined
@@ -1509,47 +1313,6 @@ async function lockInDailyTotal() {
     store.error = cause instanceof Error ? cause.message : 'Could not lock in this total.'
   } finally {
     lockInUpdating.value = false
-  }
-}
-
-function editTaskLogEntry(entry: Entry) {
-  const progress = taskActionProgress.value
-  if (!progress || progress.sealed || busy.value || isHealthConnectEntry(entry)) return
-  exactProgress.value = progress
-  exactCompletionId.value = entry.programStepCompletion || ''
-  exactTracker.value = undefined
-  exactEditingEntry.value = entry
-  exactLoggingAdditional.value = false
-  exactAmountInput.value = String(Number(entry.value.toFixed(2)))
-  exactAction.value = undefined
-  exactError.value = ''
-  exactDialog.value = true
-}
-
-function requestTaskLogDeletion(entry: Entry) {
-  if (taskActionProgress.value?.sealed || busy.value || isHealthConnectEntry(entry)) return
-  taskLogDeleteEntry.value = entry
-  taskLogDeleteDialog.value = true
-}
-
-async function confirmTaskLogDeletion() {
-  const progress = taskActionProgress.value
-  const entry = taskLogDeleteEntry.value
-  if (!progress || !entry || busy.value) return
-  taskLogError.value = ''
-  try {
-    await run(async () => {
-      const deleted = await store.deleteEntry(progress, entry.id)
-      if (!deleted) return
-      taskLogEntries.value = taskLogEntries.value.filter(item => item.id !== entry.id)
-      pulseProgressValue(progress)
-    })
-    taskLogDeleteDialog.value = false
-    taskLogDeleteEntry.value = undefined
-  } catch (cause) {
-    taskLogError.value = cause instanceof Error ? cause.message : 'Could not delete this log entry.'
-    taskLogDeleteDialog.value = false
-    taskLogDeleteEntry.value = undefined
   }
 }
 
@@ -1776,33 +1539,6 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
   }
 }
 
-async function saveTaskLogEntry() {
-  const progress = exactProgress.value
-  const entry = exactEditingEntry.value
-  if (!progress || !entry || !exactCanLogAmount.value || busy.value) return
-  exactAction.value = 'save'
-  exactError.value = ''
-  const update = run(() => store.updateEntry(
-    progress,
-    entry.id,
-    exactAmount.value!,
-  ))
-  pulseProgressValue(progress)
-  exactDialog.value = false
-  try {
-    const updated = await update
-    if (updated) {
-      const index = taskLogEntries.value.findIndex(item => item.id === updated.id)
-      if (index >= 0) taskLogEntries.value.splice(index, 1, updated)
-    }
-    exactEditingEntry.value = undefined
-  } catch (cause) {
-    exactError.value = cause instanceof Error ? cause.message : 'Could not update this log entry.'
-    exactDialog.value = true
-  } finally {
-    exactAction.value = undefined
-  }
-}
 </script>
 
 <template>
@@ -2115,7 +1851,7 @@ async function saveTaskLogEntry() {
       <v-card class="pa-5">
         <div class="d-flex align-center justify-space-between mb-5">
           <div class="min-width-0">
-            <h2 class="text-h6 font-weight-black">{{ exactEditingEntry ? 'Edit log entry' : exactLoggingAdditional ? 'Log additional value' : 'Log amount' }}</h2>
+            <h2 class="text-h6 font-weight-black">{{ exactLoggingAdditional ? 'Log additional value' : 'Log amount' }}</h2>
             <p class="text-body-2 muted text-truncate mt-1">{{ exactTracker?.name || exactProgress?.programStep?.name || exactProgress?.task.name }}</p>
           </div>
           <v-btn icon="mdi-close" variant="text" aria-label="Close amount logger" @click="exactDialog = false" />
@@ -2124,23 +1860,12 @@ async function saveTaskLogEntry() {
           {{ exactError }}
         </v-alert>
         <div class="amount-entry mb-4">
-          <NumberPad v-model="exactAmountInput" :allow-negative="Boolean(exactEditingEntry)" />
+          <NumberPad v-model="exactAmountInput" />
           <p v-if="exactAmountError" class="text-caption text-error mt-2">
             {{ exactAmountError }}
           </p>
         </div>
-        <v-btn
-          v-if="exactEditingEntry"
-          block
-          size="large"
-          color="secondary"
-          :loading="busy && exactAction === 'save'"
-          :disabled="!exactCanLogAmount || busy"
-          @click="saveTaskLogEntry"
-        >
-          Save
-        </v-btn>
-        <div v-else class="exact-actions">
+        <div class="exact-actions">
           <v-btn
             block
             size="large"
@@ -2222,7 +1947,6 @@ async function saveTaskLogEntry() {
     <TrackingLogBottomSheet
       v-model="trackingSheetOpen"
       :tracker="trackingSheetTracker"
-      :entry="trackingSheetEntry"
       :date="trackingSheetDate"
       :context="trackingSheetContext"
     />
@@ -2286,12 +2010,11 @@ async function saveTaskLogEntry() {
 
     <ActionBottomSheet
       v-model="taskSheet"
-      :title="taskSheetMode === 'history' ? 'Log history' : taskActionTitle"
-      :description="taskSheetDescription"
-      :hide-title="taskSheetMode === 'actions'"
-      :aria-label="taskSheetMode === 'history' ? `${taskActionTitle} log history` : `${taskActionTitle} actions`"
+      :title="taskActionTitle"
+      hide-title
+      :aria-label="`${taskActionTitle} actions`"
     >
-      <template v-if="taskActionProgress && taskSheetMode === 'actions'">
+      <template v-if="taskActionProgress">
         <v-list-item
           v-for="action in taskMainActionItems"
           :key="action.id"
@@ -2314,142 +2037,7 @@ async function saveTaskLogEntry() {
           <v-divider v-if="'dividerAfter' in action && action.dividerAfter" class="my-2" />
         </template>
       </template>
-      <template v-else-if="taskSheetMode === 'history'">
-        <v-list-item
-          v-if="taskLogLoading"
-          prepend-icon="mdi-history"
-          title="Loading log history…"
-        >
-          <template #append><v-progress-circular indeterminate color="secondary" :size="22" :width="2" /></template>
-        </v-list-item>
-        <div v-else-if="taskLogError" class="px-2 py-2">
-          <v-alert type="error" variant="tonal" density="compact">
-            {{ taskLogError }}
-            <template #append>
-              <v-btn size="small" variant="text" @click="openTaskLogHistory">Retry</v-btn>
-            </template>
-          </v-alert>
-        </div>
-        <template v-else-if="taskLogEntries.length">
-          <v-list-item
-            v-for="entry in taskLogEntries"
-            :key="entry.id"
-            :title="entry.label || entry.note || taskEntryKindLabel(entry)"
-            rounded="lg"
-          >
-            <template #prepend>
-              <v-avatar
-                v-if="taskEntryImage(entry)"
-                class="task-log-thumbnail"
-                rounded="lg"
-                size="48"
-              >
-                <v-img
-                  :src="taskEntryImage(entry)"
-                  :alt="entry.label ? `${entry.label} log image` : 'Task log image'"
-                  cover
-                >
-                  <template #error>
-                    <v-icon :icon="taskEntryIcon(entry)" color="medium-emphasis" />
-                  </template>
-                </v-img>
-              </v-avatar>
-              <v-icon v-else :icon="taskEntryIcon(entry)" />
-            </template>
-            <template #subtitle>
-              <span>{{ taskEntrySubtitle(entry) }} · {{ taskEntryValue(entry) }}</span>
-            </template>
-            <template #append>
-              <div v-if="!isHealthConnectEntry(entry)" class="task-log-actions">
-                <v-btn
-                  icon="mdi-pencil-outline"
-                  variant="text"
-                  class="task-log-action"
-                  :disabled="busy || taskActionProgress?.sealed"
-                  :aria-label="`Edit ${taskEntryValue(entry)} log entry`"
-                  @touchstart.stop
-                  @click.stop="editTaskLogEntry(entry)"
-                />
-                <v-btn
-                  icon="mdi-delete-outline"
-                  variant="text"
-                  color="error"
-                  class="task-log-action"
-                  :disabled="busy || taskActionProgress?.sealed"
-                  :aria-label="`Delete ${taskEntryValue(entry)} log entry`"
-                  @touchstart.stop
-                  @click.stop="requestTaskLogDeletion(entry)"
-                />
-              </div>
-            </template>
-          </v-list-item>
-        </template>
-        <template v-else-if="taskTrackerLogEntries.length">
-          <v-list-item
-            v-for="entry in taskTrackerLogEntries"
-            :key="entry.id"
-            :title="entry.note || taskActionProgress?.tracker?.name || 'Tracker log'"
-            :subtitle="`${trackingEntryTime(entry)} · ${taskActionProgress?.tracker ? formatTrackingValue(taskActionProgress.tracker, entry.value) : entry.value}`"
-            :prepend-icon="entry.sourceType === 'health_connect' ? 'mdi-heart-pulse' : 'mdi-chart-donut'"
-            :disabled="taskActionProgress?.sealed || entry.sourceType === 'health_connect'"
-            rounded="lg"
-            @click="editTrackingLogEntry(entry)"
-          >
-            <template #append>
-              <v-icon
-                v-if="entry.sourceType !== 'health_connect'"
-                icon="mdi-pencil-outline"
-                size="18"
-                color="medium-emphasis"
-              />
-            </template>
-          </v-list-item>
-        </template>
-        <div v-else class="task-log-empty px-4 py-8 text-center">
-          <v-icon icon="mdi-history" size="34" color="medium-emphasis" />
-          <h3 class="text-body-1 font-weight-black mt-3">No entries logged</h3>
-          <p class="text-body-2 muted mt-1">This task has no log entries for the selected day.</p>
-        </div>
-      </template>
     </ActionBottomSheet>
-
-    <ConfirmDialog
-      v-model="taskStatusDialog"
-      :title="taskActionProgress?.task.active ? 'Pause this task?' : 'Unpause this task?'"
-      :message="taskActionProgress?.task.active
-        ? `${taskActionProgress?.task.name || 'This task'} will stop appearing in your schedule until you unpause it. Its history will be preserved.`
-        : `${taskActionProgress?.task.name || 'This task'} will return to its schedule based on its recurrence settings.`"
-      :confirm-text="taskActionProgress?.task.active ? 'Pause task' : 'Unpause task'"
-      :confirm-color="taskActionProgress?.task.active ? 'warning' : 'secondary'"
-      :icon="taskActionProgress?.task.active ? 'mdi-pause' : 'mdi-play'"
-      :loading="taskStatusUpdating"
-      @confirm="confirmTaskStatusChange"
-    />
-
-    <ConfirmDialog
-      v-model="taskSkipDialog"
-      :title="taskActionProgress?.status === 'skipped' ? 'Unskip this task?' : 'Skip this task?'"
-      :message="taskActionProgress?.status === 'skipped'
-        ? `${taskActionTitle} will return to this day.`
-        : `${taskActionTitle} will be excluded from this day’s completion score.`"
-      :confirm-text="taskActionProgress?.status === 'skipped' ? 'Unskip' : 'Skip'"
-      :confirm-color="taskActionProgress?.status === 'skipped' ? 'secondary' : 'warning'"
-      :icon="taskActionProgress?.status === 'skipped' ? 'mdi-backup-restore' : 'mdi-skip-next-outline'"
-      :loading="taskSkipUpdating"
-      @confirm="confirmTaskSkipChange"
-    />
-
-    <ConfirmDialog
-      v-model="taskLogDeleteDialog"
-      title="Delete log entry?"
-      :message="taskLogDeleteEntry
-        ? `Delete ${taskEntryValue(taskLogDeleteEntry)} logged at ${taskEntryTime(taskLogDeleteEntry)}? This cannot be undone.`
-        : 'This log entry will be permanently deleted.'"
-      confirm-text="Delete"
-      icon="mdi-delete-outline"
-      :loading="busy"
-      @confirm="confirmTaskLogDeletion"
-    />
 
     <ConfirmDialog
       v-model="reviewBulkDialog"
@@ -2729,11 +2317,6 @@ async function saveTaskLogEntry() {
 .exact-action--subtract { grid-area: subtract; }
 .exact-action--add { grid-area: add; }
 .exact-action--set { grid-area: set; }
-.task-log-actions { display: flex; align-items: center; }
-.task-log-action { width: 2.75rem !important; min-width: 2.75rem !important; height: 2.75rem !important; }
-.task-log-thumbnail { border: .0625rem solid rgb(var(--v-theme-on-surface) / .12); background: rgb(var(--v-theme-surface-variant)); }
-.task-log-value { display: block; margin-top: .125rem; color: rgb(var(--v-theme-on-surface)); font-size: .8rem; white-space: nowrap; }
-.task-log-empty { min-height: 10rem; }
 .review-row { display: flex; flex-direction: column; align-items: stretch; gap: 1rem; border-top: .0625rem solid rgb(var(--v-theme-on-surface) / .08); }
 .review-row__summary { display: flex; min-width: 0; align-items: center; gap: .75rem; }
 .review-row__icon { display: grid; width: 2.5rem; height: 2.5rem; flex: 0 0 auto; place-items: center; border-radius: .8rem; color: #191c19; }
