@@ -118,6 +118,7 @@ import type {
   IntervalRuntimeState,
   IntervalSession,
   IntervalSettingsApplyTarget,
+  IntervalStepNode,
   RunnerSessionAction,
   TaskProgress,
 } from '@/types/domain'
@@ -1260,7 +1261,17 @@ function playCurrentStepCue(item: IntervalSession) {
   playIntervalGoCue(item.cues, step.kind, step.name)
 }
 
-function retainCurrentFlashcardSpeechAfterIntervalBranch(item: IntervalSession) {
+async function prepareFlashcardSpeechForIntervalBranch(
+  item: IntervalSession,
+  nextStep?: IntervalStepNode,
+) {
+  if (!nextStep || !intervalStepPlaysFlashcardReview(nextStep)) {
+    flashcardSpeechToFinishAfterIntervalBranch = ''
+    await stopFlashcardSpeech()
+    await setReviewSetAudioFocus(reviewAudioFocusScope, false)
+    return
+  }
+
   const review = item.flashcardReview
   const phase = flashcardPhase.value
   const key = phase ? `${item.id}:${phase.key}` : ''
@@ -1410,15 +1421,15 @@ async function tick() {
   if (!result.transitions) return
 
   syncing.value = true
-  retainCurrentFlashcardSpeechAfterIntervalBranch(item)
-  store.mirrorRuntime(item.id, result.runtime)
+  const nextStep = resolveIntervalStep(item.definition, result.runtime.stepIndex)?.step
   try {
+    await prepareFlashcardSpeechForIntervalBranch(item, nextStep)
+    store.mirrorRuntime(item.id, result.runtime)
     if (result.completed) {
       await completeSession(item, result.runtime, !suppressCues)
       return
     }
     if (!suppressCues) {
-      const nextStep = resolveIntervalStep(item.definition, result.runtime.stepIndex)?.step
       playIntervalGoCue(
         item.cues,
         nextStep?.kind,
@@ -1698,10 +1709,10 @@ async function advanceCurrent(item: IntervalSession) {
   if (syncing.value) return
   syncing.value = true
   const result = reconciled(item)
-  retainCurrentFlashcardSpeechAfterIntervalBranch(item)
   const nextIndex = result.runtime.stepIndex + 1
   const nextStep = resolveIntervalStep(item.definition, nextIndex)
   try {
+    await prepareFlashcardSpeechForIntervalBranch(item, nextStep?.step)
     if (!nextStep) {
       await completeSession(item, {
         ...result.runtime,

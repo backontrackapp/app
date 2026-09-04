@@ -3,6 +3,7 @@ import {
   flashcardSpeechOverAmplificationIsEnabled,
   resolveFlashcardAudioPlaybackUrl,
 } from '@/services/flashcardSpeech'
+import { setNativeIntervalAudioFocusOwnership } from '@/services/reviewSetAudioFocus'
 import { intervalTypeSound } from '@/services/intervalTypes'
 import {
   flashcardReviewCardBackSpeechRepeatCount,
@@ -184,8 +185,10 @@ export async function syncBackgroundInterval(session: IntervalSession) {
         : {}),
     })
     nativeBackgroundIntervalActive = true
+    await setNativeIntervalAudioFocusOwnership(true)
   } catch (error) {
     nativeBackgroundIntervalActive = false
+    await setNativeIntervalAudioFocusOwnership(false)
     throw error
   }
 }
@@ -196,6 +199,7 @@ export async function stopBackgroundInterval() {
     await BackgroundInterval.stop()
   } finally {
     nativeBackgroundIntervalActive = false
+    await setNativeIntervalAudioFocusOwnership(false)
   }
 }
 

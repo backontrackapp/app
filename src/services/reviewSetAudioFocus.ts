@@ -12,6 +12,7 @@ const NativeReviewSetAudioFocus = registerPlugin<NativeReviewSetAudioFocusPlugin
 )
 
 const activeScopes = new Set<string>()
+let nativeIntervalOwnsAudioFocus = false
 let nativeActive = false
 let syncWork: Promise<void> = Promise.resolve()
 export const reviewSetBluetoothAudioActive = ref(false)
@@ -23,7 +24,7 @@ function isNativePhone() {
 
 function queueNativeState() {
   if (!isNativePhone()) return Promise.resolve()
-  const requestedActive = activeScopes.size > 0
+  const requestedActive = hasForegroundAudioFocusScope()
   if (requestedActive === nativeActive) return syncWork
   nativeActive = requestedActive
   syncWork = syncWork
@@ -41,10 +42,23 @@ export function setReviewSetAudioFocus(scope: string, active: boolean) {
   return queueNativeState()
 }
 
+function hasForegroundAudioFocusScope() {
+  // The Android timer advances even when the WebView is suspended. A second interval
+  // lease here could outlive its step and prevent Android from restoring other media.
+  return [...activeScopes].some(scope => (
+    !nativeIntervalOwnsAudioFocus || !scope.startsWith('interval-review:')
+  ))
+}
+
+export function setNativeIntervalAudioFocusOwnership(active: boolean) {
+  nativeIntervalOwnsAudioFocus = active && Capacitor.getPlatform() === 'android'
+  return queueNativeState()
+}
+
 export async function reapplyReviewSetAudioFocus() {
-  if (!isNativePhone() || activeScopes.size === 0) return
+  if (!isNativePhone() || !hasForegroundAudioFocusScope()) return
   await syncWork.catch(() => undefined)
-  if (activeScopes.size === 0) return
+  if (!hasForegroundAudioFocusScope()) return
   await NativeReviewSetAudioFocus.reapply().catch(() => undefined)
 }
 

@@ -414,7 +414,7 @@ public class BackgroundIntervalService extends Service {
         IntervalStep step = steps.get(stepIndex);
         reviewSetAudioFocus.update(
             running,
-            !step.requiresConfirmation && step.flashcardReviewEnabled,
+            !step.requiresConfirmation && !step.stopwatch && step.flashcardReviewEnabled,
             !reviewCards.isEmpty()
         );
     }
@@ -563,13 +563,14 @@ public class BackgroundIntervalService extends Service {
     }
 
     private void updateReviewSpeech(long now) {
-        updateReviewStepAudioFocus();
         boolean appVisible = MainActivity.isAppVisible();
         if (!currentStepPlaysFlashcardReview(now)) {
             pauseReviewSpeech();
+            updateReviewStepAudioFocus();
             appWasVisible = appVisible;
             return;
         }
+        updateReviewStepAudioFocus();
         if (appVisible) {
             lastReviewSpeechKey = "";
             pendingReviewSpeechText = "";
