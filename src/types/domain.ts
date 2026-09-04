@@ -390,6 +390,7 @@ export type RunnerSessionAction =
   | Exclude<FlashcardContextAction, 'toggle_tts'>
   | 'amplification'
   | 'restart'
+  | 'undo_requirement'
   | 'end'
 
 export interface RunnerSessionMenuItem {

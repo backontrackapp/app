@@ -21,8 +21,14 @@ import {
   intervalStepKindCount,
   resolveIntervalStep,
 } from '@/services/intervals'
-import { programStepRequirementName, workoutSetsForCount } from '@/services/programStepCompletions'
-import { programRunnerSessionMenuItems } from '@/services/runnerSessionActions'
+import {
+  programStepRequirementName,
+  workoutSetsForCount,
+} from '@/services/programStepCompletions'
+import {
+  programRunnerRequirementMenuItems,
+  programRunnerSessionMenuItems,
+} from '@/services/runnerSessionActions'
 import { TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
@@ -46,6 +52,8 @@ const screen = ref<'start' | 'list' | 'requirement' | 'finished'>('start')
 const activeIndex = ref(0)
 const working = ref(false)
 const sessionActionsSheet = ref(false)
+const requirementActionsSheet = ref(false)
+const selectedRequirementId = ref('')
 const endDialog = ref(false)
 const replaceActiveIntervalDialog = ref(false)
 const replacingActiveInterval = ref(false)
@@ -221,15 +229,22 @@ const requirementListItems = computed<ProgramStepRequirementListItem[]>(() => re
   }
 }))
 const sessionActionItems = computed(() => programRunnerSessionMenuItems(working.value))
+const requirementActionItems = computed(() => programRunnerRequirementMenuItems(working.value))
+const selectedRequirement = computed(() => requirements.value.find(
+  item => item.id === selectedRequirementId.value,
+))
+const selectedRequirementTitle = computed(() => requirementListItems.value.find(
+  item => item.id === selectedRequirementId.value,
+)?.title || 'Requirement actions')
 const workoutIntervalPending = computed(() => (
   current.value?.type === 'workout'
   && Boolean(current.value.intervalTemplate)
   && route.query.intervalCompleted !== current.value.id
 ))
+const isCompletionConfirmation = computed(() => !workoutIntervalPending.value)
 const primaryActionLabel = computed(() => {
   if (workoutIntervalPending.value) return 'Start interval'
-  if (current.value?.type === 'workout' && !current.value.intervalTemplate) return 'Completed'
-  return 'Continue'
+  return 'Confirm and finish'
 })
 const lockedWorkoutSetCount = computed(() => {
   if (current.value?.type !== 'workout' || !attachedInterval.value) return undefined
@@ -298,7 +313,14 @@ async function start() {
 
 async function openRequirement(completionId: string) {
   const index = requirements.value.findIndex(item => item.id === completionId)
-  if (index < 0 || requirements.value[index]?.complete) return
+  if (index < 0) return
+  const requirement = requirements.value[index]
+  if (requirement?.complete) {
+    if (requirement.type === 'quantity') return
+    selectedRequirementId.value = requirement.id
+    requirementActionsSheet.value = true
+    return
+  }
   activeIndex.value = index
   if (
     current.value?.type === 'interval'
@@ -373,8 +395,35 @@ function minimizeProgram() {
   void router.replace('/tasks')
 }
 
+async function undoRequirement() {
+  const currentProgress = progress.value
+  const requirement = selectedRequirement.value
+  if (!currentProgress || !requirement?.complete || requirement.type === 'quantity' || working.value) return
+
+  working.value = true
+  error.value = ''
+  try {
+    await taskStore.setProgramStepCompletion(currentProgress, requirement.id, false)
+    if (route.query.intervalCompleted === requirement.id) {
+      const query = { ...route.query }
+      delete query.intervalCompleted
+      await router.replace({ query })
+    }
+    selectedRequirementId.value = ''
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not mark this requirement incomplete.'
+    requirementActionsSheet.value = true
+  } finally {
+    working.value = false
+  }
+}
+
 function handleRunnerSessionAction(action: RunnerSessionAction) {
   if (action === 'end') endDialog.value = true
+}
+
+function handleRequirementAction(action: RunnerSessionAction) {
+  if (action === 'undo_requirement') void undoRequirement()
 }
 
 function endProgram() {
@@ -708,8 +757,12 @@ onMounted(async () => {
                 <v-btn color="secondary" :disabled="!attachedReviewSet" prepend-icon="mdi-play" @click="runReviewSet">Start review</v-btn>
               </v-card>
             </div>
-            <footer v-if="current.type === 'workout' || current.type === 'check' || current.type === 'quantity'" class="program-runner__actions">
-              <v-btn variant="tonal" size="large" :disabled="working" @click="skipRequirement">Skip</v-btn>
+            <footer
+              v-if="current.type === 'workout' || current.type === 'check' || current.type === 'quantity'"
+              class="program-runner__actions"
+              :class="{ 'program-runner__actions--single': isCompletionConfirmation }"
+            >
+              <v-btn v-if="!isCompletionConfirmation" variant="tonal" size="large" :disabled="working" @click="skipRequirement">Skip</v-btn>
               <v-btn
                 color="secondary"
                 size="large"
@@ -733,6 +786,15 @@ onMounted(async () => {
       aria-label="Program session actions"
       :items="sessionActionItems"
       @action="handleRunnerSessionAction"
+    />
+
+    <RunnerSessionActions
+      v-if="progress && task && selectedRequirement"
+      v-model="requirementActionsSheet"
+      :title="selectedRequirementTitle"
+      :aria-label="`${selectedRequirementTitle} actions`"
+      :items="requirementActionItems"
+      @action="handleRequirementAction"
     />
 
     <ConfirmDialog

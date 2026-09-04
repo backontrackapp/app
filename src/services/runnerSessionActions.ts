@@ -78,6 +78,15 @@ export function programRunnerSessionMenuItems(busy: boolean): RunnerSessionMenuI
   }]
 }
 
+export function programRunnerRequirementMenuItems(busy: boolean): RunnerSessionMenuItem[] {
+  return [{
+    action: 'undo_requirement',
+    title: 'Mark incomplete',
+    icon: 'mdi-undo-variant',
+    disabled: busy,
+  }]
+}
+
 export function reviewRunnerSessionMenuItems(
   state: ReviewRunnerSessionMenuState,
 ): RunnerSessionMenuItem[] {
