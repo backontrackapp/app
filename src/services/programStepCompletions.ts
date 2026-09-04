@@ -77,6 +77,13 @@ export function normalizeExerciseSets(value: unknown): ExerciseSet[] {
   })
 }
 
+export function workoutSetsForCount(value: ExerciseSet[], count: number | undefined) {
+  if (count === undefined) return value.map(set => ({ ...set }))
+  return Array.from({ length: count }, (_, index) => value[index]
+    ? { ...value[index] }
+    : { repetitions: 8, weight: 0 })
+}
+
 export function normalizeProgramStepCompletions(record: Record<string, any>) {
   const stored = Array.isArray(record.completions)
     ? record.completions.map(normalizedCompletion).filter(Boolean) as ProgramStepCompletion[]

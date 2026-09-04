@@ -6,8 +6,10 @@ import type { ExerciseOption } from '@/types/exercise'
 const props = withDefaults(defineProps<{
   exercise: ExerciseOption
   active?: boolean
+  embedded?: boolean
 }>(), {
   active: true,
+  embedded: false,
 })
 
 const emit = defineEmits<{
@@ -61,16 +63,16 @@ onBeforeUnmount(() => {
 
 <template>
   <article
-    class="exercise-details surface-card mt-4"
+    class="exercise-details pb-4"
+    :class="{
+      'surface-card mt-4': !embedded,
+      'exercise-details--embedded': embedded,
+    }"
     tabindex="0"
     :aria-label="`Exercise details for ${exercise.name}`"
   >
-    <div v-if="$slots['before-image']" class="exercise-details__before-image">
-      <slot name="before-image" />
-    </div>
-
     <div
-      class="exercise-details__image mb-4"
+      class="exercise-details__image mb-4 pb-4"
       role="img"
       :aria-label="`${exercise.name} exercise demonstration`"
     >
@@ -182,8 +184,6 @@ onBeforeUnmount(() => {
   padding-inline: 1rem;
   overflow-x: hidden;
   overflow-y: auto;
-  border: .0625rem solid rgb(var(--v-theme-on-surface) / .08);
-  background: rgb(var(--v-theme-surface) / .72);
   color: rgb(var(--v-theme-on-surface));
   overscroll-behavior: contain;
   scroll-behavior: smooth;
@@ -191,13 +191,19 @@ onBeforeUnmount(() => {
   touch-action: pan-y;
 }
 
+.exercise-details:not(.exercise-details--embedded) {
+  border: .0625rem solid rgb(var(--v-theme-on-surface) / .08);
+  background: rgb(var(--v-theme-surface) / .72);
+}
+
+.exercise-details--embedded {
+  max-width: none;
+  padding-top: 1rem;
+}
+
 .exercise-details:focus-visible {
   outline: .125rem solid rgb(var(--v-theme-secondary));
   outline-offset: -.125rem;
-}
-
-.exercise-details__before-image {
-  padding: 1rem 0;
 }
 
 .exercise-details__image {

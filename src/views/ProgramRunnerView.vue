@@ -4,12 +4,11 @@ import { parseISO } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import ContentIcon from '@/components/ContentIcon.vue'
-import ExerciseDetailsPanel from '@/components/ExerciseDetailsPanel.vue'
-import ExerciseSetEditor from '@/components/ExerciseSetEditor.vue'
 import NumberPadField from '@/components/NumberPadField.vue'
 import ProgramRequirementList from '@/components/ProgramRequirementList.vue'
 import RunnerStartScreen from '@/components/RunnerStartScreen.vue'
 import RunnerSessionActions from '@/components/RunnerSessionActions.vue'
+import WorkoutExercisePanel from '@/components/WorkoutExercisePanel.vue'
 import { stopBackgroundInterval } from '@/services/backgroundInterval'
 import { exercisePresentationById } from '@/services/exercisePresentations'
 import { loadExerciseOptions } from '@/services/exercises'
@@ -22,7 +21,7 @@ import {
   intervalStepKindCount,
   resolveIntervalStep,
 } from '@/services/intervals'
-import { programStepRequirementName } from '@/services/programStepCompletions'
+import { programStepRequirementName, workoutSetsForCount } from '@/services/programStepCompletions'
 import { programRunnerSessionMenuItems } from '@/services/runnerSessionActions'
 import { TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import { useFlashcardStore } from '@/stores/flashcards'
@@ -236,13 +235,6 @@ const lockedWorkoutSetCount = computed(() => {
   if (current.value?.type !== 'workout' || !attachedInterval.value) return undefined
   return intervalStepKindCount(attachedInterval.value.definition, 'train')
 })
-
-function workoutSetsForCount(value: ExerciseSet[], count: number | undefined) {
-  if (count === undefined) return value.map(set => ({ ...set }))
-  return Array.from({ length: count }, (_, index) => value[index]
-    ? { ...value[index] }
-    : { repetitions: 8, weight: 0 })
-}
 
 function firstOpenRequirementIndex(preferredId = '') {
   const preferred = requirements.value.findIndex(item => item.id === preferredId && !item.complete)
@@ -677,30 +669,14 @@ onMounted(async () => {
                 </div>
               </div>
 
-              <template v-if="current.type === 'workout'">
-                <ExerciseDetailsPanel
-                  v-if="exercise"
-                  :exercise="exercise"
-                  class="program-runner__exercise-details"
-                >
-                  <template #before-image>
-                    <ExerciseSetEditor
-                      :model-value="sets"
-                      label="Confirm reps and weight"
-                      :locked-set-count="lockedWorkoutSetCount"
-                      @update:model-value="updateWorkoutSets"
-                    />
-                  </template>
-                </ExerciseDetailsPanel>
-                <v-card v-else class="surface-card pa-4 mt-4">
-                  <ExerciseSetEditor
-                    :model-value="sets"
-                    label="Confirm reps and weight"
-                    :locked-set-count="lockedWorkoutSetCount"
-                    @update:model-value="updateWorkoutSets"
-                  />
-                </v-card>
-              </template>
+              <WorkoutExercisePanel
+                v-if="current.type === 'workout'"
+                :exercise="exercise"
+                :model-value="sets"
+                :locked-set-count="lockedWorkoutSetCount"
+                class="program-runner__exercise-details"
+                @update:model-value="updateWorkoutSets"
+              />
 
               <v-card v-else-if="current.type === 'check'" class="surface-card pa-5 program-runner__simple-card">
                 <v-icon icon="mdi-check-circle-outline" color="secondary" size="40" />

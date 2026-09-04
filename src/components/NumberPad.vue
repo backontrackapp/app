@@ -20,8 +20,7 @@ const emit = defineEmits<{
 
 const keys = computed(() => [
   '1', '2', '3', '4', '5', '6', '7', '8', '9',
-  ...(props.decimal ? ['.'] : []),
-  '0', 'backspace',
+  props.decimal ? '.' : 'spacer', '0', 'backspace',
 ])
 
 function press(key: string) {
@@ -63,18 +62,20 @@ function toggleSign() {
       >{{ modelValue || placeholder || '0' }}</output>
     </div>
     <div class="number-pad__keys">
-      <v-btn
-        v-for="key in keys"
-        :key="key"
-        size="large"
-        variant="tonal"
-        :aria-label="key === 'backspace' ? 'Delete last digit' : key === '.' ? 'Decimal point' : key"
-        :disabled="key === '.' && modelValue.includes('.')"
-        @click="press(key)"
-      >
-        <v-icon v-if="key === 'backspace'" icon="mdi-backspace-outline" />
-        <template v-else>{{ key }}</template>
-      </v-btn>
+      <template v-for="key in keys" :key="key">
+        <span v-if="key === 'spacer'" aria-hidden="true" />
+        <v-btn
+          v-else
+          size="large"
+          variant="tonal"
+          :aria-label="key === 'backspace' ? 'Delete last digit' : key === '.' ? 'Decimal point' : key"
+          :disabled="key === '.' && modelValue.includes('.')"
+          @click="press(key)"
+        >
+          <v-icon v-if="key === 'backspace'" icon="mdi-backspace-outline" />
+          <template v-else>{{ key }}</template>
+        </v-btn>
+      </template>
     </div>
   </div>
 </template>

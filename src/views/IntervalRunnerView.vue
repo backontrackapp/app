@@ -17,6 +17,7 @@ import IntervalTypeIcon from '@/components/IntervalTypeIcon.vue'
 import RunnerStartScreen from '@/components/RunnerStartScreen.vue'
 import RunnerSessionActions from '@/components/RunnerSessionActions.vue'
 import ReviewSetCard from '@/components/ReviewSetCard.vue'
+import WorkoutExercisePanel from '@/components/WorkoutExercisePanel.vue'
 import {
   nativeBackgroundIntervalIsActive,
   stopBackgroundInterval,
@@ -78,6 +79,7 @@ import {
   intervalFlashcardReviewPlaybackElapsedMs,
   intervalFlashcardReviewPlaybackIsActive,
   intervalRunProgress,
+  intervalStepKindCount,
   intervalStepPlaysFlashcardReview,
   reconcileIntervalRuntime,
   rebaseIntervalRuntimeForDefinition,
@@ -88,7 +90,7 @@ import {
 } from '@/services/intervals'
 import { exercisePresentationById } from '@/services/exercisePresentations'
 import { loadExerciseOptions } from '@/services/exercises'
-import { programStepRequirementName } from '@/services/programStepCompletions'
+import { programStepRequirementName, workoutSetsForCount } from '@/services/programStepCompletions'
 import { toDateKey } from '@/services/schedule'
 import { intervalRunnerSessionMenuItems } from '@/services/runnerSessionActions'
 import { setReviewSetAudioFocus } from '@/services/reviewSetAudioFocus'
@@ -113,7 +115,7 @@ import type {
   RunnerSessionAction,
   TaskProgress,
 } from '@/types/domain'
-import type { ExerciseOption } from '@/types/exercise'
+import type { ExerciseOption, ExerciseSet } from '@/types/exercise'
 
 const route = useRoute()
 const router = useRouter()
@@ -209,6 +211,8 @@ const timerEffect = ref<'count' | ''>('')
 const timerEffectKey = ref(0)
 const runnerExercise = shallowRef<ExerciseOption>()
 const runnerExerciseVisible = ref(false)
+const runnerWorkoutSets = ref<ExerciseSet[]>([])
+const runnerWorkoutSetsError = ref('')
 const runnerSwipeOffset = ref(0)
 const runnerSwipeDragging = ref(false)
 let animationFrame: number | undefined
@@ -522,13 +526,24 @@ const attributedProgramStepCompletion = computed(() => {
     ? completions?.find(completion => completion.id === completionId)
     : undefined
   if (identified) return identified
-  return completions?.find(completion => (
+  const workoutExerciseId = session.value?.presentation.exercise
+  const workoutCompletion = workoutExerciseId
+    ? completions?.find(completion => (
+        completion.type === 'workout'
+        && completion.intervalTemplate === session.value?.template
+        && completion.exercise === workoutExerciseId
+      ))
+    : undefined
+  if (workoutCompletion) return workoutCompletion
+  const intervalCompletion = completions?.find(completion => (
     completion.type === 'interval'
     && completion.intervalTemplate === session.value?.template
   ))
+  return intervalCompletion
 })
 const attributedExercise = computed(() => {
   const exerciseId = attributedProgramStepCompletion.value?.exercise
+    || session.value?.presentation.exercise
   return exercisePresentationById(exerciseId)
 })
 
@@ -566,6 +581,42 @@ const completionIdentityTitle = computed(() => (
   || 'Interval'
 ))
 const runnerIdentityImage = computed(() => attributedExercise.value?.imageUrl)
+const runnerWorkoutProgress = computed(() => {
+  const item = session.value
+  const completion = attributedProgramStepCompletion.value
+  if (
+    !item?.task
+    || !item.programStep
+    || !item.taskDate
+    || completion?.type !== 'workout'
+  ) return undefined
+  const date = parseISO(item.taskDate)
+  if (!isValid(date)) return undefined
+  return taskStore.progressForDate(date).find(progress => (
+    progress.task.id === item.task
+    && progress.programStep?.id === item.programStep
+    && (progress.scheduledTime || '') === (item.taskScheduledTime || '')
+  ))
+})
+const runnerWorkoutSetCount = computed(() => (
+  attributedProgramStepCompletion.value?.type === 'workout' && session.value
+    ? intervalStepKindCount(session.value.definition, 'train')
+    : undefined
+))
+const runnerWorkoutContextKey = computed(() => {
+  const item = session.value
+  const completion = attributedProgramStepCompletion.value
+  const progress = runnerWorkoutProgress.value
+  if (!item || completion?.type !== 'workout' || !progress) return ''
+  return [
+    item.id,
+    progress.task.id,
+    progress.programStep?.id || '',
+    completion.id,
+    progress.scheduledDate,
+    progress.scheduledTime || '',
+  ].join(':')
+})
 const runnerIdentitySummary = computed(() => {
   if (!session.value) return ''
   const duration = `${formatIntervalDuration(session.value.plannedSeconds)} total`
@@ -573,6 +624,40 @@ const runnerIdentitySummary = computed(() => {
     ? duration
     : `${session.value.name} · ${duration}`
 })
+
+watch(runnerWorkoutContextKey, (contextKey) => {
+  const completion = attributedProgramStepCompletion.value
+  const progress = runnerWorkoutProgress.value
+  runnerWorkoutSetsError.value = ''
+  if (!contextKey || completion?.type !== 'workout' || !progress) {
+    runnerWorkoutSets.value = []
+    return
+  }
+  const savedSets = progress.occurrence?.workoutSets?.[completion.id]
+    ?? completion.exerciseSets
+    ?? []
+  runnerWorkoutSets.value = workoutSetsForCount(
+    savedSets,
+    runnerWorkoutSetCount.value,
+  )
+  if (runnerWorkoutSets.value.length !== savedSets.length) {
+    updateRunnerWorkoutSets(runnerWorkoutSets.value)
+  }
+}, { immediate: true })
+
+function updateRunnerWorkoutSets(value: ExerciseSet[]) {
+  const completion = attributedProgramStepCompletion.value
+  const progress = runnerWorkoutProgress.value
+  const nextSets = workoutSetsForCount(value, runnerWorkoutSetCount.value)
+  runnerWorkoutSets.value = nextSets
+  if (completion?.type !== 'workout' || !progress) return
+  runnerWorkoutSetsError.value = ''
+  void taskStore.saveProgramStepWorkoutSets(progress, completion.id, nextSets).catch((cause) => {
+    runnerWorkoutSetsError.value = cause instanceof Error
+      ? cause.message
+      : 'Could not save workout sets.'
+  })
+}
 
 watch(() => attributedExercise.value?.id, async (exerciseId) => {
   const requestId = ++runnerExerciseRequestId
@@ -2608,8 +2693,18 @@ async function runAgain() {
                 :aria-hidden="!runnerExerciseVisible"
                 :inert="runnerExerciseVisible ? undefined : true"
               >
+                <WorkoutExercisePanel
+                  v-if="runnerExercise && runnerWorkoutContextKey"
+                  :exercise="runnerExercise"
+                  :active="runnerExerciseVisible"
+                  :model-value="runnerWorkoutSets"
+                  :locked-set-count="runnerWorkoutSetCount"
+                  :error="runnerWorkoutSetsError"
+                  @update:model-value="updateRunnerWorkoutSets"
+                  @show-progress="showRunnerProgress"
+                />
                 <ExerciseDetailsPanel
-                  v-if="runnerExercise"
+                  v-else-if="runnerExercise"
                   :exercise="runnerExercise"
                   :active="runnerExerciseVisible"
                   @show-progress="showRunnerProgress"
