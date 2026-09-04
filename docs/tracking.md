@@ -8,7 +8,7 @@ For manual event, number, rating, and duration trackers, the optional unit or sc
 
 Every numeric tracker setting uses the shared tap-first number-pad field: rating scale bounds and optional task targets are shown as value buttons with a compact title above the value. Opening a field shows its current value as a muted placeholder; the value changes only after new keypad input is confirmed.
 
-Number and duration logs use that same shared number-pad button, so entering a logged value does not open the device keyboard.
+Number and duration logs use that same shared number-pad button, so entering a logged value does not open the device keyboard. Choosing **Log entry** from a number or duration tracker on the main Tracking page opens that number pad immediately.
 
 Saved trackers support an emoji icon selected from the searchable virtual list above the color picker. The chosen icon is preserved through offline saves and appears on tracker cards, logs, task attachments, and journal contexts; tracker cards use the standard tracker icon when no custom icon is selected, and existing Material icons remain supported.
 

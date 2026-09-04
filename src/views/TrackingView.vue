@@ -36,6 +36,7 @@ const archiveExpanded = ref(false)
 const sheetOpen = ref(false)
 const sheetTracker = ref<TrackingTracker>()
 const editingEntry = ref<TrackingEntry>()
+const openValuePad = ref(false)
 const error = ref('')
 const weeklyChartError = ref('')
 const weeklyChartLoading = ref(true)
@@ -116,7 +117,7 @@ async function logActionTracker() {
   if (!tracker?.active) return
   trackerActionsOpen.value = false
   await nextTick()
-  startLog(tracker)
+  startLog(tracker, undefined, ['number', 'duration'].includes(tracker.kind))
 }
 
 function editActionTracker() {
@@ -173,9 +174,10 @@ async function viewTrackerReflections() {
   })
 }
 
-function startLog(tracker: TrackingTracker, entry?: TrackingEntry) {
+function startLog(tracker: TrackingTracker, entry?: TrackingEntry, directToValuePad = false) {
   sheetTracker.value = tracker
   editingEntry.value = entry
+  openValuePad.value = directToValuePad
   sheetOpen.value = true
 }
 
@@ -555,6 +557,7 @@ async function loadVisibleWeekEntries() {
       :date="dateKey"
       :context="requestedTaskProgress"
       :keep-open-on-save="Boolean(requestedTask && !requestedTaskTracker)"
+      :open-value-pad="openValuePad"
       @saved="handleLogSaved"
     />
   </main>

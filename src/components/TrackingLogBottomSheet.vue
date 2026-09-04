@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { format, isToday, isValid, parseISO } from 'date-fns'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import DateTimePickerField from '@/components/DateTimePickerField.vue'
@@ -17,6 +17,7 @@ const props = defineProps<{
   date: string
   context?: string
   keepOpenOnSave?: boolean
+  openValuePad?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -32,6 +33,7 @@ const occurredLocal = ref('')
 const note = ref('')
 const saving = ref(false)
 const error = ref('')
+const valueField = ref<InstanceType<typeof NumberPadField>>()
 const unrestrictedMinimum = Number.NEGATIVE_INFINITY
 const open = computed({
   get: () => props.modelValue,
@@ -56,6 +58,9 @@ function resetFields() {
   occurredLocal.value = format(when, "yyyy-MM-dd'T'HH:mm")
   note.value = props.entry?.note || ''
   error.value = ''
+  if (props.openValuePad && !props.entry && ['number', 'duration'].includes(tracker.kind)) {
+    void nextTick(() => valueField.value?.open())
+  }
 }
 
 watch(
@@ -139,12 +144,14 @@ async function remove() {
         />
         <NumberPadField
           v-else-if="tracker.kind === 'number'"
+          ref="valueField"
           v-model="value"
           :title="tracker.unit ? `Value (${tracker.unit})` : 'Value'"
           :min="unrestrictedMinimum"
         />
         <NumberPadField
           v-else-if="tracker.kind === 'duration'"
+          ref="valueField"
           v-model="value"
           :title="tracker.unit === 'hours' ? 'Hours' : 'Minutes'"
           :min="0"

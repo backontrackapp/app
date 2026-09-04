@@ -37,6 +37,8 @@ function save() {
   model.value = value.value
   dialog.value = false
 }
+
+defineExpose({ open })
 </script>
 
 <template>
