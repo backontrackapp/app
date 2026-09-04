@@ -34,6 +34,7 @@ import type {
 } from '@/types/domain'
 
 const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
+const PROGRAM_STEP_EXPANSION_DURATION_MS = 240
 const route = useRoute()
 const router = useRouter()
 const store = useTaskStore()
@@ -60,6 +61,9 @@ const stepDragIds = new WeakMap<ProgramStepDraft, string>()
 let nextStepDragId = 0
 const duplicateTaskId = computed(() => typeof route.query.duplicate === 'string'
   ? route.query.duplicate
+  : '')
+const requestedProgramStepId = computed(() => typeof route.query.step === 'string'
+  ? route.query.step
   : '')
 const typeLocked = computed(() => Boolean(route.params.id || duplicateTaskId.value))
 const isEditing = computed(() => Boolean(route.params.id))
@@ -222,6 +226,25 @@ async function markFormReady() {
   await nextTick()
   original.value = signature.value
   ready.value = true
+}
+
+function scrollToProgramStep(index: number) {
+  const panel = document.querySelector<HTMLElement>(`[data-program-step-index="${index}"]`)
+  if (!panel) return
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+  window.setTimeout(() => {
+    if (!panel.isConnected) return
+    const appBarBottom = document.querySelector<HTMLElement>('.app-bar')
+      ?.getBoundingClientRect().bottom ?? 0
+    const scrollingElement = document.scrollingElement ?? document.documentElement
+    window.scrollTo({
+      behavior: reduceMotion ? 'auto' : 'smooth',
+      top: Math.max(
+        0,
+        scrollingElement.scrollTop + panel.getBoundingClientRect().top - appBarBottom,
+      ),
+    })
+  }, reduceMotion ? 0 : PROGRAM_STEP_EXPANSION_DURATION_MS)
 }
 const scheduledTimes = computed(() => draft.scheduledTimes?.length
   ? draft.scheduledTimes
@@ -570,8 +593,15 @@ onMounted(async () => {
     scheduledTimes: [...(task.scheduledTimes ?? (task.scheduledTime ? [task.scheduledTime] : []))],
     steps: taskSteps,
   })
-  if (task.type === 'program') syncProgramSequence()
+  if (task.type === 'program') {
+    syncProgramSequence()
+    const requestedStepIndex = draft.steps.findIndex(step => step.id === requestedProgramStepId.value)
+    if (requestedStepIndex >= 0) openStep.value = requestedStepIndex
+  }
   await markFormReady()
+  if (openStep.value !== undefined && requestedProgramStepId.value) {
+    scrollToProgramStep(openStep.value)
+  }
 })
 
 async function addStep(focusName = true) {
@@ -665,7 +695,7 @@ watch(openStep, (index) => {
   stepReferenceCheckTimer = window.setTimeout(() => {
     stepReferenceCheckTimer = undefined
     void loadStepReferences(step)
-  }, 240)
+  }, PROGRAM_STEP_EXPANSION_DURATION_MS)
 })
 
 function moveStep(index: number, direction: -1 | 1) {
@@ -1282,6 +1312,7 @@ async function deleteTaskPermanently() {
             elevation="0"
             rounded="xl"
             class="surface-card program-step-panel"
+            :data-program-step-index="index"
             :class="{
               'program-step-panel--draggable': draft.steps.length > 1,
               'program-step-panel--day-off': step.completionType === 'day_off',

@@ -1392,10 +1392,14 @@ function runTaskCardAction(action: TaskCardActionId) {
     return
   }
   if (action === 'edit-task') {
-    const taskId = taskActionProgress.value?.task.id
-    if (!taskId) return
+    const progress = taskActionProgress.value
+    if (!progress) return
     taskSheet.value = false
-    void router.push({ name: 'task-edit', params: { id: taskId } })
+    void router.push({
+      name: 'task-edit',
+      params: { id: progress.task.id },
+      query: progress.programStep ? { step: progress.programStep.id } : {},
+    })
     return
   }
   if (action === 'duplicate-task') {
