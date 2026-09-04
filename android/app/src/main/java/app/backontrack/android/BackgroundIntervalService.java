@@ -27,6 +27,7 @@ import androidx.core.app.NotificationCompat;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import com.getcapacitor.JSObject;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -63,6 +64,7 @@ public class BackgroundIntervalService extends Service {
     private FlashcardRecordingPlayer recordingPlayer;
     private ReviewSetAudioFocus reviewSetAudioFocus;
     private boolean speechReady;
+    private boolean speechInitializationFailed;
     private boolean intervalSpeechReady;
     private String pendingIntervalStepName = "";
     private String sessionId = "";
@@ -93,6 +95,7 @@ public class BackgroundIntervalService extends Service {
     private float pendingReviewSpeechRate = 1.0f;
     private boolean reviewSpeechOverAmplified;
     private float reviewBackSpeechRate = 1.0f;
+    private boolean reviewClockHeld;
     private boolean appWasVisible;
 
     private final Runnable ticker = new Runnable() {
@@ -100,10 +103,12 @@ public class BackgroundIntervalService extends Service {
         public void run() {
             if (!running) return;
             long now = SystemClock.elapsedRealtime();
+            settleReviewClock(now);
             playCountdown(now);
             advance(now);
             if (!running) return;
             updateReviewSpeech(now);
+            reviewClockHeld = holdsReviewClock();
             updateNotification(false);
             if (steps.get(stepIndex).requiresConfirmation) {
                 releaseWakeLock();
@@ -208,6 +213,11 @@ public class BackgroundIntervalService extends Service {
         recordingPlayer = new FlashcardRecordingPlayer(this);
         speech = new TextToSpeech(this, status -> {
             speechReady = status == TextToSpeech.SUCCESS;
+            speechInitializationFailed = !speechReady;
+            if (speechInitializationFailed) {
+                pendingReviewSpeechText = "";
+                pendingReviewSpeechLanguage = "";
+            }
             TextToSpeech currentSpeech = speech;
             if (speechReady && currentSpeech != null) {
                 currentSpeech.setAudioAttributes(ReviewSetAudioFocus.speechAudioAttributes());
@@ -317,6 +327,7 @@ public class BackgroundIntervalService extends Service {
             SystemClock.elapsedRealtime()
         );
         appWasVisible = MainActivity.isAppVisible();
+        reviewClockHeld = false;
 
         if (encodedReview == null || encodedReview.trim().isEmpty()) {
             lastReviewSpeechKey = "";
@@ -454,20 +465,23 @@ public class BackgroundIntervalService extends Service {
         stopSpeechPlayback();
     }
 
+    private boolean holdsReviewClock() {
+        return isReviewSpeechActive()
+            || FlashcardSpeechPlugin.isAutomaticReviewSpeechActive()
+            || !pendingReviewRecordingUrl.isEmpty()
+            || (!pendingReviewSpeechText.isEmpty() && !pendingReviewSpeechLanguage.isEmpty());
+    }
+
     private long currentReviewElapsedMs(long now) {
-        return reviewBaseElapsedMs + Math.max(
+        return reviewBaseElapsedMs + (holdsReviewClock() || reviewClockHeld ? 0L : Math.max(
             0L,
             currentStepReviewWindowElapsedMs(now) - reviewConfiguredWindowElapsedMs
-        );
+        ));
     }
 
     private void settleReviewClock(long now) {
-        long currentWindowElapsedMs = currentStepReviewWindowElapsedMs(now);
-        reviewBaseElapsedMs += Math.max(
-            0L,
-            currentWindowElapsedMs - reviewConfiguredWindowElapsedMs
-        );
-        reviewConfiguredWindowElapsedMs = currentWindowElapsedMs;
+        reviewBaseElapsedMs = currentReviewElapsedMs(now);
+        reviewConfiguredWindowElapsedMs = currentStepReviewWindowElapsedMs(now);
     }
 
     private ReviewPhase currentReviewPhase(long now) {
@@ -523,11 +537,11 @@ public class BackgroundIntervalService extends Service {
             ? reviewBackDurationMs(card)
             : reviewFrontDurationMs(card);
         int repetitions = "back".equals(side) ? reviewBackSpeechRepeatCount(card) : 1;
-        return repetitions * (configuredDurationMs + reviewSpeechDurationMs(card, side));
+        return repetitions * configuredDurationMs;
     }
 
     private long reviewBackRepeatDurationMs(ReviewCard card) {
-        return reviewBackDurationMs(card) + reviewSpeechDurationMs(card, "back");
+        return reviewBackDurationMs(card);
     }
 
     private long reviewFrontDurationMs(ReviewCard card) {
@@ -546,23 +560,6 @@ public class BackgroundIntervalService extends Service {
 
     private float reviewBackSpeechRate(ReviewCard card) {
         return card.backSpeechRate > 0.0f ? card.backSpeechRate : reviewBackSpeechRate;
-    }
-
-    private long reviewSpeechDurationMs(ReviewCard card, String side) {
-        String displayedValue = "front".equals(side) ? reviewFrontDisplay : reviewBackDisplay;
-        String faceValue = speechFaceValue(side, displayedValue);
-        String text = faceText(card, faceValue).trim();
-        String language = "front".equals(side) ? reviewFrontLanguage : reviewBackLanguage;
-        if (text.isEmpty() || language.isEmpty()) return 0L;
-
-        boolean isChinese = language.toLowerCase(Locale.ROOT).startsWith("zh");
-        int unitCount = isChinese
-            ? text.codePointCount(0, text.length())
-            : text.split("\\s+").length;
-        float speechRate = "back".equals(side) ? reviewBackSpeechRate(card) : 1.0f;
-        double millisecondsPerUnit = (isChinese ? 260d : 340d)
-            / Math.max(0.25d, Math.min(1d, speechRate));
-        return Math.max(0L, Math.round(unitCount * millisecondsPerUnit));
     }
 
     private void updateReviewSpeech(long now) {
@@ -597,6 +594,21 @@ public class BackgroundIntervalService extends Service {
         );
     }
 
+    static JSObject reviewState() {
+        JSObject state = new JSObject();
+        BackgroundIntervalService instance = activeInstance;
+        if (instance != null && instance.running) {
+            state.put("sessionId", instance.sessionId);
+            state.put("elapsedMs", instance.currentReviewElapsedMs(SystemClock.elapsedRealtime()));
+            state.put("speechRemainingMs", Math.max(
+                FlashcardSpeechPlugin.automaticReviewSpeechRemainingMs(),
+                Math.max(instance.volumeBoost != null ? instance.volumeBoost.remainingMs() : 0,
+                    instance.recordingPlayer != null ? instance.recordingPlayer.remainingMs() : 0)
+            ));
+        }
+        return state;
+    }
+
     private boolean isReviewSpeechActive() {
         return (volumeBoost != null && volumeBoost.isActive())
             || (recordingPlayer != null && recordingPlayer.isActive());
@@ -619,6 +631,7 @@ public class BackgroundIntervalService extends Service {
     private void speakCurrentReviewSide(long now, boolean force) {
         ReviewPhase phase = currentReviewPhase(now);
         if (phase == null || (!force && phase.key.equals(lastReviewSpeechKey))) return;
+        settleReviewClock(now);
         stopSpeechPlayback();
         ReviewCard card = reviewCards.get(phase.cardIndex);
         lastReviewSpeechKey = phase.key;
@@ -685,7 +698,9 @@ public class BackgroundIntervalService extends Service {
             if (volumeBoost != null) volumeBoost.stop();
             recordingPlayer.play(
                 recordingUrl,
+                () -> {},
                 () -> speakSynthesizedReview(text, language, speechRate),
+                () -> {},
                 () -> running
                     && !MainActivity.isAppVisible()
                     && currentStepPlaysFlashcardReview(SystemClock.elapsedRealtime())
@@ -696,6 +711,11 @@ public class BackgroundIntervalService extends Service {
     }
 
     private void speakSynthesizedReview(String text, String language, float speechRate) {
+        if (speechInitializationFailed) {
+            pendingReviewSpeechText = "";
+            pendingReviewSpeechLanguage = "";
+            return;
+        }
         if (!speechReady || speech == null) {
             pendingReviewSpeechText = text;
             pendingReviewSpeechLanguage = language;

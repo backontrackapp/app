@@ -11,6 +11,7 @@ import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsF
 import ReviewSetCard from '@/components/ReviewSetCard.vue'
 import RunnerStartScreen from '@/components/RunnerStartScreen.vue'
 import RunnerSessionActions from '@/components/RunnerSessionActions.vue'
+import { useReviewProgress } from '@/composables/useReviewProgress'
 import {
   backgroundFlashcardReviewState,
   flashcardSpeechOverAmplificationIsEnabled,
@@ -44,6 +45,7 @@ import {
   flashcardReviewCardBackSpeechRepeatCount,
   flashcardReviewCardBackSpeechRate,
   flashcardReviewFaceDurationMs,
+  flashcardReviewFaceSpeechDurationMs,
   flashcardReviewFaceCanSpeak,
   flashcardReviewFaceSpeech,
   flashcardReviewSpeechFaceValue,
@@ -148,6 +150,7 @@ const backgroundViewedTarget = ref<number>()
 const backgroundVisualSnapshotReady = ref(false)
 const backgroundPassiveRemainingMs = ref(0)
 const backgroundPassiveDurationMs = ref(1000)
+const backgroundProgressState = ref<BackgroundFlashcardReviewState>()
 let animationFrame: number | undefined
 let lastTickAt = 0
 let mounted = true
@@ -157,6 +160,7 @@ let completingTimeLimit = false
 let continuePassiveTickWhileBusy = false
 let visibilityWork: Promise<void> = Promise.resolve()
 let lastSpokenKey = ''
+let passiveAutomaticSpeechKey = ''
 let speechRequest = 0
 let wakeLock: ScreenWakeLock | undefined
 let acquiringWakeLock = false
@@ -302,16 +306,40 @@ const passiveSpeechRepeatIndex = computed(() => {
   const elapsedBackMs = Math.max(0, passiveDurationMs.value - passiveRemainingMs.value)
   return Math.min(backSpeechRepeatCount.value - 1, Math.floor(elapsedBackMs / repeatDurationMs))
 })
+const passiveVisualProgress = useReviewProgress(() => {
+  const background = backgroundVisualSnapshotReady.value ? backgroundProgressState.value : undefined
+  if (background) {
+    const count = background.repeatCount || (background.side === 'back' ? backSpeechRepeatCount.value : 1)
+    const delayMs = backgroundPassiveDurationMs.value / count
+    const index = Math.min(count - 1, Math.max(0, Math.floor(
+      (backgroundPassiveDurationMs.value - backgroundPassiveRemainingMs.value) / delayMs,
+    )))
+    return {
+      key: `${session.value?.id}:${displayedViewedCount.value}:${background.side}:${index}`,
+      repeatIndex: index,
+      repeatCount: count,
+      delayMs,
+      remainingMs: Math.max(0, backgroundPassiveRemainingMs.value - (count - index - 1) * delayMs),
+      speechRemainingMs: background.speechRemainingMs,
+      running: isRunning.value && background.running,
+    }
+  }
+  const count = passiveSide.value === 'back' ? backSpeechRepeatCount.value : 1
+  const index = passiveSpeechRepeatIndex.value
+  const delayMs = passiveDurationMs.value / count
+  return {
+    key: `${session.value?.id}:${displayedViewedCount.value}:${passiveSide.value}:${index}`,
+    repeatIndex: index,
+    repeatCount: count,
+    delayMs,
+    remainingMs: Math.max(0, passiveRemainingMs.value - (count - index - 1) * delayMs),
+    running: isRunning.value && (!busy.value || continuePassiveTickWhileBusy)
+      && !visibilitySpeechHandoff.value && !reconcilingBackground.value,
+  }
+})
 const passiveProgress = computed(() => {
-  tickVersion.value
   if (session.value?.mode !== 'passive') return 0
-  const remainingMs = backgroundVisualSnapshotReady.value
-    ? backgroundPassiveRemainingMs.value
-    : passiveRemainingMs.value
-  const durationMs = backgroundVisualSnapshotReady.value
-    ? backgroundPassiveDurationMs.value
-    : passiveDurationMs.value
-  return Math.max(0, Math.min(100, (1 - remainingMs / durationMs) * 100))
+  return passiveVisualProgress.progress.value
 })
 const accuracy = computed(() => session.value ? sessionAccuracy(session.value) : undefined)
 const exitDestination = computed(() => '/tasks')
@@ -578,6 +606,7 @@ function passiveStorageKey(id: string) {
 
 function restorePassiveState(value: FlashcardReviewSession) {
   passiveSide.value = 'front'
+  passiveAutomaticSpeechKey = ''
   passiveRemainingMs.value = passiveDurationMs.value
   if (value.mode !== 'passive') return
   try {
@@ -588,9 +617,11 @@ function restorePassiveState(value: FlashcardReviewSession) {
       && flashcardReviewShowsSide(value.cardSides, saved.side)
     ) {
       passiveSide.value = saved.side
-      passiveRemainingMs.value = Math.max(1, Number(saved.remainingMs) || passiveDurationMs.value)
+      passiveRemainingMs.value = saved.timingVersion === 2
+        ? Math.min(passiveDurationMs.value, Math.max(1, Number(saved.remainingMs) || passiveDurationMs.value))
+        : passiveDurationMs.value
       const restoredSpeechKey = speechKey(true)
-      if (saved.spokenKey === restoredSpeechKey) lastSpokenKey = restoredSpeechKey
+      if (saved.timingVersion === 2 && saved.spokenKey === restoredSpeechKey) lastSpokenKey = restoredSpeechKey
     }
   } catch {
     // Start the current card from its front when local recovery is unavailable.
@@ -604,6 +635,7 @@ function savePassiveState() {
       cardId: currentCard.value.id,
       side: passiveSide.value,
       remainingMs: passiveRemainingMs.value,
+      timingVersion: 2,
       spokenKey: lastSpokenKey,
     }))
   } catch {
@@ -633,6 +665,7 @@ function tick() {
     localElapsedMs.value += delta
     if (
       backgroundVisualSnapshotReady.value
+      && !backgroundProgressState.value?.speechRemainingMs
       && session.value?.mode === 'passive'
       && currentCard.value
     ) {
@@ -655,8 +688,12 @@ function tick() {
     session.value?.mode === 'passive'
     && currentCard.value
   ) {
+    if (passiveAutomaticSpeechKey && passiveAutomaticSpeechKey === speechKey()) return
     passiveRemainingMs.value = Math.max(0, passiveRemainingMs.value - delta)
-    if (passiveRemainingMs.value === 0 && !passiveAdvancing) void advancePassive()
+    if (
+      passiveRemainingMs.value <= 0
+      && !passiveAdvancing
+    ) void advancePassive()
   }
   tickVersion.value++
 }
@@ -695,6 +732,7 @@ async function advancePassive() {
 function resetCurrentCardPhase() {
   revealed.value = false
   passiveSide.value = firstReviewSide.value
+  passiveAutomaticSpeechKey = ''
   passiveRemainingMs.value = passiveDurationMs.value
   if (isFinished.value) clearPassiveState()
   else savePassiveState()
@@ -998,7 +1036,6 @@ function speechKey(allowPaused = false) {
 }
 
 async function speakCurrentSide(allowPaused = false) {
-  const request = ++speechRequest
   const value = session.value
   const card = currentCard.value
   const key = speechKey(allowPaused)
@@ -1019,8 +1056,11 @@ async function speakCurrentSide(allowPaused = false) {
   }
   if (key === lastSpokenKey) return
 
+  const request = ++speechRequest
+  passiveAutomaticSpeechKey = ''
   lastSpokenKey = key
   const side = currentSpeechSide.value
+  let visualSpeech: ReturnType<typeof passiveVisualProgress.beginSpeech> | undefined
   try {
     const displayedValue = side === 'front' ? currentFrontDisplay.value : currentBackDisplay.value
     const faceValue = flashcardReviewSpeechFaceValue(side, displayedValue)
@@ -1037,8 +1077,24 @@ async function speakCurrentSide(allowPaused = false) {
       ? flashcardReviewCardBackSpeechRate(value, card)
       : 1
     const wordAnimationLeadMs = side === 'back' ? 100 : 0
-    if (audio) await speakFlashcardText(text, language, '', audio, speechRate, undefined, wordAnimationLeadMs)
-    else await speakFlashcardText(text, language, '', '', speechRate, undefined, wordAnimationLeadMs)
+    const adjustsPassiveTiming = !allowPaused
+      && value.mode === 'passive'
+      && value.status === 'running'
+    if (adjustsPassiveTiming) {
+      passiveAutomaticSpeechKey = key
+      visualSpeech = passiveVisualProgress.beginSpeech(
+        flashcardReviewFaceSpeechDurationMs(value, card, side),
+      )
+    }
+    await speakFlashcardText(
+      text, language, '', audio, speechRate, visualSpeech?.duration, wordAnimationLeadMs,
+      adjustsPassiveTiming,
+    )
+    if (adjustsPassiveTiming) {
+      await waitForFlashcardSpeechCompletion(() => mounted
+        && request === speechRequest && speechKey() === key
+        && document.visibilityState === 'visible')
+    }
     if (request === speechRequest) speechPlaybackWarning.value = ''
   } catch {
     if (request === speechRequest) spokenWord.value = undefined
@@ -1048,8 +1104,12 @@ async function speakCurrentSide(allowPaused = false) {
     }
   } finally {
     if (request === speechRequest) {
+      // Settle elapsed session time while the face delay is still held.
+      tick()
+      if (passiveAutomaticSpeechKey === key) passiveAutomaticSpeechKey = ''
       savePassiveState()
     }
+    visualSpeech?.finish()
   }
 }
 
@@ -1082,6 +1142,8 @@ async function speakPressedWord(word: string, pressedWord: FlashcardSpeechWord) 
   ) return
 
   const request = ++speechRequest
+  tick()
+  passiveAutomaticSpeechKey = ''
   spokenWord.value = pressedWord
   speechPlaybackWarning.value = ''
   try {
@@ -1231,6 +1293,7 @@ async function showReviewCardSide(
     revealed.value = side !== firstReviewSide.value
   } else {
     passiveSide.value = side
+    passiveAutomaticSpeechKey = ''
     passiveRemainingMs.value = passiveDurationMs.value
     savePassiveState()
     void syncNativeBackground()
@@ -1346,6 +1409,7 @@ async function reconcileBackgroundReview(
     await performAction('end', { syncNative: false, playCompletionCue: false })
   } else if (reconciledAllViews && session.value?.status === 'running' && currentCard.value) {
     passiveSide.value = state.side
+    passiveAutomaticSpeechKey = ''
     passiveRemainingMs.value = Math.max(1, state.remainingMs)
     savePassiveState()
   }
@@ -1366,6 +1430,7 @@ function applyBackgroundProgressSnapshot(
   value: FlashcardReviewSession,
   state: BackgroundFlashcardReviewState,
 ) {
+  backgroundProgressState.value = state
   backgroundViewedTarget.value = value.viewedCount + Math.max(0, state.completedCards)
   localElapsedMs.value = Math.max(localElapsedMs.value, state.elapsedMs)
   backgroundPassiveRemainingMs.value = Math.max(0, state.remainingMs)

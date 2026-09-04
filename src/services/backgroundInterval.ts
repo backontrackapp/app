@@ -72,6 +72,7 @@ interface BackgroundIntervalPlugin {
   }): Promise<void>
   playCue(options: { name: NativeIntervalCueName, signal?: boolean }): Promise<void>
   isSpeechActive?(): Promise<{ active: boolean }>
+  getReviewState(): Promise<{ sessionId?: string; elapsedMs?: number; speechRemainingMs?: number }>
   stop(): Promise<void>
 }
 
@@ -198,7 +199,7 @@ export async function stopBackgroundInterval() {
   }
 }
 
-export async function waitForBackgroundIntervalSpeech() {
+export async function waitForBackgroundIntervalSpeech(refreshProgress?: () => Promise<void>) {
   if (
     Capacitor.getPlatform() !== 'android'
     || typeof document === 'undefined'
@@ -209,8 +210,14 @@ export async function waitForBackgroundIntervalSpeech() {
       .then(result => result.active)
       .catch(() => false)
     if (!active) return
+    await refreshProgress?.()
     await new Promise(resolve => window.setTimeout(resolve, 100))
   }
+}
+
+export async function backgroundIntervalReviewState() {
+  if (Capacitor.getPlatform() !== 'android') return undefined
+  return BackgroundInterval.getReviewState().catch(() => undefined)
 }
 
 export async function playNativeIntervalCue(name: NativeIntervalCueName, signal = false) {

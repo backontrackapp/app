@@ -481,6 +481,11 @@ export const useIntervalStore = defineStore('intervals', () => {
     if (session.status === 'running' || session.status === 'paused') saveRecovery(session.id, session.runtime)
     else localStorage.removeItem(RECOVERY_KEY)
     try {
+      if ((previous.status === 'running' || previous.status === 'paused')
+        && session.flashcardReview?.reviewSet && session.flashcardReview.cards.length
+        && Number.isFinite(session.flashcardReview.playbackOffsetMs)) {
+        await api.updateIntervalSessionFlashcards(sessionId, session.flashcardReview)
+      }
       const record = await api.collection('interval_sessions').update(sessionId, payload)
       const speechPaused = session.flashcardReview?.speechPaused
       const updated = mapSessionWithSpeechPause(
@@ -488,6 +493,9 @@ export const useIntervalStore = defineStore('intervals', () => {
         speechPaused,
         session.flashcardReview?.speechPausedElapsedMs,
       )
+      if (updated.flashcardReview && session.flashcardReview) {
+        updated.flashcardReview.playbackOffsetMs = session.flashcardReview.playbackOffsetMs
+      }
       Object.assign(session, updated)
       return session
     } catch (cause) {

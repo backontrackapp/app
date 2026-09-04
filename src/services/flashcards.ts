@@ -972,9 +972,8 @@ export function flashcardReviewFaceDurationMs(
   const repetitions = side === 'back'
     ? flashcardReviewCardBackSpeechRepeatCount(review, card)
     : 1
-  return repetitions * (
-    configuredDurationMs + flashcardReviewFaceSpeechDurationMs(review, card, side)
-  )
+  // Speech is awaited by the runners; this clock measures only the post-speech delay.
+  return repetitions * configuredDurationMs
 }
 
 export function flashcardReviewShowsSide(
@@ -1148,8 +1147,7 @@ export function intervalFlashcardPhase(
     card,
     'back',
   ) * 1000
-  const speechDurationMs = flashcardReviewFaceSpeechDurationMs(review, card, 'back')
-  const backRepeatDurationMs = configuredBackDurationMs + speechDurationMs
+  const backRepeatDurationMs = configuredBackDurationMs
   const backSpeechRepeatIndex = side === 'back'
     ? Math.min(
       flashcardReviewCardBackSpeechRepeatCount(review, card) - 1,

@@ -122,6 +122,16 @@ final class TtsVolumeBoost {
         return !activeUtteranceId.isEmpty();
     }
 
+    synchronized int remainingMs() {
+        if (!isActive()) return 0;
+        try {
+            if (mediaPlayer != null) return Math.max(1, mediaPlayer.getDuration() - mediaPlayer.getCurrentPosition());
+        } catch (RuntimeException ignored) {
+            // Audio is still being prepared; keep visual progress moving.
+        }
+        return 1000;
+    }
+
     static double linearAmplitudeMultiplier(int gainMillibels) {
         return Math.pow(10d, gainMillibels / 2000d);
     }

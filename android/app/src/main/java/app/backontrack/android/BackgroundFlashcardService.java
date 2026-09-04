@@ -51,6 +51,7 @@ public class BackgroundFlashcardService extends Service {
     private FlashcardRecordingPlayer recordingPlayer;
     private ReviewSetAudioFocus reviewSetAudioFocus;
     private boolean speechReady;
+    private boolean speechInitializationFailed;
     private boolean speechOverAmplified;
     private float backSpeechRate = 1.0f;
     private boolean running;
@@ -72,7 +73,6 @@ public class BackgroundFlashcardService extends Service {
     private long currentFaceDurationMs = 5000L;
     private int backSpeechRepeatCount = 1;
     private int lastBackSpeechRepeatIndex = -1;
-    private final List<Long> backSpeechDurationMs = new ArrayList<>();
     private long deadlineElapsedMs;
     private long configuredElapsedMs;
     private long baseElapsedMs;
@@ -83,13 +83,21 @@ public class BackgroundFlashcardService extends Service {
     private String pendingRecordingUrl = "";
     private long lastNotificationSecond = -1L;
     private long lastTickElapsedMs;
-    private long appliedSpeechDurationMs;
+    private boolean speechClockHeld;
 
     private final Runnable ticker = new Runnable() {
         @Override
         public void run() {
             if (!running) return;
             long now = SystemClock.elapsedRealtime();
+            boolean holdClock = isSpeechActive()
+                || FlashcardSpeechPlugin.isAutomaticReviewSpeechActive()
+                || !pendingRecordingUrl.isEmpty()
+                || (!pendingSpeechText.isEmpty() && !pendingSpeechLanguage.isEmpty());
+            if (holdClock || speechClockHeld) {
+                deadlineElapsedMs += Math.max(0L, now - lastTickElapsedMs);
+            }
+            speechClockHeld = holdClock;
             lastTickElapsedMs = now;
             if (timeLimitMs > 0L && currentElapsedMs(now) >= timeLimitMs) {
                 finishReview(now);
@@ -161,22 +169,14 @@ public class BackgroundFlashcardService extends Service {
         createNotificationChannel();
         reviewSetAudioFocus = new ReviewSetAudioFocus(this);
         volumeBoost = new TtsVolumeBoost(this);
-        volumeBoost.setPlaybackListener(new TtsVolumeBoost.PlaybackListener() {
-            @Override
-            public void onStart(
-                String utteranceId,
-                int durationMs,
-                List<TtsVolumeBoost.SpeechRange> speechRanges
-            ) {
-                if (durationMs > 0) applyCurrentSpeechDuration(durationMs);
-            }
-
-            @Override
-            public void onDone(String utteranceId) {}
-        });
         recordingPlayer = new FlashcardRecordingPlayer(this);
         speech = new TextToSpeech(this, status -> {
             speechReady = status == TextToSpeech.SUCCESS;
+            speechInitializationFailed = !speechReady;
+            if (speechInitializationFailed) {
+                pendingSpeechText = "";
+                pendingSpeechLanguage = "";
+            }
             if (speechReady) {
                 speech.setAudioAttributes(ReviewSetAudioFocus.speechAudioAttributes());
                 speech.setOnUtteranceProgressListener(new UtteranceProgressListener() {
@@ -262,7 +262,6 @@ public class BackgroundFlashcardService extends Service {
         baseBackDurationMs = Math.max(1000L, Math.min(10000L, config.optLong("backSeconds", 5L) * 1000L));
         backSpeechRepeatCount = Math.max(1, Math.min(5, config.optInt("backSpeechRepeatCount", 1)));
         backDurationMs = baseBackDurationMs * backSpeechRepeatCount;
-        backSpeechDurationMs.clear();
         frontLanguage = config.optString("frontLanguage", "").trim();
         backLanguage = config.optString("backLanguage", "").trim();
         speechOverAmplified = config.optBoolean("overAmplified", false);
@@ -273,6 +272,7 @@ public class BackgroundFlashcardService extends Service {
         baseElapsedMs = Math.max(0L, config.optLong("elapsedMs", 0L));
         configuredElapsedMs = SystemClock.elapsedRealtime();
         lastTickElapsedMs = configuredElapsedMs;
+        speechClockHeld = false;
         cardIndex = 0;
         applyCardTiming(cards.get(cardIndex));
         long remainingMs = Math.max(1L, config.optLong("remainingMs", 1L));
@@ -289,7 +289,6 @@ public class BackgroundFlashcardService extends Service {
         pendingSpeechText = "";
         pendingSpeechLanguage = "";
         pendingRecordingUrl = "";
-        appliedSpeechDurationMs = 0L;
         stopSpeechPlayback();
         persistState();
     }
@@ -302,8 +301,6 @@ public class BackgroundFlashcardService extends Service {
                 deadlineElapsedMs += "back".equals(side) ? backDurationMs : frontDurationMs;
                 lastBackSpeechRepeatIndex = "back".equals(side) ? 0 : -1;
                 currentFaceDurationMs = "back".equals(side) ? backDurationMs : frontDurationMs;
-                if ("back".equals(side)) backSpeechDurationMs.clear();
-                appliedSpeechDurationMs = 0L;
                 speakCurrentSide();
             } else {
                 completedCards += 1;
@@ -324,11 +321,10 @@ public class BackgroundFlashcardService extends Service {
                 deadlineElapsedMs += "back".equals(side) ? backDurationMs : frontDurationMs;
                 if ("back".equals(side)) lastBackSpeechRepeatIndex = 0;
                 currentFaceDurationMs = "back".equals(side) ? backDurationMs : frontDurationMs;
-                if ("back".equals(side)) backSpeechDurationMs.clear();
-                appliedSpeechDurationMs = 0L;
                 speakCurrentSide();
             }
             persistState();
+            if (isSpeechActive()) return;
         }
     }
 
@@ -345,17 +341,13 @@ public class BackgroundFlashcardService extends Service {
         int repeatIndex = backSpeechRepeatIndex(now);
         if (repeatIndex <= lastBackSpeechRepeatIndex) return;
         lastBackSpeechRepeatIndex = repeatIndex;
-        appliedSpeechDurationMs = 0L;
         speakCurrentSide();
     }
 
     private int backSpeechRepeatIndex(long now) {
         long elapsedMs = Math.max(0L, now - (deadlineElapsedMs - currentFaceDurationMs));
         for (int index = 0; index < backSpeechRepeatCount - 1; index += 1) {
-            long speechDurationMs = index < backSpeechDurationMs.size()
-                ? backSpeechDurationMs.get(index)
-                : 0L;
-            long repeatDurationMs = baseBackDurationMs + speechDurationMs;
+            long repeatDurationMs = baseBackDurationMs;
             if (elapsedMs < repeatDurationMs) return index;
             elapsedMs -= repeatDurationMs;
         }
@@ -422,7 +414,7 @@ public class BackgroundFlashcardService extends Service {
             if (volumeBoost != null) volumeBoost.stop();
             recordingPlayer.play(
                 recordingUrl,
-                () -> applyCurrentSpeechDuration(recordingPlayer.durationMs()),
+                () -> {},
                 () -> speakSynthesized(text, language),
                 () -> {},
                 () -> running && !MainActivity.isAppVisible()
@@ -433,6 +425,11 @@ public class BackgroundFlashcardService extends Service {
     }
 
     private void speakSynthesized(String text, String language) {
+        if (speechInitializationFailed) {
+            pendingSpeechText = "";
+            pendingSpeechLanguage = "";
+            return;
+        }
         if (!speechReady || speech == null) {
             pendingSpeechText = text;
             pendingSpeechLanguage = language;
@@ -448,7 +445,6 @@ public class BackgroundFlashcardService extends Service {
         ) return;
         float speechRate = "back".equals(side) ? backSpeechRate : 1.0f;
         if (speech.setSpeechRate(speechRate) == TextToSpeech.ERROR) return;
-        applyCurrentSpeechDuration(estimatedSpeechDurationMs(text, language, speechRate));
         String utteranceId = "backontrack-background-flashcard-" + System.nanoTime();
         int result = volumeBoost.speak(
             speech,
@@ -457,36 +453,8 @@ public class BackgroundFlashcardService extends Service {
             speechOverAmplified
         );
         if (result == TextToSpeech.ERROR) {
-            applyCurrentSpeechDuration(0L);
             volumeBoost.finish(utteranceId);
         }
-    }
-
-    private long estimatedSpeechDurationMs(String text, String language, float speechRate) {
-        String content = text == null ? "" : text.trim();
-        if (content.isEmpty()) return 0L;
-        int wordCount = language != null && language.toLowerCase(Locale.ROOT).startsWith("zh")
-            ? content.codePointCount(0, content.length())
-            : content.split("\\s+").length;
-        double millisecondsPerWord = (language != null && language.toLowerCase(Locale.ROOT).startsWith("zh")
-            ? 260d
-            : 340d) / Math.max(0.25d, Math.min(1d, speechRate));
-        return Math.max(0L, Math.round(wordCount * millisecondsPerWord));
-    }
-
-    private void applyCurrentSpeechDuration(long durationMs) {
-        if (!running || MainActivity.isAppVisible()) return;
-        long nextDurationMs = Math.max(0L, durationMs);
-        long adjustmentMs = nextDurationMs - appliedSpeechDurationMs;
-        deadlineElapsedMs += adjustmentMs;
-        currentFaceDurationMs = Math.max(1L, currentFaceDurationMs + adjustmentMs);
-        if ("back".equals(side) && lastBackSpeechRepeatIndex >= 0) {
-            while (backSpeechDurationMs.size() <= lastBackSpeechRepeatIndex) {
-                backSpeechDurationMs.add(0L);
-            }
-            backSpeechDurationMs.set(lastBackSpeechRepeatIndex, nextDurationMs);
-        }
-        appliedSpeechDurationMs = nextDurationMs;
     }
 
     private void stopSpeechPlayback() {
@@ -569,6 +537,12 @@ public class BackgroundFlashcardService extends Service {
             state.put("side", side);
             state.put("remainingMs", running ? Math.max(0L, deadlineElapsedMs - now) : 0L);
             state.put("durationMs", currentFaceDurationMs);
+            state.put("repeatCount", "back".equals(side) ? backSpeechRepeatCount : 1);
+            state.put("speechRemainingMs", Math.max(
+                FlashcardSpeechPlugin.automaticReviewSpeechRemainingMs(),
+                Math.max(volumeBoost != null ? volumeBoost.remainingMs() : 0,
+                    recordingPlayer != null ? recordingPlayer.remainingMs() : 0)
+            ));
             state.put("elapsedMs", running ? currentElapsedMs(now) : baseElapsedMs);
         } catch (JSONException ignored) {
             // All values are JSON primitives.

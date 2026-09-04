@@ -52,6 +52,7 @@ public class FlashcardSpeechPlugin extends Plugin {
     private boolean notificationPermissionRequested;
     private boolean overAmplificationEnabled;
     private String backgroundIntervalSpeechKey = "";
+    private boolean automaticReviewPlayback;
     private TtsVolumeBoost volumeBoost;
     private FlashcardRecordingPlayer recordingPlayer;
 
@@ -185,6 +186,7 @@ public class FlashcardSpeechPlugin extends Plugin {
         }
         if (!speechReady && !speechFailed) {
             if (pendingSpeechCall != null) pendingSpeechCall.resolve();
+            automaticReviewPlayback = Boolean.TRUE.equals(call.getBoolean("automaticReviewPlayback", false));
             pendingSpeechCall = call;
             return;
         }
@@ -216,6 +218,7 @@ public class FlashcardSpeechPlugin extends Plugin {
 
         stopForegroundSpeech();
         backgroundIntervalSpeechKey = call.getString("backgroundIntervalSpeechKey", "").trim();
+        automaticReviewPlayback = Boolean.TRUE.equals(call.getBoolean("automaticReviewPlayback", false));
         recordingPlayer.play(
             source,
             () -> {
@@ -261,6 +264,7 @@ public class FlashcardSpeechPlugin extends Plugin {
             )
         );
         volumeBoost.setPlaybackStartLeadMs(wordAnimationLeadMs);
+        automaticReviewPlayback = Boolean.TRUE.equals(call.getBoolean("automaticReviewPlayback", false));
         backgroundIntervalSpeechKey = "";
         String utteranceId = "backontrack-flashcard-" + System.nanoTime();
         synchronized (synthesizedSpeechTimings) {
@@ -302,7 +306,8 @@ public class FlashcardSpeechPlugin extends Plugin {
         JSObject result = new JSObject();
         result.put(
             "active",
-            (volumeBoost != null && volumeBoost.isActive())
+            pendingSpeechCall != null
+                || (volumeBoost != null && volumeBoost.isActive())
                 || (recordingPlayer != null && recordingPlayer.isActive())
                 || BackgroundFlashcardService.isSpeechActive()
         );
@@ -310,6 +315,7 @@ public class FlashcardSpeechPlugin extends Plugin {
     }
 
     private void stopForegroundSpeech() {
+        automaticReviewPlayback = false;
         backgroundIntervalSpeechKey = "";
         if (pendingSpeechCall != null) {
             pendingSpeechCall.resolve();
@@ -358,6 +364,20 @@ public class FlashcardSpeechPlugin extends Plugin {
         synchronized (synthesizedSpeechTimings) {
             synthesizedSpeechTimings.remove(utteranceId);
         }
+    }
+
+    static boolean isAutomaticReviewSpeechActive() {
+        FlashcardSpeechPlugin instance = activeInstance;
+        return instance != null && instance.automaticReviewPlayback && isForegroundSpeechActive();
+    }
+
+    static int automaticReviewSpeechRemainingMs() {
+        FlashcardSpeechPlugin instance = activeInstance;
+        if (instance == null || !isAutomaticReviewSpeechActive()) return 0;
+        return Math.max(1, Math.max(
+            instance.volumeBoost != null ? instance.volumeBoost.remainingMs() : 0,
+            instance.recordingPlayer != null ? instance.recordingPlayer.remainingMs() : 0
+        ));
     }
 
     static boolean isForegroundSpeechActive() {

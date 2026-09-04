@@ -17,9 +17,11 @@ import IntervalTypeIcon from '@/components/IntervalTypeIcon.vue'
 import RunnerStartScreen from '@/components/RunnerStartScreen.vue'
 import RunnerSessionActions from '@/components/RunnerSessionActions.vue'
 import ReviewSetCard from '@/components/ReviewSetCard.vue'
+import { useReviewProgress } from '@/composables/useReviewProgress'
 import WorkoutExercisePanel from '@/components/WorkoutExercisePanel.vue'
 import {
   nativeBackgroundIntervalIsActive,
+  backgroundIntervalReviewState,
   stopBackgroundInterval,
   syncBackgroundInterval,
   waitForBackgroundIntervalSpeech,
@@ -31,6 +33,7 @@ import {
   stopFlashcardSpeech,
   toggleFlashcardSpeechOverAmplification,
   waitForFlashcardSpeechHandoff,
+  waitForFlashcardSpeechCompletion,
 } from '@/services/flashcardSpeech'
 import {
   cardMatchesTags,
@@ -44,6 +47,8 @@ import {
   flashcardReviewFaceSpeech,
   flashcardReviewCardBackSpeechRepeatCount,
   flashcardReviewCardBackSpeechRate,
+  flashcardReviewFaceDurationMs,
+  flashcardReviewFaceSpeechDurationMs,
   flashcardReviewQueueCardSnapshot,
   flashcardReviewSpeechFaceValue,
   flashcardReviewFaceValue,
@@ -109,6 +114,7 @@ import type {
   FlashcardSpeechWord,
   IntervalDefinition,
   IntervalFlashcardReviewSnapshot,
+  ReviewSpeechClockHold,
   IntervalRuntimeState,
   IntervalSession,
   IntervalSettingsApplyTarget,
@@ -127,6 +133,9 @@ const reviewAudioFocusScope = `interval-review:${String(
 )}`
 const displayRemainingMs = ref(0)
 const runnerClockMs = ref(Date.now())
+const reviewSpeechClockHold = ref<ReviewSpeechClockHold>()
+const backgroundReviewSpeechRemainingMs = ref<number>()
+let reviewSpeechRequest = 0
 const progressRingsContent = ref<HTMLElement>()
 const timerValueElement = ref<HTMLElement>()
 const syncing = ref(false)
@@ -309,7 +318,7 @@ const shouldHoldReviewAudioFocus = computed(() => {
     && intervalStepPlaysFlashcardReview(step),
   )
 })
-const flashcardReviewElapsedMs = computed(() => {
+const rawFlashcardReviewElapsedMs = computed(() => {
   const item = session.value
   const review = item?.flashcardReview
   if (!item || !review) return 0
@@ -321,6 +330,26 @@ const flashcardReviewElapsedMs = computed(() => {
     sessionElapsedMs.value,
   )
 })
+const flashcardReviewElapsedMs = computed(() => {
+  const hold = reviewSpeechClockHold.value
+  const item = session.value
+  return hold && hold.sessionId === item?.id
+    && hold.playbackOffsetMs === (item.flashcardReview?.playbackOffsetMs || 0)
+    ? Math.min(rawFlashcardReviewElapsedMs.value, hold.elapsedMs)
+    : rawFlashcardReviewElapsedMs.value
+})
+
+function releaseReviewSpeechClock() {
+  const hold = reviewSpeechClockHold.value
+  const item = session.value
+  const review = item?.flashcardReview
+  if (hold && review && hold.sessionId === item?.id
+    && hold.playbackOffsetMs === (review.playbackOffsetMs || 0)) {
+    review.playbackOffsetMs = hold.playbackOffsetMs
+      - Math.max(0, rawFlashcardReviewElapsedMs.value - hold.elapsedMs)
+  }
+  reviewSpeechClockHold.value = undefined
+}
 const flashcardPhase = computed(() => session.value?.flashcardReview
   ? intervalFlashcardPhase(session.value.flashcardReview, flashcardReviewElapsedMs.value)
   : undefined)
@@ -331,6 +360,26 @@ const flashcardProgressTickCount = computed(() => {
     ? flashcardReviewCardBackSpeechRepeatCount(review, phase.card)
     : 1
 })
+const flashcardVisualProgress = useReviewProgress(() => {
+  const phase = flashcardPhase.value
+  const review = session.value?.flashcardReview
+  const count = flashcardProgressTickCount.value
+  const delayMs = phase && review
+    ? flashcardReviewFaceDurationMs(review, phase.card, phase.side) / count
+    : 1000
+  const index = phase ? Math.min(count - 1, Math.floor(phase.progress * count / 100)) : 0
+  return {
+    key: `${session.value?.id}:${phase?.key}`,
+    repeatIndex: index,
+    repeatCount: count,
+    delayMs,
+    remainingMs: Math.max(0, (phase?.remainingMs || 0) - (count - index - 1) * delayMs),
+    running: session.value?.status === 'running' && !review?.speechPaused
+      && (!review?.speechEnabled || flashcardReviewPlaybackEnabled.value),
+    speechRemainingMs: backgroundReviewSpeechRemainingMs.value,
+  }
+})
+const flashcardVisualProgressValue = flashcardVisualProgress.progress
 const flashcardReviewSet = computed(() => flashcardStore.reviewSets
   .find(item => item.id === session.value?.flashcardReview?.reviewSet))
 const flashcardFrontDisplay = computed(() => {
@@ -947,7 +996,7 @@ onBeforeUnmount(() => {
   void setReviewSetAudioFocus(reviewAudioFocusScope, false)
 })
 
-async function speakCurrentFlashcardSide(allowPaused = false) {
+async function speakCurrentFlashcardSide(allowPaused = false, automaticTiming = !allowPaused) {
   const item = session.value
   const review = item?.flashcardReview
   const phase = flashcardPhase.value
@@ -974,6 +1023,7 @@ async function speakCurrentFlashcardSide(allowPaused = false) {
     if (!item || !review?.speechEnabled || review.speechPaused || !phase || !key) {
       lastSpokenFlashcardKey = ''
     }
+    releaseReviewSpeechClock()
     await stopFlashcardSpeech()
     return
   }
@@ -982,8 +1032,11 @@ async function speakCurrentFlashcardSide(allowPaused = false) {
     return
   }
 
+  releaseReviewSpeechClock()
+  const request = ++reviewSpeechRequest
   flashcardSpeechToFinishAfterIntervalBranch = ''
   lastSpokenFlashcardKey = key
+  let visualSpeech: ReturnType<typeof flashcardVisualProgress.beginSpeech> | undefined
   try {
     const displayedValue = phase.side === 'front'
       ? flashcardFrontDisplay.value
@@ -1005,11 +1058,35 @@ async function speakCurrentFlashcardSide(allowPaused = false) {
       ? flashcardReviewCardBackSpeechRate(review, phase.card)
       : 1
     const wordAnimationLeadMs = phase.side === 'back' ? 100 : 0
-    if (audio) await speakFlashcardText(text, language, phase.key, audio, speechRate, undefined, wordAnimationLeadMs)
-    else await speakFlashcardText(text, language, phase.key, '', speechRate, undefined, wordAnimationLeadMs)
+    const adjustsPlaybackTiming = automaticTiming
+      && item.status === 'running'
+      && !review.speechPaused
+      && flashcardReviewPlaybackEnabled.value
+    if (adjustsPlaybackTiming) {
+      reviewSpeechClockHold.value = {
+        sessionId: item.id,
+        elapsedMs: rawFlashcardReviewElapsedMs.value,
+        playbackOffsetMs: review.playbackOffsetMs || 0,
+      }
+      visualSpeech = flashcardVisualProgress.beginSpeech(
+        flashcardReviewFaceSpeechDurationMs(review, phase.card, phase.side),
+      )
+    }
+    await speakFlashcardText(
+      text, language, phase.key, audio, speechRate, visualSpeech?.duration, wordAnimationLeadMs,
+      adjustsPlaybackTiming,
+    )
+    if (adjustsPlaybackTiming) {
+      await waitForFlashcardSpeechCompletion(() => runnerMounted
+        && request === reviewSpeechRequest && session.value?.id === item.id
+        && document.visibilityState === 'visible')
+    }
   } catch {
     spokenFlashcardWord.value = undefined
     // Speech is optional during intervals; timer playback continues without an inline warning.
+  } finally {
+    if (request === reviewSpeechRequest) releaseReviewSpeechClock()
+    visualSpeech?.finish()
   }
 }
 
@@ -1202,7 +1279,20 @@ function retainCurrentFlashcardSpeechAfterIntervalBranch(item: IntervalSession) 
 
 async function syncNativeTimer(item: IntervalSession) {
   try {
-    await syncBackgroundInterval(item)
+    const hold = reviewSpeechClockHold.value
+    const review = item.flashcardReview
+    const snapshot = hold && review && hold.sessionId === item.id
+      && hold.playbackOffsetMs === (review.playbackOffsetMs || 0)
+      ? {
+          ...item,
+          flashcardReview: {
+            ...review,
+            playbackOffsetMs: hold.playbackOffsetMs
+              - Math.max(0, rawFlashcardReviewElapsedMs.value - hold.elapsedMs),
+          },
+        }
+      : item
+    await syncBackgroundInterval(snapshot)
     backgroundError.value = ''
   } catch (cause) {
     backgroundError.value = cause instanceof Error ? cause.message : 'Background interval timing is unavailable.'
@@ -1235,14 +1325,36 @@ async function handleVisibility() {
     reconcilingVisibilitySpeech = backgroundWasActive
     try {
       if (backgroundWasActive) {
+        const refreshProgress = async () => {
+          const state = await backgroundIntervalReviewState()
+          const active = session.value
+          if (state?.sessionId !== active?.id || !active?.flashcardReview
+            || !Number.isFinite(state?.elapsedMs)) return
+          displayRemainingMs.value = reconciled(active).runtime.remainingMs
+          releaseReviewSpeechClock()
+          active.flashcardReview.playbackOffsetMs = state!.elapsedMs!
+            - rawFlashcardReviewElapsedMs.value
+          backgroundReviewSpeechRemainingMs.value = state?.speechRemainingMs
+        }
+        await refreshProgress()
         await Promise.all([
-          waitForFlashcardSpeechHandoff(),
-          waitForBackgroundIntervalSpeech(),
+          waitForFlashcardSpeechHandoff(refreshProgress),
+          waitForBackgroundIntervalSpeech(refreshProgress),
         ])
         if (document.visibilityState !== 'visible') return
       }
       wakeLock = await requestIntervalWakeLock()
       await tick()
+      if (backgroundWasActive) {
+        releaseReviewSpeechClock()
+        const state = await backgroundIntervalReviewState()
+        const active = session.value
+        if (state?.sessionId === active?.id && active?.flashcardReview
+          && Number.isFinite(state?.elapsedMs)) {
+          active.flashcardReview.playbackOffsetMs = state!.elapsedMs!
+            - rawFlashcardReviewElapsedMs.value
+        }
+      }
       await setReviewSetAudioFocus(
         reviewAudioFocusScope,
         shouldHoldReviewAudioFocus.value,
@@ -1251,6 +1363,7 @@ async function handleVisibility() {
         lastSpokenFlashcardKey = `${session.value.id}:${flashcardPhase.value.key}`
       }
     } finally {
+      backgroundReviewSpeechRemainingMs.value = undefined
       reconcilingVisibilitySpeech = false
     }
     await speakCurrentFlashcardSide()
@@ -1780,6 +1893,7 @@ async function navigateIntervalFlashcard(
   flashcardNavigating.value = true
   lastSpokenFlashcardKey = ''
   try {
+    releaseReviewSpeechClock()
     await stopFlashcardSpeech()
     intervalFlashcardTransitionDirection.value = transitionDirection
     const updated = await updateFlashcardSnapshot({
@@ -1793,7 +1907,7 @@ async function navigateIntervalFlashcard(
     if (updated?.status === 'running') await syncNativeTimer(updated)
     if (updated) {
       await nextTick()
-      await speakCurrentFlashcardSide(true)
+      void speakCurrentFlashcardSide(true, true)
     }
   } catch (cause) {
     intervalFlashcardTransitionDirection.value = undefined
@@ -1822,6 +1936,7 @@ async function showIntervalFlashcardSide(
   flashcardNavigating.value = true
   lastSpokenFlashcardKey = ''
   try {
+    releaseReviewSpeechClock()
     await stopFlashcardSpeech()
     intervalFlashcardTransitionDirection.value = transitionDirection
     const updated = await updateFlashcardSnapshot({
@@ -1835,7 +1950,7 @@ async function showIntervalFlashcardSide(
     if (updated?.status === 'running') await syncNativeTimer(updated)
     if (updated) {
       await nextTick()
-      await speakCurrentFlashcardSide(true)
+      void speakCurrentFlashcardSide(true, true)
     }
   } catch (cause) {
     intervalFlashcardTransitionDirection.value = undefined
@@ -2923,7 +3038,7 @@ async function runAgain() {
                 ? session.flashcardReview.frontLanguage
                 : session.flashcardReview.backLanguage"
               :spoken-word="spokenFlashcardWord"
-              :progress="flashcardPhase.progress"
+              :progress="flashcardVisualProgressValue"
               :progress-tick-count="flashcardProgressTickCount"
               progress-color="info"
               :progress-aria-label="flashcardReviewPlaybackEnabled

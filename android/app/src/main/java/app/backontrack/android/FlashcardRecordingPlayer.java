@@ -117,6 +117,15 @@ final class FlashcardRecordingPlayer {
         return player != null;
     }
 
+    synchronized int remainingMs() {
+        if (player == null) return 0;
+        try {
+            return Math.max(1, player.getDuration() - player.getCurrentPosition());
+        } catch (RuntimeException ignored) {
+            return 1000;
+        }
+    }
+
     synchronized int durationMs() {
         if (player == null) return 0;
         try {

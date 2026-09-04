@@ -26,6 +26,7 @@ import type {
   FlashcardSpeechLanguage,
   FlashcardSpeechSupport,
   FlashcardSpeechWord,
+  NativeFlashcardSpeechPlaybackEvent,
 } from '@/types/domain'
 
 interface NativeSpeechSupport {
@@ -36,13 +37,7 @@ interface NativeSpeechSupport {
 interface FlashcardSpeechPlugin {
   addListener?(
     eventName: 'speechPlayback',
-    listener: (event: {
-      state: 'prepare' | 'start' | 'end'
-      utteranceId: string
-      durationMs?: number
-      speechRanges?: Array<{ start: number; end: number; offsetMs: number }>
-      wordAnimationLeadMs?: number
-    }) => void,
+    listener: (event: NativeFlashcardSpeechPlaybackEvent) => void,
   ): Promise<PluginListenerHandle>
   getLanguages(): Promise<NativeSpeechSupport>
   speak(options: {
@@ -51,10 +46,12 @@ interface FlashcardSpeechPlugin {
     overAmplified: boolean
     speechRate?: number
     backgroundIntervalSpeechKey?: string
+    automaticReviewPlayback?: boolean
   }): Promise<{ utteranceId?: string }>
   playRecording(options: {
     url: string
     backgroundIntervalSpeechKey?: string
+    automaticReviewPlayback?: boolean
   }): Promise<{ durationMs?: number }>
   setOverAmplification(options: { enabled: boolean }): Promise<void>
   isSpeechActive?(): Promise<{ active: boolean }>
@@ -109,6 +106,10 @@ let activeNativeSpeechText = ''
 let activeNativeSpeechLanguage = ''
 let activeNativeSpeechRate = 1
 let activeNativeSpeechUtteranceId = ''
+let activeNativeSpeechEnded = true
+let nativeSpeechRequest = 0
+let awaitingNativeSpeechReply = false
+let pendingNativeSpeechEvents: NativeFlashcardSpeechPlaybackEvent[] = []
 let activeNativeSpeechPlaybackStart: ((durationMs: number) => void) | undefined
 const NATIVE_WORD_ANIMATION_LEAD_MS = 100
 
@@ -208,33 +209,43 @@ async function ensureNativeSpeechPlaybackListener() {
   if (nativeSpeechPlaybackListener) return nativeSpeechPlaybackListener
   if (!NativeFlashcardSpeech.addListener) return undefined
   nativeSpeechPlaybackListener = NativeFlashcardSpeech.addListener('speechPlayback', event => {
-    if (!activeNativeSpeechUtteranceId || event.utteranceId !== activeNativeSpeechUtteranceId) return
-    if (event.state === 'prepare' && event.wordAnimationLeadMs) {
+    // The native start/end event may arrive before the speak() bridge reply.
+    if (awaitingNativeSpeechReply) {
+      pendingNativeSpeechEvents.push(event)
+      return
+    }
+    handleNativeSpeechPlayback(event)
+  })
+  return nativeSpeechPlaybackListener
+}
+
+function handleNativeSpeechPlayback(event: NativeFlashcardSpeechPlaybackEvent) {
+  if (!activeNativeSpeechUtteranceId || event.utteranceId !== activeNativeSpeechUtteranceId) return
+  if (event.state === 'end') activeNativeSpeechEnded = true
+  if (event.state === 'prepare' && event.wordAnimationLeadMs) {
+    startEstimatedSpeech(
+      activeNativeSpeechText,
+      activeNativeSpeechLanguage,
+      activeNativeSpeechRate,
+      event.durationMs,
+      event.speechRanges,
+      event.wordAnimationLeadMs,
+    )
+  } else if (event.state === 'start') {
+    activeNativeSpeechPlaybackStart?.(event.durationMs || 0)
+    if (!event.wordAnimationLeadMs) {
       startEstimatedSpeech(
         activeNativeSpeechText,
         activeNativeSpeechLanguage,
         activeNativeSpeechRate,
         event.durationMs,
         event.speechRanges,
-        event.wordAnimationLeadMs,
       )
-    } else if (event.state === 'start') {
-      activeNativeSpeechPlaybackStart?.(event.durationMs || 0)
-      if (!event.wordAnimationLeadMs) {
-        startEstimatedSpeech(
-          activeNativeSpeechText,
-          activeNativeSpeechLanguage,
-          activeNativeSpeechRate,
-          event.durationMs,
-          event.speechRanges,
-        )
-      }
-    } else {
-      clearEstimatedSpeech()
-      clearFlashcardSpeechWordTracking()
     }
-  })
-  return nativeSpeechPlaybackListener
+  } else {
+    clearEstimatedSpeech()
+    clearFlashcardSpeechWordTracking()
+  }
 }
 
 function storedSpeechOverAmplificationIsEnabled() {
@@ -398,10 +409,12 @@ export async function speakFlashcardText(
   backgroundIntervalSpeechKey = '',
   audioUrl = '',
   speechRate = 1,
-  onPlaybackStart?: (durationMs: number) => void,
+  onPlaybackDuration?: (durationMs: number) => void,
   wordAnimationLeadMs = 0,
+  automaticReviewPlayback = false,
 ) {
   const wordHandler = takePreparedFlashcardSpeechWordTracking()
+  const request = ++nativeSpeechRequest
   const content = text.trim()
   const recording = audioUrl.trim()
   clearEstimatedSpeech()
@@ -409,6 +422,7 @@ export async function speakFlashcardText(
   activeNativeSpeechLanguage = ''
   activeNativeSpeechRate = 1
   activeNativeSpeechUtteranceId = ''
+  activeNativeSpeechEnded = true
   activeNativeSpeechPlaybackStart = undefined
   if (recording) {
     try {
@@ -416,10 +430,11 @@ export async function speakFlashcardText(
         const result = await NativeFlashcardSpeech.playRecording({
           url: resolveFlashcardAudioPlaybackUrl(recording),
           ...(backgroundIntervalSpeechKey ? { backgroundIntervalSpeechKey } : {}),
+          ...(automaticReviewPlayback ? { automaticReviewPlayback: true } : {}),
         })
-        onPlaybackStart?.(result?.durationMs || 0)
+        onPlaybackDuration?.(result?.durationMs || 0)
       } else {
-        onPlaybackStart?.(await playFlashcardRecording(recording))
+        onPlaybackDuration?.(await playFlashcardRecording(recording))
       }
       clearFlashcardSpeechWordTracking()
       return
@@ -433,13 +448,17 @@ export async function speakFlashcardText(
   }
   await updateReviewSetBluetoothAudioActive()
   if (isNativeAndroid()) {
+    if (request !== nativeSpeechRequest) return
     clearFlashcardSpeechWordTracking()
     activeNativeSpeechText = content
     activeNativeSpeechLanguage = language
     activeNativeSpeechRate = normalizeFlashcardBackSpeechRate(speechRate)
-    activeNativeSpeechPlaybackStart = onPlaybackStart
+    activeNativeSpeechPlaybackStart = onPlaybackDuration
     try {
       await ensureNativeSpeechPlaybackListener()
+      if (request !== nativeSpeechRequest) return
+      awaitingNativeSpeechReply = true
+      pendingNativeSpeechEvents = []
       const result = await NativeFlashcardSpeech.speak({
         text: content,
         language,
@@ -449,10 +468,20 @@ export async function speakFlashcardText(
           ? { wordAnimationLeadMs: Math.min(NATIVE_WORD_ANIMATION_LEAD_MS, wordAnimationLeadMs) }
           : {}),
         ...(backgroundIntervalSpeechKey ? { backgroundIntervalSpeechKey } : {}),
+        ...(automaticReviewPlayback ? { automaticReviewPlayback: true } : {}),
       })
+      if (request !== nativeSpeechRequest) return
       activeNativeSpeechUtteranceId = result?.utteranceId || ''
+      activeNativeSpeechEnded = !activeNativeSpeechUtteranceId
+      awaitingNativeSpeechReply = false
       beginFlashcardSpeechWordTracking(wordHandler)
+      pendingNativeSpeechEvents.forEach(handleNativeSpeechPlayback)
+      pendingNativeSpeechEvents = []
     } catch (cause) {
+      if (request !== nativeSpeechRequest) return
+      awaitingNativeSpeechReply = false
+      pendingNativeSpeechEvents = []
+      activeNativeSpeechEnded = true
       clearFlashcardSpeechWordTracking()
       throw cause
     }
@@ -485,6 +514,7 @@ export async function speakFlashcardText(
   if (speechOverAmplificationEnabled) utterance.volume = 1
   await new Promise<void>((resolve, reject) => {
     let settled = false
+    let playbackStartedAt: number | undefined
     const settle = (cause?: Error) => {
       if (settled) return
       settled = true
@@ -503,7 +533,7 @@ export async function speakFlashcardText(
       settle(new Error('The browser did not start speech synthesis.'))
     }, 2000)
     utterance.onstart = () => {
-      onPlaybackStart?.(estimatedFlashcardSpeechDurationMs(content, language, speechRate))
+      playbackStartedAt = performance.now()
       startEstimatedSpeech(content, language, speechRate)
       settle()
     }
@@ -523,6 +553,9 @@ export async function speakFlashcardText(
       clearActive()
       clearEstimatedSpeech()
       clearFlashcardSpeechWordTracking()
+      if (playbackStartedAt !== undefined) {
+        onPlaybackDuration?.(Math.max(0, Math.round(performance.now() - playbackStartedAt)))
+      }
       settle()
     }
     utterance.onerror = event => {
@@ -584,12 +617,16 @@ async function playFlashcardRecording(url: string) {
 }
 
 export async function stopFlashcardSpeech() {
+  nativeSpeechRequest++
+  awaitingNativeSpeechReply = false
+  pendingNativeSpeechEvents = []
   clearEstimatedSpeech()
   clearFlashcardSpeechWordTracking()
   activeNativeSpeechText = ''
   activeNativeSpeechLanguage = ''
   activeNativeSpeechRate = 1
   activeNativeSpeechUtteranceId = ''
+  activeNativeSpeechEnded = true
   activeNativeSpeechPlaybackStart = undefined
   if (activeRecordedAudio) {
     activeRecordedAudio.pause()
@@ -610,8 +647,13 @@ export async function stopFlashcardSpeech() {
   }
 }
 
-export async function waitForFlashcardSpeechCompletion() {
-  while (true) {
+export async function waitForFlashcardSpeechCompletion(isCurrent: () => boolean = () => true) {
+  while (isCurrent()) {
+    if (isNativeAndroid() && activeNativeSpeechUtteranceId && nativeSpeechPlaybackListener) {
+      if (activeNativeSpeechEnded) return
+      await new Promise(resolve => setTimeout(resolve, 50))
+      continue
+    }
     const active = isNativeAndroid()
       ? await NativeFlashcardSpeech.isSpeechActive?.()
         .then(result => result.active)

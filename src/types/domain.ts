@@ -259,6 +259,22 @@ export interface IntervalCueSettings {
   typeSounds?: IntervalTypeSoundSettings
 }
 
+export interface ReviewSpeechClockHold {
+  sessionId: string
+  elapsedMs: number
+  playbackOffsetMs: number
+}
+
+export interface ReviewProgressPhase {
+  key: string
+  repeatIndex: number
+  repeatCount: number
+  delayMs: number
+  remainingMs: number
+  running: boolean
+  speechRemainingMs?: number
+}
+
 export interface IntervalFlashcardReviewSnapshot {
   reviewSet: string
   name: string
@@ -708,6 +724,14 @@ export interface FlashcardSpeechSupport {
   languages: FlashcardSpeechLanguage[]
 }
 
+export interface NativeFlashcardSpeechPlaybackEvent {
+  state: 'prepare' | 'start' | 'end'
+  utteranceId: string
+  durationMs?: number
+  speechRanges?: Array<{ start: number; end: number; offsetMs: number }>
+  wordAnimationLeadMs?: number
+}
+
 export interface FlashcardSpeechWord {
   start: number
   end: number
@@ -724,6 +748,8 @@ export interface BackgroundFlashcardReviewState {
   remainingMs: number
   durationMs: number
   elapsedMs: number
+  speechRemainingMs?: number
+  repeatCount?: number
 }
 
 export interface FlashcardReviewEvent {
