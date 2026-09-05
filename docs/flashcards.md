@@ -74,6 +74,8 @@ Review sets persist explicit card assignments instead of deriving cards from tag
 
 Owned Review set editors place **Bulk**, **Assign**, and **Add** controls beside the assigned-card table. The Bulk menu places **Remove cards from set** above **Delete cards**; removal only unassigns cards and keeps them in the library. **Assign** opens a full-screen, safe-area-aware picker of active library cards that are not already in the set. The picker contains only search and the selectable card table; its bottom actions are **Cancel** and a count-aware **Assign X cards** button. Assignments update optimistically as soon as they are confirmed. **Add** opens the scoped card form, and saving a new card assigns it to the Review set automatically.
 
+The editor’s assigned-card table column header sticks below the main app bar during page scrolling. The Assign picker’s table column header sticks directly below the dialog header while its cards scroll, without the main app bar offset.
+
 While a new Review set has not been saved, its Cards section shows an explanatory empty state instead of a card table. It makes clear that assigning existing cards and adding new cards become available after the first save.
 
 Creating a custom Review set from the bulk dialog redirects directly to its editor. Review sets already present in the local store initialize that editor immediately, without a page-level loading state.

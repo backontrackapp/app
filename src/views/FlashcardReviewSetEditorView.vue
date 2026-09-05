@@ -476,7 +476,7 @@ async function remove() {
         :speech-loading="speechLoading"
         :available-cards="matchingCardCount"
       />
-      <v-card class="surface-card pa-5 mt-4">
+      <v-card class="review-set-cards surface-card pa-5 mt-4">
         <div class="review-set-card-selection mb-4">
           <div>
             <h2 class="text-subtitle-1 font-weight-black">Cards</h2>
@@ -574,8 +574,8 @@ async function remove() {
           <v-icon icon="mdi-card-plus-outline" color="secondary" />
           <span>Assign cards</span>
         </v-card-title>
-        <v-card-text class="px-5 py-4">
-          <p class="text-body-2 muted mb-4">Select cards to add to this Review set.</p>
+        <v-card-text class="px-5 pt-0 pb-4">
+          <p class="text-body-2 muted pt-4 mb-4">Select cards to add to this Review set.</p>
           <v-alert v-if="assignCardsError" type="error" variant="tonal" density="compact" class="mb-4">
             {{ assignCardsError }}
           </v-alert>
@@ -669,9 +669,13 @@ async function remove() {
 .shared-set-heading { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 1rem; }
 .required-mark { color: rgb(var(--v-theme-error)); }
 .review-set-loading { display: flex; align-items: center; justify-content: center; gap: .75rem; }
+/* Preserve clipping without trapping the table's sticky header in a scroll container. */
+.review-set-cards { overflow: clip; }
 .review-set-card-selection { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .review-set-card-edit { position: relative; z-index: 2; display: flex; align-items: center; justify-content: center; }
 .assign-cards-dialog { min-height: 100dvh; }
+/* The dialog's scroll area already starts below its fixed title. */
+.assign-cards-dialog :deep(.card-library-header) { top: 0; }
 .assign-cards-dialog__header { padding: calc(1.25rem + max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem))) calc(1.25rem + env(safe-area-inset-right, 0rem)) 1rem calc(1.25rem + env(safe-area-inset-left, 0rem)) !important; }
 .assign-cards-dialog__actions { padding: 1rem calc(1rem + env(safe-area-inset-right, 0rem)) calc(1rem + max(env(safe-area-inset-bottom, 0rem), var(--safe-area-inset-bottom, 0rem))) calc(1rem + env(safe-area-inset-left, 0rem)) !important; }
 </style>
