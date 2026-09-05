@@ -295,6 +295,17 @@ function updateWorkoutSets(value: ExerciseSet[]) {
 }
 
 async function start() {
+  const currentProgress = progress.value
+  const completedWorkout = requirements.value.find(item => (
+    item.id === route.query.intervalCompleted
+    && item.id === focusCompletionId.value
+    && item.type === 'workout'
+    && Boolean(item.intervalTemplate)
+  ))
+  if (route.query.advance === '1' && currentProgress && completedWorkout && !completedWorkout.complete) {
+    await taskStore.setProgramStepCompletion(currentProgress, completedWorkout.id, true)
+  }
+
   const index = firstOpenRequirementIndex(focusCompletionId.value)
   if (index < 0) {
     screen.value = 'finished'
