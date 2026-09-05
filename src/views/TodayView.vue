@@ -520,10 +520,14 @@ const availableTaskMainActionItems = computed<TaskMainActionItem[]>(() => {
   }
   return items
 })
-const taskMainActionItems = computed(() => [
-  ...availableTaskMainActionItems.value.filter(action => action.id !== 'toggle-complete'),
-  ...availableTaskMainActionItems.value.filter(action => action.id === 'toggle-complete'),
-])
+const taskMainActionItems = computed(() => {
+  const items = availableTaskMainActionItems.value
+  const hasNumberLock = items.some(action => action.id === 'toggle-total-lock')
+  return [
+    ...items.filter(action => action.id !== 'toggle-complete'),
+    ...items.filter(action => action.id === 'toggle-complete' && !hasNumberLock),
+  ]
+})
 const taskCardActionItems = computed(() => taskActionCompletion.value ? [] : TASK_CARD_ACTION_ITEMS)
 const visibleWeekDates = computed(() => Array.from(
   { length: 7 },

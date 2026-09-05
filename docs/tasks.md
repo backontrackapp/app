@@ -2,9 +2,9 @@
 
 Opening the Tasks view selects the current day. Choosing another date remains in effect while working in that view, but returning to Tasks starts from today again.
 
-**Done** and **Undone** always appear after the other main task actions, above the divider and the Edit/Duplicate actions.
+When available, **Done** and **Undone** appear after the other main task actions, above the divider and the Edit/Duplicate actions.
 
-Every task menu offers **Done** while incomplete or **Undone** while complete, including Quick log, Tracking, Journal, numeric tasks, and dated program steps. These actions update the selected day's occurrence immediately, even when it must first be created offline. Done records manual completion; Undone clears it and preserves logged amounts, journal entries, session history, and individual program requirements. An explicit undone marker in the occurrence's completion state prevents existing values or completed requirements from immediately completing the task again after refresh. Future dates and locked program steps retain their action restrictions. Number-locking actions remain available separately.
+Task menus offer **Done** while incomplete or **Undone** while complete, except when the menu includes **Lock in numbers** or **Unlock numbers**. This applies to both full task menus and Quick log. These completion actions update the selected day's occurrence immediately, even when it must first be created offline. Done records manual completion; Undone clears it and preserves logged amounts, journal entries, session history, and individual program requirements. An explicit undone marker in the occurrence's completion state prevents existing values or completed requirements from immediately completing the task again after refresh. Future dates and locked program steps retain their action restrictions.
 
 The task editor does not expose the former optional **Why does this matter?** description field. Existing stored descriptions remain intact when another task setting is edited.
 
