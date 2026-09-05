@@ -57,6 +57,7 @@ const draft = reactive<TrackingTrackerDraft>({
   targetValue: 0,
   targetOperator: 'gte',
   trackingWindow: 'occurrence',
+  goalVersions: [],
   source: 'manual',
   scaleMin: 1,
   scaleMax: 10,

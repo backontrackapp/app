@@ -3,13 +3,16 @@ import {
   flashcardSpeechOverAmplificationIsEnabled,
   resolveFlashcardAudioPlaybackUrl,
 } from '@/services/flashcardSpeech'
-import { setNativeIntervalAudioFocusOwnership } from '@/services/reviewSetAudioFocus'
 import { intervalTypeSound } from '@/services/intervalTypes'
 import {
   flashcardReviewCardBackSpeechRepeatCount,
   flashcardReviewCardBackSpeechRate,
   flashcardReviewCardFaceDurationSeconds,
 } from '@/services/flashcards'
+import {
+  reviewSetAudioFocusIsEnabled,
+  setNativeIntervalAudioFocusOwnership,
+} from '@/services/reviewSetAudioFocus'
 import {
   intervalFlashcardReviewElapsedMs,
   intervalStepCount,
@@ -69,6 +72,7 @@ interface BackgroundIntervalPlugin {
       frontLanguage: string
       backLanguage: string
       overAmplified: boolean
+      audioFocusEnabled: boolean
     }
   }): Promise<void>
   playCue(options: { name: NativeIntervalCueName, signal?: boolean }): Promise<void>
@@ -180,6 +184,7 @@ export async function syncBackgroundInterval(session: IntervalSession) {
               frontLanguage: session.flashcardReview.frontLanguage,
               backLanguage: session.flashcardReview.backLanguage,
               overAmplified: flashcardSpeechOverAmplificationIsEnabled(),
+              audioFocusEnabled: reviewSetAudioFocusIsEnabled(),
             },
           }
         : {}),

@@ -142,6 +142,8 @@ try {
         $delete('backontrack_passkey_challenges', 'user_id = :account');
         $delete('backontrack_passkeys', 'user_id = :account');
         $delete('client_errors', 'account_id = :account');
+        $delete('admin_login_challenges', 'user_id = :account');
+        $delete('analytics_events', 'account_id = :account');
 
         $delete('flashcard_review_events', 'owner = :account');
         $delete('flashcard_review_sessions', 'owner = :account');

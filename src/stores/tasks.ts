@@ -384,7 +384,7 @@ export const useTaskStore = defineStore('tasks', () => {
     const optimisticPatch = optimisticOccurrencePatches.value[
       occurrenceStatusKey(task.id, dateKey, step?.id, instanceTime)
     ]
-    const goalTracker = !step ? taskGoalTracker(task, trackingStore.trackers) : undefined
+    const goalTracker = !step ? taskGoalTracker(task, trackingStore.trackers, dateKey) : undefined
     const trackingTrackerIds = !step && task.type === 'tracking' && !goalTracker
       ? [...new Set(task.trackingTrackers ?? [])]
       : []
@@ -897,7 +897,7 @@ export const useTaskStore = defineStore('tasks', () => {
     )
     const stepTrackerIds = activeTasks.value.flatMap((task) => {
       if (!isTaskScheduled(task, date)) return []
-      const tracker = taskGoalTracker(task, trackingStore.trackers)
+      const tracker = taskGoalTracker(task, trackingStore.trackers, toDateKey(date))
       return tracker?.source === 'health_connect_steps' ? [tracker.id] : []
     })
     if (!legacyStepTasks.length && !stepTrackerIds.length) {
@@ -958,7 +958,7 @@ export const useTaskStore = defineStore('tasks', () => {
       }
       await trackingStore.syncHealthConnectSteps(stepTrackerIds, toDateKey(date), value)
       for (const task of activeTasks.value) {
-        const tracker = taskGoalTracker(task, trackingStore.trackers)
+        const tracker = taskGoalTracker(task, trackingStore.trackers, toDateKey(date))
         if (!tracker || !stepTrackerIds.includes(tracker.id)) continue
         await syncEntryProgress(makeProgress(task, date))
       }
@@ -984,7 +984,9 @@ export const useTaskStore = defineStore('tasks', () => {
     const key = occurrenceStatusKey(task.id, toDateKey(date), step?.id, instanceTime)
     if (existing) return pendingOccurrenceCreates.get(key) || existing
 
-    const goalTracker = !step ? taskGoalTracker(task, trackingStore.trackers) : undefined
+    const goalTracker = !step
+      ? taskGoalTracker(task, trackingStore.trackers, toDateKey(date))
+      : undefined
     const occurrence: Occurrence = {
       id: createLocalRecordId(),
       task: task.id,

@@ -9,6 +9,8 @@ interface RunnerSessionMenuState {
 }
 
 interface ReviewRunnerSessionMenuState extends RunnerSessionMenuState {
+  audioFocusAvailable: boolean
+  audioFocusEnabled: boolean
   finished: boolean
   canRestart: boolean
   canManageCard: boolean
@@ -33,8 +35,21 @@ function amplificationItem(amplified: boolean, disabled: boolean): RunnerSession
   return {
     action: 'amplification',
     title: amplified ? 'Disable TTS amplification' : 'Enable TTS amplification',
+    subtitle: 'Makes synthesized speech louder.',
     icon: amplified ? 'mdi-volume-plus' : 'mdi-volume-high',
     active: amplified,
+    disabled,
+    toggle: true,
+  }
+}
+
+function audioFocusItem(enabled: boolean, disabled: boolean): RunnerSessionMenuItem {
+  return {
+    action: 'audio_focus',
+    title: 'Audio focus',
+    subtitle: 'Lowers the volume of other apps during Review playback.',
+    icon: 'mdi-headphones',
+    active: enabled,
     disabled,
     toggle: true,
   }
@@ -104,6 +119,9 @@ export function reviewRunnerSessionMenuItems(
           ...amplificationItem(state.amplified, state.finished || state.busy),
           divider: true,
         }]
+      : []),
+    ...(state.speechAvailable && state.audioFocusAvailable
+      ? [audioFocusItem(state.audioFocusEnabled, state.finished || state.busy)]
       : []),
     {
       action: 'restart',

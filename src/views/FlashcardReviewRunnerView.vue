@@ -31,7 +31,12 @@ import {
   prepareFlashcardEjectCue,
 } from '@/services/intervalCues'
 import { reviewRunnerSessionMenuItems } from '@/services/runnerSessionActions'
-import { setReviewSetAudioFocus } from '@/services/reviewSetAudioFocus'
+import {
+  reviewSetAudioFocusEnabled,
+  reviewSetAudioFocusIsAvailable,
+  setReviewSetAudioFocus,
+  toggleReviewSetAudioFocus,
+} from '@/services/reviewSetAudioFocus'
 import { requestScreenWakeLock, type ScreenWakeLock } from '@/services/screenWakeLock'
 import { confirmSwipeHint, REVIEW_SET_CARD_SWIPE_HINT } from '@/services/swipeHints'
 import { prepareFlashcardSpeechWordTracking } from '@/services/spokenText'
@@ -69,6 +74,7 @@ import type {
   Flashcard,
   FlashcardContextAction,
   FlashcardReviewAction,
+  FlashcardReviewQueueCard,
   FlashcardReviewSession,
   FlashcardReviewSettings,
   FlashcardReviewSide,
@@ -135,6 +141,7 @@ const sessionSettingsDraft = reactive<FlashcardReviewSettings>({
 const tickVersion = ref(0)
 const passiveSide = ref<'front' | 'back'>('front')
 const passiveRemainingMs = ref(0)
+const currentCardTimingSnapshot = ref<FlashcardReviewQueueCard>()
 const localElapsedMs = ref(0)
 const currentQueueIndex = ref(0)
 const ejectedQueueIndexes: number[] = []
@@ -220,13 +227,18 @@ const canTagCurrentCard = computed(() => Boolean(
   && currentReviewSet.value?.accessRole === 'owner'
   && currentSourceCard.value,
 ))
+const currentCardTagIds = computed(() => (
+  currentSourceCard.value?.tags
+  || currentCard.value?.tags
+  || []
+))
 const quickTags = computed(() => INTERVAL_FLASHCARD_QUICK_TAGS.map((quickTag) => {
   const tag = (store.tags || []).find(
     item => item.name.toLocaleLowerCase() === quickTag.name.toLocaleLowerCase(),
   )
   return {
     ...quickTag,
-    selected: Boolean(tag && currentCard.value?.tags.includes(tag.id)),
+    selected: Boolean(tag && currentCardTagIds.value.includes(tag.id)),
   }
 }))
 const isFinished = computed(() => session.value?.status === 'completed' || session.value?.status === 'ended')
@@ -288,13 +300,18 @@ const firstReviewSide = computed(() => firstFlashcardReviewSide(
   session.value?.invertFaces,
 ))
 const manualShowingBack = computed(() => revealed.value)
+const currentCardTiming = computed(() => (
+  currentCardTimingSnapshot.value?.id === currentCard.value?.id
+    ? currentCardTimingSnapshot.value
+    : currentCard.value
+))
 const backSpeechRepeatCount = computed(() => session.value?.mode === 'passive'
-  && currentCard.value
-  ? flashcardReviewCardBackSpeechRepeatCount(session.value, currentCard.value)
+  && currentCardTiming.value
+  ? flashcardReviewCardBackSpeechRepeatCount(session.value, currentCardTiming.value)
   : 1)
 const passiveDurationMs = computed(() => {
-  if (!session.value || !currentCard.value) return 1000
-  return flashcardReviewFaceDurationMs(session.value, currentCard.value, passiveSide.value)
+  if (!session.value || !currentCardTiming.value) return 1000
+  return flashcardReviewFaceDurationMs(session.value, currentCardTiming.value, passiveSide.value)
 })
 const passiveSpeechRepeatIndex = computed(() => {
   if (
@@ -413,6 +430,8 @@ const canSaveSessionSettings = computed(() => sessionSettingsChanged.value
 const sessionActionItems = computed(() => reviewRunnerSessionMenuItems({
   speechAvailable: Boolean(session.value?.speechEnabled && currentCard.value),
   amplified: speechOverAmplified.value,
+  audioFocusAvailable: reviewSetAudioFocusIsAvailable(),
+  audioFocusEnabled: reviewSetAudioFocusEnabled.value,
   busy: busy.value || speechOverAmplificationBusy.value,
   preview: isReviewSetPreview.value,
   finished: isFinished.value,
@@ -597,7 +616,23 @@ function initializeLocalState(value: FlashcardReviewSession) {
   ejectedQueueIndexes.length = 0
   lastTickAt = Date.now()
   revealed.value = false
+  captureCurrentCardTiming()
   restorePassiveState(value)
+}
+
+function captureCurrentCardTiming() {
+  const card = currentCard.value
+  const sourceCard = currentSourceCard.value
+  const timingCard = card && sourceCard?.id === card.id
+    ? flashcardReviewQueueCardSnapshot(sourceCard, store.tags)
+    : card
+  currentCardTimingSnapshot.value = timingCard
+    ? {
+        ...timingCard,
+        tags: [...timingCard.tags],
+        ...(timingCard.tagNames ? { tagNames: [...timingCard.tagNames] } : {}),
+      }
+    : undefined
 }
 
 function passiveStorageKey(id: string) {
@@ -730,6 +765,7 @@ async function advancePassive() {
 }
 
 function resetCurrentCardPhase() {
+  captureCurrentCardTiming()
   revealed.value = false
   passiveSide.value = firstReviewSide.value
   passiveAutomaticSpeechKey = ''
@@ -1074,7 +1110,7 @@ async function speakCurrentSide(allowPaused = false) {
       if (request === speechRequest && speechKey(true) === key) spokenWord.value = word
     })
     const speechRate = side === 'back'
-      ? flashcardReviewCardBackSpeechRate(value, card)
+      ? flashcardReviewCardBackSpeechRate(value, currentCardTiming.value || card)
       : 1
     const wordAnimationLeadMs = side === 'back' ? 100 : 0
     const adjustsPassiveTiming = !allowPaused
@@ -1083,7 +1119,7 @@ async function speakCurrentSide(allowPaused = false) {
     if (adjustsPassiveTiming) {
       passiveAutomaticSpeechKey = key
       visualSpeech = passiveVisualProgress.beginSpeech(
-        flashcardReviewFaceSpeechDurationMs(value, card, side),
+        flashcardReviewFaceSpeechDurationMs(value, currentCardTiming.value || card, side),
       )
     }
     await speakFlashcardText(
@@ -1147,8 +1183,8 @@ async function speakPressedWord(word: string, pressedWord: FlashcardSpeechWord) 
   spokenWord.value = pressedWord
   speechPlaybackWarning.value = ''
   try {
-    const speechRate = currentSpeechSide.value === 'back' && currentCard.value
-      ? flashcardReviewCardBackSpeechRate(value, currentCard.value)
+    const speechRate = currentSpeechSide.value === 'back' && currentCardTiming.value
+      ? flashcardReviewCardBackSpeechRate(value, currentCardTiming.value)
       : 1
     await speakFlashcardText(text, currentSpeechLanguage.value, '', '', speechRate)
     await waitForFlashcardSpeechCompletion()
@@ -1330,8 +1366,21 @@ async function syncNativeBackground() {
     backgroundSpeechWarning.value = ''
     return false
   }
+  const timingCard = currentCardTiming.value
+  const backgroundValue = timingCard && value.queue[0]?.id === timingCard.id
+    ? {
+        ...value,
+        queue: value.queue.map((card, index) => index === 0
+          ? {
+              ...card,
+              tags: [...timingCard.tags],
+              tagNames: [...(timingCard.tagNames || [])],
+            }
+          : card),
+      }
+    : value
   const started = await syncBackgroundFlashcardReview(
-    value,
+    backgroundValue,
     passiveSide.value,
     passiveRemainingMs.value,
     localElapsedMs.value,
@@ -1434,9 +1483,10 @@ function applyBackgroundProgressSnapshot(
   backgroundViewedTarget.value = value.viewedCount + Math.max(0, state.completedCards)
   localElapsedMs.value = Math.max(localElapsedMs.value, state.elapsedMs)
   backgroundPassiveRemainingMs.value = Math.max(0, state.remainingMs)
+  const timingCard = currentCardTiming.value || currentCard.value!
   const configuredDurationMs = state.side === 'front'
-    ? flashcardReviewFaceDurationMs(value, currentCard.value!, 'front')
-    : flashcardReviewFaceDurationMs(value, currentCard.value!, 'back')
+    ? flashcardReviewFaceDurationMs(value, timingCard, 'front')
+    : flashcardReviewFaceDurationMs(value, timingCard, 'back')
   backgroundPassiveDurationMs.value = Math.max(
     1000,
     Number.isFinite(state.durationMs) ? state.durationMs : configuredDurationMs,
@@ -1571,7 +1621,7 @@ async function closeCardEditor(open: boolean) {
 }
 
 function currentCardHasTag(tagId: string) {
-  return Boolean(currentCard.value?.tags.includes(tagId))
+  return currentCardTagIds.value.includes(tagId)
 }
 
 async function toggleCurrentCardTag(tag: FlashcardTag | { name: string }) {
@@ -1580,19 +1630,11 @@ async function toggleCurrentCardTag(tag: FlashcardTag | { name: string }) {
   cardTagSaving.value = 'id' in tag ? tag.id : tag.name
   try {
     const resolvedTag = 'id' in tag ? tag : await store.createTag(tag.name)
-    const update = flashcardTagToggleUpdate(currentCard.value?.tags || [], resolvedTag, store.tags)
+    const update = flashcardTagToggleUpdate(currentCardTagIds.value, resolvedTag, store.tags)
     const updatedCards = await store.bulkUpdateCards(update.action, [cardId], update.values)
     const updatedCard = updatedCards.find(card => card.id === cardId)
     if (!updatedCard) throw new Error('The flashcard could not be updated.')
     handleCardSaved(updatedCard)
-    if (session.value?.mode === 'passive' && currentCard.value?.id === cardId) {
-      passiveRemainingMs.value = passiveDurationMs.value
-      lastSpokenKey = ''
-      savePassiveState()
-      await syncNativeBackground()
-      await stopFlashcardSpeech()
-      await speakCurrentSide()
-    }
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not update this flashcard tag.'
   } finally {
@@ -1675,6 +1717,10 @@ async function handleRunnerSessionAction(action: RunnerSessionAction) {
   else {
     await finishSessionActions()
     if (action === 'amplification') await toggleSpeechOverAmplification()
+    else if (action === 'audio_focus') {
+      await toggleReviewSetAudioFocus()
+      if (session.value?.status === 'running') await syncNativeBackground()
+    }
     else if (action === 'restart') await restartReview()
     else if (action === 'end') endDialog.value = true
   }

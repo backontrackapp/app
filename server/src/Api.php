@@ -58,6 +58,8 @@ final class Api
     private readonly SyncService $syncService;
     private readonly AssistantService $assistantService;
     private readonly CuratedReviewSetCatalog $curatedReviewSets;
+    private readonly AnalyticsService $analyticsService;
+    private readonly AdminService $adminService;
 
     public function __construct(
         private readonly Config $config,
@@ -67,6 +69,8 @@ final class Api
         $this->syncService = new SyncService($database, $config);
         $this->assistantService = new AssistantService($database, $config);
         $this->curatedReviewSets = new CuratedReviewSetCatalog($config);
+        $this->analyticsService = new AnalyticsService($database);
+        $this->adminService = new AdminService($database, $config, $this->mailer);
     }
 
     public function run(): never
@@ -83,6 +87,53 @@ final class Api
             $path = $this->requestPath();
             if ($method === 'GET' && $path === '/health') {
                 $this->respond(['status' => 'ok']);
+            }
+            if ($method === 'POST' && $path === '/admin/auth/login') {
+                $this->respond($this->adminService->requestLogin(
+                    $this->jsonBody(),
+                    $this->clientIp(),
+                    (string) ($_SERVER['HTTP_USER_AGENT'] ?? ''),
+                ));
+            }
+            if ($method === 'POST' && $path === '/admin/auth/verify') {
+                $this->respond($this->adminService->verifyLogin(
+                    $this->jsonBody(),
+                    $this->clientIp(),
+                    (string) ($_SERVER['HTTP_USER_AGENT'] ?? ''),
+                ));
+            }
+            if (str_starts_with($path, '/admin/')) {
+                $admin = $this->adminService->authenticate((string) ($_SERVER['HTTP_AUTHORIZATION'] ?? ''));
+                if ($method === 'GET' && $path === '/admin/auth/me') {
+                    $this->respond($this->adminService->me($admin));
+                }
+                if ($method === 'GET' && $path === '/admin/overview') {
+                    $this->respond($this->adminService->overview($_GET));
+                }
+                if ($method === 'GET' && $path === '/admin/engagement') {
+                    $this->respond($this->adminService->engagement($_GET));
+                }
+                if ($method === 'GET' && $path === '/admin/features') {
+                    $this->respond($this->adminService->features($_GET));
+                }
+                if ($method === 'GET' && $path === '/admin/reliability') {
+                    $this->respond($this->adminService->reliability($_GET));
+                }
+                if ($method === 'GET' && $path === '/admin/users') {
+                    $this->respond($this->adminService->users($_GET));
+                }
+                if ($method === 'GET' && preg_match('#^/admin/users/([A-Za-z0-9_-]{1,64})$#', $path, $adminUserMatches) === 1) {
+                    $this->respond($this->adminService->userDetail(
+                        $adminUserMatches[1],
+                        $_GET,
+                        $admin,
+                        $this->clientIp(),
+                        (string) ($_SERVER['HTTP_USER_AGENT'] ?? ''),
+                    ));
+                }
+                if ($method === 'GET' && $path === '/admin/audit') {
+                    $this->respond($this->adminService->auditLog($_GET));
+                }
             }
             if ($method === 'POST' && $path === '/auth/login') {
                 $this->login();
@@ -254,6 +305,14 @@ final class Api
             }
             if ($method === 'POST' && $path === '/client-errors') {
                 $this->storeClientErrors($this->authenticate());
+            }
+            if ($method === 'POST' && $path === '/analytics/events') {
+                $user = $this->authenticate();
+                $this->rateLimit('analytics:' . (string) $user['id'], 120, 300, true);
+                $this->respond($this->analyticsService->ingest(
+                    $user,
+                    $this->jsonBody(),
+                ));
             }
             if ($method === 'POST' && $path === '/assistant/respond') {
                 $user = $this->authenticate();
@@ -1864,6 +1923,7 @@ final class Api
             && !array_key_exists('mainMenuHidden', $body)
             && !array_key_exists('intervalTypeSounds', $body)
             && !array_key_exists('exerciseWeightUnit', $body)
+            && !array_key_exists('productAnalyticsEnabled', $body)
         ) {
             throw new ApiException(422, 'At least one supported setting is required.', [
                 'quickInterval' => 'required',
@@ -1872,6 +1932,7 @@ final class Api
                 'mainMenuHidden' => 'required',
                 'intervalTypeSounds' => 'required',
                 'exerciseWeightUnit' => 'required',
+                'productAnalyticsEnabled' => 'required',
             ]);
         }
         if (array_key_exists('quickInterval', $body)) {
@@ -1910,6 +1971,14 @@ final class Api
             }
             $settings['exerciseWeightUnit'] = $body['exerciseWeightUnit'];
         }
+        if (array_key_exists('productAnalyticsEnabled', $body)) {
+            if (!is_bool($body['productAnalyticsEnabled'])) {
+                throw new ApiException(422, 'The product analytics setting is invalid.', [
+                    'productAnalyticsEnabled' => 'boolean',
+                ]);
+            }
+            $settings['productAnalyticsEnabled'] = $body['productAnalyticsEnabled'];
+        }
         $encoded = json_encode(
             $settings,
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
@@ -1923,6 +1992,9 @@ final class Api
             'updated' => $updated,
             'id' => $user['id'],
         ]);
+        if (($settings['productAnalyticsEnabled'] ?? true) === false) {
+            $this->analyticsService->deleteForAccount((string) $user['id']);
+        }
         $this->respond(['settings' => $settings, 'updated' => $updated]);
     }
 
@@ -2619,6 +2691,7 @@ final class Api
             || ($header['alg'] ?? null) !== 'HS256'
             || ($header['typ'] ?? null) !== 'JWT'
             || !is_array($payload)
+            || array_key_exists('scope', $payload)
             || !is_string($payload['sub'] ?? null)
             || !is_int($payload['exp'] ?? null)
             || !is_string($payload['ver'] ?? null)
@@ -3275,6 +3348,7 @@ final class Api
         $archived = (bool) ($card['archived'] ?? false);
         $cardTags = $this->decodeJsonColumn($card['tags'] ?? '[]');
         $cardTags = is_array($cardTags) ? array_values($cardTags) : [];
+        $tagNames = $this->flashcardTagNameMap($owner);
         $snapshot = [
             'id' => (string) $card['id'],
             'front' => (string) $card['front'],
@@ -3287,6 +3361,10 @@ final class Api
             'backAudio' => $this->flashcardAudioPath($card, 'back'),
             'image' => $this->flashcardImagePath($card),
             'tags' => $cardTags,
+            'tagNames' => array_values(array_map(
+                static fn (string $id): string => $tagNames[$id] ?? 'Removed tag',
+                $cardTags,
+            )),
         ];
         $statement = $this->database->pdo->prepare(
             "SELECT * FROM flashcard_review_sessions
@@ -5694,8 +5772,10 @@ final class Api
             $sortDirection,
             $this->flashcardTagIdMap($sourceOwner),
         );
-        $allQueue = array_map(function (array $card): array {
+        $tagNames = $this->flashcardTagNameMap($sourceOwner);
+        $allQueue = array_map(function (array $card) use ($tagNames): array {
             $tags = $this->decodeJsonColumn($card['tags'] ?? '[]');
+            $tags = is_array($tags) ? array_values($tags) : [];
             return [
                 'id' => (string) $card['id'],
                 'front' => (string) $card['front'],
@@ -5707,7 +5787,11 @@ final class Api
                 'frontAudio' => $this->flashcardAudioPath($card, 'front'),
                 'backAudio' => $this->flashcardAudioPath($card, 'back'),
                 'image' => $this->flashcardImagePath($card),
-                'tags' => is_array($tags) ? array_values($tags) : [],
+                'tags' => $tags,
+                'tagNames' => array_values(array_map(
+                    static fn (string $id): string => $tagNames[$id] ?? 'Removed tag',
+                    $tags,
+                )),
                 'ejectCount' => (int) ($card['eject_count'] ?? 0),
             ];
         }, $cards);

@@ -25,7 +25,7 @@ const contactEmailHref = `mailto:${contactEmail}`
           />
           <div>
             <h1>{{ isPrivacyPolicy ? 'Privacy policy' : 'Terms and conditions' }}</h1>
-            <p>Effective August 23, 2026</p>
+            <p>Effective September 3, 2026</p>
           </div>
         </header>
 
@@ -59,6 +59,9 @@ const contactEmailHref = `mailto:${contactEmail}`
               <h3>Technical and diagnostic information</h3>
               <p>We process information needed to operate and secure the service, such as IP address for authentication rate limits, device or sync-client identifiers, browser or device type, app version, push-notification subscription details, and request timestamps. Authenticated clients may send bounded JavaScript and network error reports containing an error message, source path without query strings, request method and status, stack trace, platform, app version, and user agent. Request bodies are not included.</p>
 
+              <h3>Product analytics</h3>
+              <p>BackOnTrack sends first-party, content-free product events to help us understand activation, feature use, engagement, and reliability. These events include canonical screen and action names, foreground session duration, pseudonymous session and client identifiers, platform, app version, and timestamps. They do not include task, journal, tracker, flashcard, or assistant content, route parameters, URLs, or arbitrary event properties.</p>
+
               <h3>Local storage</h3>
               <p>BackOnTrack uses IndexedDB, local storage, service-worker caches, and similar device storage to keep the app available offline, retain your session, queue changes, recover active timers, remember preferences, and hold diagnostics until they can be sent. This storage is functional; we do not use third-party advertising or cross-site tracking cookies.</p>
             </section>
@@ -72,6 +75,7 @@ const contactEmailHref = `mailto:${contactEmail}`
                 <li>Enable Review set sharing with people you invite.</li>
                 <li>Generate and organize flashcards when you choose to use the AI assistant.</li>
                 <li>Maintain security, prevent abuse, troubleshoot errors, and improve reliability.</li>
+                <li>Measure content-free product activation, engagement, and feature adoption when product analytics are enabled.</li>
                 <li>Comply with legal obligations and enforce our terms.</li>
               </ul>
               <p>We do not sell personal information. We do not use Health Connect data, screen-time data, journal content, or other sensitive information for advertising, credit, insurance, employment, or data-broker purposes.</p>
@@ -97,7 +101,7 @@ const contactEmailHref = `mailto:${contactEmail}`
 
             <section>
               <h2>6. Retention and deletion</h2>
-              <p>Account content is generally kept while your account is active. When you delete content, it is removed from active use, though short-lived sync records, security records, or backups may remain until their normal expiry or deletion cycle. Push subscriptions that are no longer valid are removed automatically. We keep other records only as long as reasonably needed for the purposes above or as required by law.</p>
+              <p>Account content is generally kept while your account is active. Product analytics events are kept for up to 13 months. When you delete content, it is removed from active use, though short-lived sync records, security records, or backups may remain until their normal expiry or deletion cycle. Push subscriptions that are no longer valid are removed automatically. We keep other records only as long as reasonably needed for the purposes above or as required by law.</p>
               <p>You can delete individual tasks, logs, intervals, flashcards, trackers, and journal entries in the app. To request deletion of your account and associated server data, contact us using the details below. Removing the app or signing out clears that account's local app database from the device, but does not by itself delete the server account.</p>
             </section>
 
@@ -108,7 +112,7 @@ const contactEmailHref = `mailto:${contactEmail}`
 
             <section>
               <h2>8. Your choices and rights</h2>
-              <p>Depending on where you live, you may have rights to access, correct, export, delete, or restrict certain uses of your personal information, withdraw consent, or complain to a privacy regulator. You can change much of your content and settings directly in the app. You can avoid the optional AI assistant and may revoke Health Connect, Usage Access, microphone, speech recognition, camera, or notification permissions in device settings.</p>
+              <p>Depending on where you live, you may have rights to access, correct, export, delete, or restrict certain uses of your personal information, withdraw consent, or complain to a privacy regulator. You can change much of your content and settings directly in the app. You can disable product analytics in Settings, which deletes stored product events for your account. You can avoid the optional AI assistant and may revoke Health Connect, Usage Access, microphone, speech recognition, camera, or notification permissions in device settings.</p>
               <p>To make a privacy request, contact us. We may need to verify your identity before acting on a request.</p>
             </section>
 

@@ -17,6 +17,8 @@ final class Config
         public readonly string $passkeyAndroidPackage,
         public readonly array $passkeyAndroidKeyHashes,
         public readonly string $appUrl,
+        public readonly string $adminUrl,
+        public readonly int $adminTokenTtl,
         public readonly string $mailHost,
         public readonly int $mailPort,
         public readonly string $mailUsername,
@@ -81,6 +83,8 @@ final class Config
             explode(',', (string) $value('BACKONTRACK_PASSKEY_ANDROID_KEY_HASHES', '')),
         ))));
         $appUrl = rtrim(trim((string) $value('BACKONTRACK_APP_URL', '')), '/');
+        $adminUrl = rtrim(trim((string) $value('BACKONTRACK_ADMIN_URL', '')), '/');
+        $adminTokenTtl = (int) $value('BACKONTRACK_ADMIN_TOKEN_TTL', 28800);
         $mailHost = trim((string) $value('BACKONTRACK_MAIL_HOST', ''));
         $mailPort = (int) $value('BACKONTRACK_MAIL_PORT', 587);
         $mailUsername = trim((string) $value('BACKONTRACK_MAIL_USERNAME', ''));
@@ -174,6 +178,30 @@ final class Config
                 throw new ApiException(500, 'BACKONTRACK_APP_URL must be an HTTPS application URL.');
             }
         }
+        if ($adminUrl !== '') {
+            $adminUrlParts = parse_url($adminUrl);
+            $adminUrlHost = is_array($adminUrlParts)
+                ? strtolower((string) ($adminUrlParts['host'] ?? ''))
+                : '';
+            $adminUrlScheme = is_array($adminUrlParts)
+                ? strtolower((string) ($adminUrlParts['scheme'] ?? ''))
+                : '';
+            if (
+                !is_array($adminUrlParts)
+                || $adminUrlHost === ''
+                || !in_array($adminUrlScheme, ['http', 'https'], true)
+                || ($adminUrlScheme !== 'https' && !in_array($adminUrlHost, ['127.0.0.1', 'localhost'], true))
+                || isset($adminUrlParts['user'])
+                || isset($adminUrlParts['pass'])
+                || isset($adminUrlParts['query'])
+                || isset($adminUrlParts['fragment'])
+            ) {
+                throw new ApiException(500, 'BACKONTRACK_ADMIN_URL must be an HTTPS admin URL.');
+            }
+        }
+        if ($adminTokenTtl < 300 || $adminTokenTtl > 86400) {
+            throw new ApiException(500, 'BACKONTRACK_ADMIN_TOKEN_TTL must be between 300 and 86400 seconds.');
+        }
         if ($mailPort < 1 || $mailPort > 65535) {
             throw new ApiException(500, 'BACKONTRACK_MAIL_PORT must be between 1 and 65535.');
         }
@@ -227,6 +255,8 @@ final class Config
             $passkeyAndroidPackage,
             $passkeyAndroidKeyHashes,
             $appUrl,
+            $adminUrl,
+            $adminTokenTtl,
             $mailHost,
             $mailPort,
             $mailUsername,

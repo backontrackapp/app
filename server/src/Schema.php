@@ -384,6 +384,7 @@ final class Schema
                     'target_value' => self::number(0, 1000000000),
                     'target_operator' => self::choice(['gte', 'lte', 'eq']),
                     'tracking_window' => self::choice(['occurrence', 'week']),
+                    'goal_versions' => self::jsonArray(50000),
                     'source' => self::choice(['manual', 'health_connect_steps']),
                     'scale_min' => self::number(-1000000, 1000000),
                     'scale_max' => self::number(-1000000, 1000000),

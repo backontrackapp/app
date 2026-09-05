@@ -17,7 +17,10 @@ import {
   flashcardReviewFaceValue,
   normalizeFlashcardBackSpeechRate,
 } from '@/services/flashcards'
-import { updateReviewSetBluetoothAudioActive } from '@/services/reviewSetAudioFocus'
+import {
+  reviewSetAudioFocusIsEnabled,
+  updateReviewSetBluetoothAudioActive,
+} from '@/services/reviewSetAudioFocus'
 import type {
   BackgroundFlashcardReviewState,
   FlashcardReviewSession,
@@ -88,6 +91,7 @@ interface FlashcardSpeechPlugin {
     backLanguage: string
     elapsedMs: number
     overAmplified: boolean
+    audioFocusEnabled: boolean
     backSpeechRate?: number
   }): Promise<void>
   getBackgroundState(): Promise<{ state?: BackgroundFlashcardReviewState }>
@@ -143,17 +147,80 @@ function speechWordForRange(
   start: number,
   length = 0,
 ): FlashcardSpeechWord | undefined {
-  const end = Math.max(start + length, start + 1)
-  const matches = ranges.filter(range => range.end > start && range.start < end)
-  const first = matches[0] || ranges.find(range => range.start <= start && range.end > start)
+  const matches = speechWordsForRange(ranges, start, length)
+  const first = matches[0]
   if (!first) return undefined
   const last = matches[matches.length - 1] || first
+  const end = Math.max(start + length, start + 1)
   return {
     start: Math.max(start, first.start),
     end: length > 0 ? Math.min(end, last.end) : first.end,
     wordStart: first.wordIndex,
     wordEnd: last.wordIndex + 1,
   }
+}
+
+function speechWordsForRange(
+  ranges: Array<FlashcardSpeechTextPart & { wordIndex: number }>,
+  start: number,
+  length = 0,
+) {
+  const end = Math.max(start + length, start + 1)
+  const matches = ranges.filter(range => range.end > start && range.start < end)
+  const first = matches[0] || ranges.find(range => range.start <= start && range.end > start)
+  return matches.length ? matches : first ? [first] : []
+}
+
+function speechWordForPart(
+  part: FlashcardSpeechTextPart & { wordIndex: number },
+): FlashcardSpeechWord {
+  return {
+    start: part.start,
+    end: part.end,
+    wordStart: part.wordIndex,
+    wordEnd: part.wordIndex + 1,
+  }
+}
+
+function groupedSpeechRangeTimings(
+  words: Array<FlashcardSpeechTextPart & { wordIndex: number }>,
+  language: string,
+  speechRate: number,
+  playbackDurationMs: number | undefined,
+  speechRanges: Array<{ start: number; end: number; offsetMs: number }>,
+) {
+  const ranges = speechRanges
+    .map(range => ({
+      ...range,
+      words: speechWordsForRange(words, range.start, range.end - range.start),
+    }))
+    .filter(range => (
+      range.words.length
+      && Number.isFinite(range.offsetMs)
+      && range.offsetMs >= 0
+    ))
+    .sort((left, right) => left.offsetMs - right.offsetMs || left.start - right.start)
+
+  return ranges.flatMap((range, index) => {
+    if (!speechLanguageUsesPinyin(language) || range.words.length === 1) {
+      const word = speechWordForRange(words, range.start, range.end - range.start)
+      return word ? [{ word, offsetMs: range.offsetMs }] : []
+    }
+
+    const nextOffsetMs = ranges.slice(index + 1)
+      .find(candidate => candidate.offsetMs > range.offsetMs)?.offsetMs
+    const endOffsetMs = nextOffsetMs
+      ?? (Number.isFinite(playbackDurationMs) ? playbackDurationMs : undefined)
+    const estimatedSyllableMs = 260 / normalizeFlashcardBackSpeechRate(speechRate)
+    const syllableMs = endOffsetMs !== undefined && endOffsetMs > range.offsetMs
+      ? (endOffsetMs - range.offsetMs) / range.words.length
+      : estimatedSyllableMs
+
+    return range.words.map((word, wordIndex) => ({
+      word: speechWordForPart(word),
+      offsetMs: range.offsetMs + wordIndex * syllableMs,
+    }))
+  })
 }
 
 function startEstimatedSpeech(
@@ -167,16 +234,13 @@ function startEstimatedSpeech(
   clearEstimatedSpeech()
   const words = speechWordRanges(text, language)
   if (!flashcardSpeechWordTrackingIsActive() || !words.length || typeof window === 'undefined') return
-  const timedWords = (speechRanges || [])
-    .map(range => ({
-      word: speechWordForRange(words, range.start, range.end - range.start),
-      offsetMs: range.offsetMs,
-    }))
-    .filter((timing): timing is { word: FlashcardSpeechWord; offsetMs: number } => (
-      Boolean(timing.word)
-      && Number.isFinite(timing.offsetMs)
-      && timing.offsetMs >= 0
-    ))
+  const timedWords = groupedSpeechRangeTimings(
+    words,
+    language,
+    speechRate,
+    playbackDurationMs,
+    speechRanges || [],
+  )
   if (timedWords.length) {
     timedWords.forEach(({ word, offsetMs }) => {
       estimatedSpeechTimers.push(window.setTimeout(() => {
@@ -507,7 +571,6 @@ export async function speakFlashcardText(
 
   const utterance = new window.SpeechSynthesisUtterance(content)
   const wordRanges = speechWordRanges(content, language)
-  let receivedBoundary = false
   utterance.lang = voice.lang
   utterance.voice = voice
   utterance.rate = normalizeFlashcardBackSpeechRate(speechRate)
@@ -539,9 +602,20 @@ export async function speakFlashcardText(
     }
     utterance.onboundary = event => {
       if (event.name && event.name !== 'word') return
-      if (!receivedBoundary) {
-        receivedBoundary = true
-        clearEstimatedSpeech()
+      clearEstimatedSpeech()
+      const boundaryWords = speechWordsForRange(
+        wordRanges,
+        event.charIndex,
+        event.charLength,
+      )
+      if (speechLanguageUsesPinyin(language) && boundaryWords.length > 1) {
+        const syllableMs = 260 / normalizeFlashcardBackSpeechRate(speechRate)
+        boundaryWords.forEach((word, index) => {
+          estimatedSpeechTimers.push(window.setTimeout(() => {
+            updateFlashcardSpeechWord(speechWordForPart(word))
+          }, index * syllableMs))
+        })
+        return
       }
       updateFlashcardSpeechWord(speechWordForRange(
         wordRanges,
@@ -732,6 +806,7 @@ export async function syncBackgroundFlashcardReview(
       backLanguage: session.backLanguage,
       elapsedMs: Math.max(0, Math.round(elapsedMs)),
       overAmplified: speechOverAmplificationEnabled,
+      audioFocusEnabled: reviewSetAudioFocusIsEnabled(),
       ...(normalizeFlashcardBackSpeechRate(session.backSpeechRate) === 1
         ? {}
         : { backSpeechRate: normalizeFlashcardBackSpeechRate(session.backSpeechRate) }),

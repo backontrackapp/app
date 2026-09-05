@@ -32,6 +32,7 @@ function select(item: RunnerSessionMenuItem) {
       <v-divider v-if="item.divider" class="my-1" />
       <v-list-item
         :title="item.title"
+        :subtitle="item.subtitle"
         :prepend-icon="item.icon"
         :base-color="item.color"
         :active="item.active"

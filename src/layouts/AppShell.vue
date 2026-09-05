@@ -26,6 +26,7 @@ import {
 } from '@/services/runningSessionTitle'
 import { mobileKeyboardVisible } from '@/services/mobileKeyboardViewport'
 import { requestDesktopTaskReminderPermission } from '@/services/taskReminders'
+import { recordProductAnalyticsAction } from '@/services/productAnalytics'
 import { UnsyncedChangesError, useAuthStore } from '@/stores/auth'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
@@ -134,6 +135,10 @@ const canGoBack = computed(() => Number(router.currentRoute.value.meta.pageDepth
 
 watch(assistantAvailable, (available) => {
   if (!available) assistantPanel.value = false
+})
+
+watch(assistantPanel, (open, wasOpen) => {
+  if (open && !wasOpen) recordProductAnalyticsAction('assistant_opened')
 })
 
 const accountName = computed(() => auth.user?.name || auth.firstName || 'You')

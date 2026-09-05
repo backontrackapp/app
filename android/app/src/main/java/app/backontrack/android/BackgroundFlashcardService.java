@@ -53,6 +53,7 @@ public class BackgroundFlashcardService extends Service {
     private boolean speechReady;
     private boolean speechInitializationFailed;
     private boolean speechOverAmplified;
+    private boolean audioFocusEnabled = true;
     private float backSpeechRate = 1.0f;
     private boolean running;
     private boolean finished;
@@ -265,6 +266,7 @@ public class BackgroundFlashcardService extends Service {
         frontLanguage = config.optString("frontLanguage", "").trim();
         backLanguage = config.optString("backLanguage", "").trim();
         speechOverAmplified = config.optBoolean("overAmplified", false);
+        audioFocusEnabled = config.optBoolean("audioFocusEnabled", true);
         backSpeechRate = (float) Math.max(
             0.25,
             Math.min(1.0, config.optDouble("backSpeechRate", 1.0))
@@ -464,7 +466,7 @@ public class BackgroundFlashcardService extends Service {
     }
 
     private void updateReviewSetAudioFocus() {
-        reviewSetAudioFocus.update(running, true, !cards.isEmpty());
+        reviewSetAudioFocus.update(running, audioFocusEnabled, !cards.isEmpty());
     }
 
     private void releaseReviewSetAudioFocus() {

@@ -22,6 +22,8 @@ try {
     require $serverRoot . '/src/CuratedReviewSetCatalog.php';
     require $serverRoot . '/src/AssistantService.php';
     require $serverRoot . '/src/SyncService.php';
+    require $serverRoot . '/src/AnalyticsService.php';
+    require $serverRoot . '/src/AdminService.php';
     require $serverRoot . '/src/Api.php';
 
     $config = Config::load($serverRoot);

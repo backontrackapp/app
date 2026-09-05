@@ -27,6 +27,7 @@ const MAX_BATCH_SIZE = 25
 const MAX_KEEPALIVE_BYTES = 55_000
 const apiBaseUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
 const reportUrl = `${apiBaseUrl}/client-errors`
+const analyticsUrl = `${apiBaseUrl}/analytics/events`
 
 let installed = false
 let flushPromise: Promise<void> | null = null
@@ -143,7 +144,10 @@ function requestDetails(input: RequestInfo | URL, init?: RequestInit) {
 
 function isReportRequest(rawUrl: string) {
   try {
-    return new URL(rawUrl, window.location.href).href === new URL(reportUrl, window.location.href).href
+    const normalized = new URL(rawUrl, window.location.href).href
+    return [reportUrl, analyticsUrl].some(url => (
+      normalized === new URL(url, window.location.href).href
+    ))
   } catch {
     return false
   }

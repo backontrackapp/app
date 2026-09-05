@@ -46,6 +46,23 @@ final class Mailer
         );
     }
 
+    public function sendAdminLoginCode(string $email, string $code): void
+    {
+        if ($this->config->adminUrl === '') {
+            throw new ApiException(503, 'Admin email delivery is not configured.');
+        }
+        $this->send(
+            $email,
+            'Your BackOnTrack admin sign-in code',
+            'Verify your admin sign-in',
+            'Your one-time administrator code is ' . $code . '.',
+            'Open admin dashboard',
+            $this->config->adminUrl,
+            'This code expires in 10 minutes. Ignore this email if you did not request it.',
+            self::ACCOUNT_ACTION_TEMPLATE,
+        );
+    }
+
     private function actionUrl(string $path, string $token): string
     {
         if ($this->config->appUrl === '') {

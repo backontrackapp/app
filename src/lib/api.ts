@@ -39,6 +39,11 @@ import {
   putLocalSharedCardDelete,
   putLocalSharedCardPatch,
 } from '@/lib/localDatabase'
+import {
+  recordCollectionCreateAnalytics,
+  recordCollectionUpdateAnalytics,
+  recordProductAnalyticsAction,
+} from '@/services/productAnalytics'
 
 type RecordModel = Record<string, any> & { id: string }
 type AuthRecord = RecordModel & { email: string; name?: string; avatar?: string }
@@ -465,13 +470,16 @@ class CollectionClient<T extends RecordModel = RecordModel> {
       if (this.name === 'flashcard_review_sets') {
         await mirrorOwnedReviewSetProjection(accountId, record, this.authStore.record)
       }
+      recordCollectionCreateAnalytics(this.name)
       return record
     }
-    return request<T>(
+    const record = await request<T>(
       `/collections/${encodeURIComponent(this.name)}/records`,
       { method: 'POST', body: remoteCreateBody(this.name, body) },
       this.authStore,
     )
+    recordCollectionCreateAnalytics(this.name)
+    return record
   }
 
   async update(id: string, body: Record<string, unknown>) {
@@ -481,13 +489,16 @@ class CollectionClient<T extends RecordModel = RecordModel> {
       if (this.name === 'flashcard_review_sets') {
         await mirrorOwnedReviewSetProjection(accountId, record, this.authStore.record)
       }
+      recordCollectionUpdateAnalytics(this.name, body)
       return record
     }
-    return request<T>(
+    const record = await request<T>(
       `/collections/${encodeURIComponent(this.name)}/records/${encodeURIComponent(id)}`,
       { method: 'PATCH', body },
       this.authStore,
     )
+    recordCollectionUpdateAnalytics(this.name, body)
+    return record
   }
 
   async delete(id: string) {
@@ -539,6 +550,7 @@ class ApiClient {
     onActivity: (event: Extract<AssistantResponseStreamEvent, { type: 'activity_delta' | 'activity' }>) => void,
     signal?: AbortSignal,
   ) {
+    recordProductAnalyticsAction('assistant_request_sent')
     return requestAssistantStream(
       '/assistant/respond',
       { method: 'POST', body: { items } },
@@ -587,11 +599,13 @@ class ApiClient {
       ...(input.settings ? { settings: flashcardReviewSettingsBody(input.settings) } : {}),
     }
     if (!accountId || !await hasLocalBootstrap(accountId)) {
-      return request<{ cards: RecordModel[]; review_set: RecordModel }>(
+      const response = await request<{ cards: RecordModel[]; review_set: RecordModel }>(
         input.source === 'curated' ? '/curated-review-sets/clone' : '/assistant/flashcards/apply',
         { method: 'POST', body },
         this.authStore,
       )
+      if (input.source === 'curated') recordProductAnalyticsAction('curated_set_cloned')
+      return response
     }
 
     const now = new Date().toISOString()
@@ -684,6 +698,7 @@ class ApiClient {
         },
       ],
     )
+    if (input.source === 'curated') recordProductAnalyticsAction('curated_set_cloned')
     return { cards, review_set: projection }
   }
 
@@ -979,9 +994,10 @@ class ApiClient {
         elapsed_seconds: Math.max(0, Math.round(input.elapsedSeconds)),
         ended_at: input.endedAt,
       })
+      recordProductAnalyticsAction('interval_completed')
       return { session, occurrence: null, occurrences: [], entries: [], local: true }
     }
-    return request<CompleteIntervalSessionResponse>(
+    const response = await request<CompleteIntervalSessionResponse>(
       `/interval-sessions/${encodeURIComponent(sessionId)}/complete`,
       {
         method: 'POST',
@@ -993,6 +1009,8 @@ class ApiClient {
       },
       this.authStore,
     )
+    recordProductAnalyticsAction('interval_completed')
+    return response
   }
 
   async endIntervalSession(
@@ -1395,13 +1413,16 @@ class ApiClient {
         updated_at: now,
       })
       await putLocalCommand(accountId, 'review_set_share.create', share)
+      recordProductAnalyticsAction('review_set_shared')
       return share
     }
-    return request<RecordModel>(
+    const share = await request<RecordModel>(
       `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/shares`,
       { method: 'POST', body: { email, role } },
       this.authStore,
     )
+    recordProductAnalyticsAction('review_set_shared')
+    return share
   }
 
   async updateFlashcardReviewSetShare(

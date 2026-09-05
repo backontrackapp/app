@@ -3,7 +3,12 @@ import { defineStore } from 'pinia'
 import { format, subDays } from 'date-fns'
 import { api } from '@/lib/api'
 import { createLocalRecordId } from '@/lib/localDatabase'
-import { aggregateTrackingEntries } from '@/services/tracking'
+import {
+  aggregateTrackingEntries,
+  LEGACY_TRACKING_GOAL_EFFECTIVE_DATE,
+  normalizeTrackingGoalVersions,
+  upsertTrackingGoalVersion,
+} from '@/services/tracking'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
 import type {
@@ -14,6 +19,12 @@ import type {
 } from '@/types/domain'
 
 export function mapTrackingTracker(record: Record<string, any>): TrackingTracker {
+  const targetValue = Number(record.target_value || 0)
+  const targetOperator: TrackingTracker['targetOperator'] = record.target_operator || 'gte'
+  const trackingWindow: TrackingTracker['trackingWindow'] = record.tracking_window === 'week'
+    ? 'week'
+    : 'occurrence'
+  const storedGoalVersions = normalizeTrackingGoalVersions(record.goal_versions)
   return {
     id: record.id,
     name: record.name,
@@ -21,9 +32,17 @@ export function mapTrackingTracker(record: Record<string, any>): TrackingTracker
     role: record.role,
     kind: record.kind,
     unit: record.unit || '',
-    targetValue: Number(record.target_value || 0),
-    targetOperator: record.target_operator || 'gte',
-    trackingWindow: record.tracking_window === 'week' ? 'week' : 'occurrence',
+    targetValue,
+    targetOperator,
+    trackingWindow,
+    goalVersions: storedGoalVersions.length || targetValue <= 0
+      ? storedGoalVersions
+      : [{
+          effectiveDate: LEGACY_TRACKING_GOAL_EFFECTIVE_DATE,
+          targetValue,
+          targetOperator,
+          trackingWindow,
+        }],
     source: record.source === 'health_connect_steps' ? 'health_connect_steps' : 'manual',
     scaleMin: Number(record.scale_min || 0),
     scaleMax: Number(record.scale_max || 0),
@@ -112,6 +131,32 @@ export const useTrackingStore = defineStore('tracking', () => {
   }
 
   async function saveTracker(draft: TrackingTrackerDraft) {
+    const index = draft.id ? trackers.value.findIndex(item => item.id === draft.id) : -1
+    const previous = index >= 0 ? trackers.value[index] : undefined
+    const goalChanged = previous
+      ? previous.targetValue !== draft.targetValue
+        || previous.targetOperator !== draft.targetOperator
+        || previous.trackingWindow !== draft.trackingWindow
+      : draft.targetValue > 0
+    const storedGoalVersions = normalizeTrackingGoalVersions(
+      draft.goalVersions?.length ? draft.goalVersions : previous?.goalVersions,
+    )
+    const existingGoalVersions = storedGoalVersions.length || !previous || previous.targetValue <= 0
+      ? storedGoalVersions
+      : [{
+          effectiveDate: LEGACY_TRACKING_GOAL_EFFECTIVE_DATE,
+          targetValue: previous.targetValue,
+          targetOperator: previous.targetOperator,
+          trackingWindow: previous.trackingWindow,
+        }]
+    const goalVersions = goalChanged
+      ? upsertTrackingGoalVersion(existingGoalVersions, {
+          effectiveDate: format(new Date(), 'yyyy-MM-dd'),
+          targetValue: draft.targetValue,
+          targetOperator: draft.targetOperator,
+          trackingWindow: draft.trackingWindow,
+        })
+      : existingGoalVersions
     const payload = {
       owner: api.authStore.record!.id,
       name: draft.name,
@@ -122,6 +167,7 @@ export const useTrackingStore = defineStore('tracking', () => {
       target_value: draft.targetValue,
       target_operator: draft.targetOperator,
       tracking_window: draft.trackingWindow,
+      goal_versions: goalVersions,
       source: draft.source,
       scale_min: draft.scaleMin,
       scale_max: draft.scaleMax,
@@ -133,8 +179,6 @@ export const useTrackingStore = defineStore('tracking', () => {
       color: draft.color,
       icon: draft.icon,
     }
-    const index = draft.id ? trackers.value.findIndex(item => item.id === draft.id) : -1
-    const previous = index >= 0 ? trackers.value[index] : undefined
     const tracker = mapTrackingTracker({ id: draft.id || createLocalRecordId(), ...payload })
     if (index >= 0) trackers.value.splice(index, 1, tracker)
     else trackers.value.push(tracker)

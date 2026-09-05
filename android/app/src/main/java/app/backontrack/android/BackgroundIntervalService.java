@@ -94,6 +94,7 @@ public class BackgroundIntervalService extends Service {
     private String pendingReviewRecordingUrl = "";
     private float pendingReviewSpeechRate = 1.0f;
     private boolean reviewSpeechOverAmplified;
+    private boolean reviewAudioFocusEnabled = true;
     private float reviewBackSpeechRate = 1.0f;
     private boolean reviewClockHeld;
     private boolean appWasVisible;
@@ -327,6 +328,7 @@ public class BackgroundIntervalService extends Service {
             SystemClock.elapsedRealtime()
         );
         appWasVisible = MainActivity.isAppVisible();
+        reviewAudioFocusEnabled = true;
         reviewClockHeld = false;
 
         if (encodedReview == null || encodedReview.trim().isEmpty()) {
@@ -381,6 +383,7 @@ public class BackgroundIntervalService extends Service {
         reviewFrontLanguage = review.optString("frontLanguage", "").trim();
         reviewBackLanguage = review.optString("backLanguage", "").trim();
         reviewSpeechOverAmplified = review.optBoolean("overAmplified", false);
+        reviewAudioFocusEnabled = review.optBoolean("audioFocusEnabled", true);
         if (!previousSessionId.equals(sessionId)) lastReviewSpeechKey = "";
         if (!currentStepPlaysFlashcardReview(SystemClock.elapsedRealtime())) pauseReviewSpeech();
     }
@@ -415,7 +418,7 @@ public class BackgroundIntervalService extends Service {
         reviewSetAudioFocus.update(
             running,
             !step.requiresConfirmation && !step.stopwatch && step.flashcardReviewEnabled,
-            !reviewCards.isEmpty()
+            reviewAudioFocusEnabled && !reviewCards.isEmpty()
         );
     }
 

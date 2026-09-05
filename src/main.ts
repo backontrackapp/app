@@ -28,6 +28,12 @@ import {
   readAndroidRoute,
   rememberAndroidRoute,
 } from './services/androidRoutePersistence'
+import {
+  flushProductAnalytics,
+  installProductAnalytics,
+  refreshProductAnalyticsIdentity,
+  setProductAnalyticsForeground,
+} from './services/productAnalytics'
 import './styles/main.scss'
 
 const nativePlatform = Capacitor.getPlatform()
@@ -39,6 +45,15 @@ installClientErrorReporting({
   getAuthToken: () => api.authStore.token,
   platform: nativePlatform,
 })
+
+installProductAnalytics({
+  getAccountId: () => api.authStore.record?.id || '',
+  getAuthToken: () => api.authStore.token,
+  getEnabled: () => api.authStore.record?.settings?.productAnalyticsEnabled !== false,
+  platform: nativePlatform,
+  router,
+})
+api.authStore.onChange(() => refreshProductAnalyticsIdentity())
 
 void preloadIntervalCueAudio().catch(() => {
   // Cue audio is best-effort and can retry when an interval starts.
@@ -79,8 +94,12 @@ if (nativePlatform === 'android' || nativePlatform === 'ios') {
   const removeMobileKeyboardViewport = installMobileKeyboardViewport()
   window.addEventListener('pagehide', removeMobileKeyboardViewport, { once: true })
   void NativeApp.addListener('appStateChange', ({ isActive }) => {
+    setProductAnalyticsForeground(isActive)
     if (isActive) void reapplyReviewSetAudioFocus()
-    else void flushClientErrors()
+    else {
+      void flushClientErrors()
+      void flushProductAnalytics()
+    }
   })
 }
 

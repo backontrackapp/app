@@ -21,6 +21,7 @@ import {
   flashcardEjectReachesExclusionThreshold,
   flashcardEjectLoadsNext,
   flashcardReviewQueueCardSnapshot,
+  flashcardResolvedTagNames,
   flashcardReviewQueueState,
   normalizeFlashcardBackSpeechRepeatCount,
   normalizeFlashcardBackSpeechRate,
@@ -32,6 +33,7 @@ import {
 } from '@/services/flashcards'
 import { findDuplicateFlashcard, normalizeFlashcardFront } from '@/services/flashcardDuplicates'
 import { normalizeSpeechLanguage } from '@/services/flashcardSpeech'
+import { recordProductAnalyticsAction } from '@/services/productAnalytics'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
 import type {
@@ -301,6 +303,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       }
       if (card.ttsFront === undefined) card.ttsFront = sourceCard.ttsFront || ''
       if (card.ttsBack === undefined) card.ttsBack = sourceCard.ttsBack || ''
+      if (sourceCard.tagDetails) card.tagNames = flashcardResolvedTagNames(sourceCard)
       card.ejectCount = Math.max(card.ejectCount, sourceCard.ejectCount)
       if (!card.lastEjectedAt || String(sourceCard.lastEjectedAt || '') > card.lastEjectedAt) {
         card.lastEjectedAt = sourceCard.lastEjectedAt
@@ -451,6 +454,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       )
       tags.value = tagRecords.map(mapTag)
       cards.value = cardRecords.map(mapCard).map(reconcileCardEjectCount)
+      cards.value.forEach((card) => {
+        card.tagDetails = tags.value.filter(tag => card.tags.includes(tag.id))
+      })
       reviewSets.value = setRecords.map(mapReviewSet)
       reviewSets.value.forEach((reviewSet) => {
         if (reviewSet.owner !== accountId) return
@@ -1858,6 +1864,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       record = await api.startFlashcardReviewSession(reviewSetId, attribution)
     }
     const session = mapSession(record)
+    recordProductAnalyticsAction('review_started')
     sessions.value.unshift(session)
     return session
   }
@@ -1899,6 +1906,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           ejectReplacementIndex,
         )
     const session = mapSession(response.session)
+    if (session.status === 'completed' && currentSession?.status !== 'completed') {
+      recordProductAnalyticsAction('review_completed')
+    }
     const index = sessions.value.findIndex(item => item.id === session.id)
     if (index >= 0) sessions.value.splice(index, 1, session)
     else sessions.value.unshift(session)

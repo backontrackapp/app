@@ -50,6 +50,7 @@ import {
   flashcardReviewFaceDurationMs,
   flashcardReviewFaceSpeechDurationMs,
   flashcardReviewQueueCardSnapshot,
+  flashcardResolvedTagNames,
   flashcardReviewSpeechFaceValue,
   flashcardReviewFaceValue,
   flashcardReviewActionFromSwipe,
@@ -95,10 +96,18 @@ import {
 } from '@/services/intervals'
 import { exercisePresentationById } from '@/services/exercisePresentations'
 import { loadExerciseOptions } from '@/services/exercises'
-import { programStepRequirementName, workoutSetsForCount } from '@/services/programStepCompletions'
+import {
+  programStepRequirementName,
+  workoutSetsForCount,
+} from '@/services/programStepCompletions'
 import { toDateKey } from '@/services/schedule'
 import { intervalRunnerSessionMenuItems } from '@/services/runnerSessionActions'
-import { setReviewSetAudioFocus } from '@/services/reviewSetAudioFocus'
+import {
+  reviewSetAudioFocusEnabled,
+  reviewSetAudioFocusIsAvailable,
+  setReviewSetAudioFocus,
+  toggleReviewSetAudioFocus,
+} from '@/services/reviewSetAudioFocus'
 import { confirmSwipeHint, REVIEW_SET_CARD_SWIPE_HINT } from '@/services/swipeHints'
 import { prepareFlashcardSpeechWordTracking } from '@/services/spokenText'
 import { useFlashcardStore } from '@/stores/flashcards'
@@ -108,6 +117,7 @@ import { useTaskStore } from '@/stores/tasks'
 import type {
   Flashcard,
   FlashcardContextAction,
+  FlashcardReviewQueueCard,
   FlashcardReviewSettings,
   FlashcardSettingsApplyTarget,
   FlashcardSpeechSupport,
@@ -174,6 +184,7 @@ const openingFlashcardContext = ref(false)
 const flashcardNavigating = ref(false)
 const intervalFlashcardTransitionDirection = ref<'previous' | 'next' | 'front' | 'back'>()
 const flashcardTagSaving = ref('')
+const pendingIntervalFlashcardCards = reactive(new Map<string, FlashcardReviewQueueCard>())
 const flashcardEditorDialog = ref(false)
 const flashcardEditorCard = ref<Flashcard>()
 const flashcardDeleteDialog = ref(false)
@@ -255,6 +266,7 @@ let resumeAfterFlashcardContext = false
 let resumeAfterFlashcardModal = false
 let resumeAfterIntervalSettings = false
 let flashcardSaveWork: Promise<void> = Promise.resolve()
+let deferredIntervalFlashcardTimingWork: Promise<boolean> | undefined
 const cueHandoff = createIntervalCueHandoff(document.visibilityState)
 let timerFit: FittyInstance | undefined
 let timerFitResizeObserver: ResizeObserver | undefined
@@ -472,6 +484,12 @@ const canTagCurrentFlashcard = computed(() => Boolean(
   && flashcardReviewSet.value?.accessRole === 'owner'
   && currentFlashcardRecord.value,
 ))
+const currentIntervalFlashcardTagIds = computed(() => (
+  pendingIntervalFlashcardCards.get(flashcardPhase.value?.card.id || '')?.tags
+  || currentFlashcardRecord.value?.tags
+  || flashcardPhase.value?.card.tags
+  || []
+))
 const intervalQuickTags = computed(() => INTERVAL_FLASHCARD_QUICK_TAGS.map((quickTag) => {
   const tag = flashcardStore.tags.find(
     item => item.name.toLocaleLowerCase() === quickTag.name.toLocaleLowerCase(),
@@ -479,7 +497,7 @@ const intervalQuickTags = computed(() => INTERVAL_FLASHCARD_QUICK_TAGS.map((quic
   return {
     ...quickTag,
     id: tag?.id,
-    selected: Boolean(tag && flashcardPhase.value?.card.tags.includes(tag.id)),
+    selected: Boolean(tag && currentIntervalFlashcardTagIds.value.includes(tag.id)),
   }
 }))
 const flashcardSettingsChanged = computed(() => flashcardSettingsDialog.value
@@ -805,6 +823,21 @@ const attributedTaskName = computed(() => {
 })
 const noteChanged = computed(() => noteDraft.value.trim() !== (session.value?.note || ''))
 
+watch(
+  () => flashcardPhase.value
+    ? `${flashcardPhase.value.cycle}:${flashcardPhase.value.cardIndex}`
+    : '',
+  (occurrence, previousOccurrence) => {
+    if (
+      occurrence
+      && previousOccurrence
+      && occurrence !== previousOccurrence
+      && pendingIntervalFlashcardCards.size
+    ) void applyDeferredIntervalFlashcardTiming()
+  },
+  { flush: 'sync' },
+)
+
 watch([
   () => session.value?.status,
   () => session.value?.flashcardReview?.speechEnabled,
@@ -812,6 +845,12 @@ watch([
   () => flashcardReviewPlaybackEnabled.value,
   () => flashcardPhase.value?.key,
 ], () => {
+  if (deferredIntervalFlashcardTimingWork) {
+    void applyDeferredIntervalFlashcardTiming().then(() => {
+      if (!flashcardNavigating.value) void speakCurrentFlashcardSide()
+    })
+    return
+  }
   if (!flashcardNavigating.value) void speakCurrentFlashcardSide()
 }, { flush: 'post' })
 
@@ -1111,6 +1150,13 @@ function handleRunnerSessionAction(action: RunnerSessionAction) {
   else if (action === 'settings') void openIntervalSettings()
   else if (action === 'restart') void restart()
   else if (action === 'end') endDialog.value = true
+}
+
+async function toggleAudioFocus() {
+  const item = session.value
+  if (!item) return
+  await toggleReviewSetAudioFocus()
+  if (item.status === 'running') await syncNativeTimer(item)
 }
 
 function cloneIntervalSettings<T>(value: T): T {
@@ -1819,6 +1865,11 @@ async function ensureIntervalFlashcardSource() {
   if (reviewSet && reviewSet.accessRole !== 'owner') {
     await flashcardStore.loadReviewSetCards(reviewSet.id)
   }
+  const sourceCardsById = new Map(intervalFlashcardSource.value.map(card => [card.id, card]))
+  session.value?.flashcardReview?.cards.forEach((card) => {
+    const sourceCard = sourceCardsById.get(card.id)
+    if (sourceCard?.tagDetails) card.tagNames = flashcardResolvedTagNames(sourceCard)
+  })
 }
 
 async function openFlashcardContext() {
@@ -1915,7 +1966,9 @@ async function navigateIntervalFlashcard(
         direction,
       ),
     })
-    if (updated?.status === 'running') await syncNativeTimer(updated)
+    if (deferredIntervalFlashcardTimingWork) await deferredIntervalFlashcardTimingWork
+    const currentSession = session.value
+    if (currentSession?.status === 'running') await syncNativeTimer(currentSession)
     if (updated) {
       await nextTick()
       void speakCurrentFlashcardSide(true, true)
@@ -2330,31 +2383,59 @@ async function closeFlashcardEditor(open: boolean) {
   }
 }
 
-async function saveIntervalFlashcard(card: Flashcard, resetCurrentTiming = false) {
+async function saveIntervalFlashcard(card: Flashcard) {
   const review = session.value?.flashcardReview
   if (!review) return
-  const currentPhase = resetCurrentTiming ? flashcardPhase.value : undefined
   const existing = review.cards.findIndex(item => item.id === card.id)
   const cards = [...review.cards]
   if (existing >= 0) cards.splice(existing, 1, snapshotCard(card))
   else if (cardMatchesTags(card, review.tags)) cards.push(snapshotCard(card))
-  const updatedReview = { ...review, cards }
-  if (currentPhase?.card.id === card.id) {
+  await updateFlashcardSnapshot({ ...review, cards })
+}
+
+function applyDeferredIntervalFlashcardTiming() {
+  if (deferredIntervalFlashcardTimingWork) return deferredIntervalFlashcardTimingWork
+  if (!pendingIntervalFlashcardCards.size) return Promise.resolve(false)
+
+  const item = session.value
+  const review = item?.flashcardReview
+  const phase = flashcardPhase.value
+  if (!item || !review || !phase || isTemplatePreview.value) return Promise.resolve(false)
+
+  deferredIntervalFlashcardTimingWork = (async () => {
+    const pending = new Map(pendingIntervalFlashcardCards)
+    const cards = review.cards.map(card => pending.get(card.id) || card)
+    const phaseElapsedMs = flashcardReviewFaceDurationMs(review, phase.card, phase.side)
+      * phase.progress / 100
+    const updatedReview = { ...review, cards }
     updatedReview.playbackOffsetMs = intervalFlashcardCardSideOffsetMs(
       updatedReview,
       flashcardReviewElapsedMs.value,
-      card.id,
-      currentPhase.side,
-      currentPhase.cycle,
-    )
-  }
-  const updated = await updateFlashcardSnapshot(updatedReview)
-  if (resetCurrentTiming && updated) {
-    await stopFlashcardSpeech()
-    if (updated.status === 'running') await syncNativeTimer(updated)
-    await nextTick()
-    await speakCurrentFlashcardSide()
-  }
+      phase.card.id,
+      phase.side,
+      phase.cycle,
+    ) + phaseElapsedMs
+
+    try {
+      const updated = await updateFlashcardSnapshot(updatedReview)
+      pending.forEach((card, cardId) => {
+        if (pendingIntervalFlashcardCards.get(cardId) === card) {
+          pendingIntervalFlashcardCards.delete(cardId)
+        }
+      })
+      if (updated?.status === 'running') await syncNativeTimer(updated)
+      return Boolean(updated)
+    } catch (cause) {
+      error.value = cause instanceof Error
+        ? cause.message
+        : 'Could not apply the updated flashcard timing.'
+      return false
+    } finally {
+      deferredIntervalFlashcardTimingWork = undefined
+    }
+  })()
+
+  return deferredIntervalFlashcardTimingWork
 }
 
 async function toggleIntervalFlashcardTag(tag: { name: string }) {
@@ -2363,15 +2444,16 @@ async function toggleIntervalFlashcardTag(tag: { name: string }) {
   flashcardTagSaving.value = tag.name
   try {
     const resolvedTag = await flashcardStore.createTag(tag.name)
+    const pendingCard = pendingIntervalFlashcardCards.get(cardId)
     const update = flashcardTagToggleUpdate(
-      flashcardPhase.value?.card.tags || [],
+      pendingCard?.tags || currentIntervalFlashcardTagIds.value,
       resolvedTag,
       flashcardStore.tags,
     )
     const updatedCards = await flashcardStore.bulkUpdateCards(update.action, [cardId], update.values)
     const updatedCard = updatedCards.find(card => card.id === cardId)
     if (!updatedCard) throw new Error('The flashcard could not be updated.')
-    await saveIntervalFlashcard(updatedCard, true)
+    pendingIntervalFlashcardCards.set(cardId, snapshotCard(updatedCard))
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not update this flashcard tag.'
   } finally {
@@ -2614,6 +2696,7 @@ function handleFlashcardContextAction(action: FlashcardContextAction) {
   else if (action === 'eject') void ejectIntervalFlashcard()
   else if (action === 'remove') void requestFlashcardRemoval()
   else if (action === 'toggle_tts') void toggleSessionTts()
+  else if (action === 'toggle_audio_focus') void toggleAudioFocus()
   else if (action === 'settings') void openFlashcardSettings()
 }
 
@@ -3170,6 +3253,10 @@ async function runAgain() {
       :can-eject-card="!isTemplatePreview && Boolean(flashcardPhase)"
       :can-toggle-tts="!isTemplatePreview && session?.flashcardReview?.speechEnabled === true"
       :tts-paused="sessionTtsPaused"
+      :can-toggle-audio-focus="!isTemplatePreview
+        && session?.flashcardReview?.speechEnabled === true
+        && reviewSetAudioFocusIsAvailable()"
+      :audio-focus-enabled="reviewSetAudioFocusEnabled"
       @action="handleFlashcardContextAction"
     />
 

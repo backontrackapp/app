@@ -399,12 +399,14 @@ export type FlashcardContextAction =
   | 'undo_eject'
   | 'remove'
   | 'toggle_tts'
+  | 'toggle_audio_focus'
   | 'settings'
 export type FlashcardSettingsApplyTarget = 'session' | 'review-set' | 'both'
 export type IntervalSettingsApplyTarget = 'session' | 'interval' | 'both'
 export type RunnerSessionAction =
-  | Exclude<FlashcardContextAction, 'toggle_tts'>
+  | Exclude<FlashcardContextAction, 'toggle_tts' | 'toggle_audio_focus'>
   | 'amplification'
+  | 'audio_focus'
   | 'restart'
   | 'undo_requirement'
   | 'end'
@@ -412,6 +414,7 @@ export type RunnerSessionAction =
 export interface RunnerSessionMenuItem {
   action: RunnerSessionAction
   title: string
+  subtitle?: string
   icon: string
   color?: string
   active?: boolean
@@ -902,6 +905,13 @@ export type TrackerSource = 'manual' | 'health_connect_steps'
 export type DailyAggregation = 'last' | 'average' | 'sum' | 'count'
 export type FavorableDirection = 'higher' | 'lower' | 'neutral'
 
+export interface TrackingGoalVersion {
+  effectiveDate: string
+  targetValue: number
+  targetOperator: TargetOperator
+  trackingWindow: GoalPeriod
+}
+
 export interface TrackingTracker {
   id: string
   name: string
@@ -912,6 +922,7 @@ export interface TrackingTracker {
   targetValue: number
   targetOperator: TargetOperator
   trackingWindow: GoalPeriod
+  goalVersions?: TrackingGoalVersion[]
   source: TrackerSource
   scaleMin: number
   scaleMax: number

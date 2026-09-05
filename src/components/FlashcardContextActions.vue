@@ -14,6 +14,8 @@ const props = withDefaults(defineProps<{
   canUndoEject?: boolean
   canToggleTts?: boolean
   ttsPaused?: boolean
+  canToggleAudioFocus?: boolean
+  audioFocusEnabled?: boolean
 }>(), {
   busy: false,
   canManageCard: true,
@@ -23,6 +25,8 @@ const props = withDefaults(defineProps<{
   canUndoEject: false,
   canToggleTts: false,
   ttsPaused: false,
+  canToggleAudioFocus: false,
+  audioFocusEnabled: true,
 })
 
 const emit = defineEmits<{
@@ -39,6 +43,8 @@ const items = computed(() => flashcardReviewSessionMenuItems({
   showUndoEject: props.showUndoEject,
   showTtsToggle: props.canToggleTts,
   ttsPaused: props.ttsPaused,
+  showAudioFocus: props.canToggleAudioFocus,
+  audioFocusEnabled: props.audioFocusEnabled,
 }))
 
 function itemDisabled(permission?: 'add' | 'manage' | 'eject' | 'undo_eject') {
@@ -62,11 +68,23 @@ function itemDisabled(permission?: 'add' | 'manage' | 'eject' | 'undo_eject') {
       <v-divider v-if="'divider' in item && item.divider" class="my-1" />
       <v-list-item
         :title="item.title"
+        :subtitle="'subtitle' in item ? item.subtitle : undefined"
         :prepend-icon="item.icon"
         :base-color="'color' in item ? item.color : undefined"
+        :active="'active' in item ? item.active : false"
+        :active-color="'active' in item && item.active ? 'secondary' : undefined"
         :disabled="itemDisabled('permission' in item ? item.permission : undefined)"
+        :aria-pressed="'toggle' in item && item.toggle ? item.active : undefined"
         @click="select(item.action)"
-      />
+      >
+        <template v-if="'toggle' in item && item.toggle" #append>
+          <v-icon
+            :icon="item.active ? 'mdi-check-circle' : 'mdi-circle-outline'"
+            :color="item.active ? 'secondary' : undefined"
+            size="20"
+          />
+        </template>
+      </v-list-item>
     </template>
   </ActionBottomSheet>
 </template>

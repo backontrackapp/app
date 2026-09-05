@@ -17,6 +17,7 @@ CREATE TABLE users (
     assistant_daily_token_limit INTEGER DEFAULT NULL,
     assistant_token_usage_day TEXT NOT NULL DEFAULT '',
     assistant_token_usage INTEGER NOT NULL DEFAULT 0,
+    admin_role TEXT NOT NULL DEFAULT '' CHECK (admin_role IN ('', 'admin')),
     created TEXT NOT NULL,
     updated TEXT NOT NULL
 );
@@ -477,6 +478,7 @@ CREATE TABLE tracking_trackers (
     target_value NUMERIC NOT NULL DEFAULT 0,
     target_operator TEXT NOT NULL DEFAULT 'gte',
     tracking_window TEXT NOT NULL DEFAULT 'occurrence',
+    goal_versions JSON NOT NULL DEFAULT '[]',
     source TEXT NOT NULL DEFAULT 'manual',
     scale_min NUMERIC NOT NULL DEFAULT 0,
     scale_max NUMERIC NOT NULL DEFAULT 0,
@@ -571,6 +573,62 @@ CREATE INDEX idx_client_errors_last_received
     ON client_errors (last_received_at DESC);
 CREATE INDEX idx_client_errors_type_count
     ON client_errors (type, occurrence_count DESC);
+
+CREATE TABLE admin_login_challenges (
+    id TEXT PRIMARY KEY NOT NULL,
+    user_id TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_admin_login_challenges_expiry
+    ON admin_login_challenges (expires_at);
+
+CREATE TABLE analytics_events (
+    id TEXT PRIMARY KEY NOT NULL,
+    account_id TEXT NOT NULL,
+    client_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    event_name TEXT NOT NULL,
+    screen TEXT NOT NULL DEFAULT '',
+    action TEXT NOT NULL DEFAULT '',
+    occurred_at TEXT NOT NULL,
+    received_at TEXT NOT NULL,
+    duration_ms INTEGER NOT NULL DEFAULT 0,
+    platform TEXT NOT NULL DEFAULT '',
+    app_version TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (account_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_analytics_events_account_occurred
+    ON analytics_events (account_id, occurred_at DESC);
+CREATE INDEX idx_analytics_events_occurred_account
+    ON analytics_events (occurred_at, account_id);
+CREATE INDEX idx_analytics_events_name_occurred
+    ON analytics_events (event_name, occurred_at);
+CREATE INDEX idx_analytics_events_screen_occurred
+    ON analytics_events (screen, occurred_at) WHERE screen <> '';
+CREATE INDEX idx_analytics_events_action_occurred
+    ON analytics_events (action, occurred_at) WHERE action <> '';
+CREATE INDEX idx_analytics_events_received
+    ON analytics_events (received_at);
+
+CREATE TABLE admin_audit_log (
+    id TEXT PRIMARY KEY NOT NULL,
+    admin_id TEXT,
+    target_user_id TEXT,
+    action TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    ip_hash TEXT NOT NULL DEFAULT '',
+    user_agent TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (target_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX idx_admin_audit_log_occurred
+    ON admin_audit_log (occurred_at DESC);
+CREATE INDEX idx_admin_audit_log_admin
+    ON admin_audit_log (admin_id, occurred_at DESC);
 
 CREATE TABLE backontrack_auth_tokens (
     token_hash TEXT PRIMARY KEY NOT NULL,

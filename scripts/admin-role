@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [[ $# -ne 2 || ( "$2" != "admin" && "$2" != "none" ) ]]; then
+  echo "Usage: ./scripts/admin-role EMAIL admin|none" >&2
+  exit 1
+fi
+
+cd "$repository_root"
+php server/admin-role.php --email="$1" --role="$2"

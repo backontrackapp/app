@@ -45,6 +45,15 @@ export const INTERVAL_FLASHCARD_QUICK_TAGS = [
 
 export type FlashcardReviewTimingFlag = 'easy' | 'hard'
 
+export function flashcardResolvedTagNames(
+  card: Pick<Flashcard, 'tags' | 'tagDetails'>,
+  availableTags: readonly FlashcardTag[] = card.tagDetails || [],
+) {
+  return availableTags
+    .filter(tag => card.tags.includes(tag.id))
+    .map(tag => tag.name)
+}
+
 export function flashcardReviewTimingFlag(
   card: Pick<FlashcardReviewQueueCard, 'tags' | 'tagNames'>,
 ): FlashcardReviewTimingFlag | undefined {
@@ -59,9 +68,7 @@ export function flashcardReviewQueueCardSnapshot(
   card: Flashcard,
   availableTags: readonly FlashcardTag[] = card.tagDetails || [],
 ): FlashcardReviewQueueCard {
-  const tagNames = availableTags
-    .filter(tag => card.tags.includes(tag.id))
-    .map(tag => tag.name)
+  const tagNames = flashcardResolvedTagNames(card, availableTags)
   return {
     id: card.id,
     front: card.front,
@@ -242,6 +249,8 @@ export function flashcardReviewSessionMenuItems(options: {
   showUndoEject: boolean
   showTtsToggle: boolean
   ttsPaused: boolean
+  showAudioFocus: boolean
+  audioFocusEnabled: boolean
 }) {
   const settingsItem = FLASHCARD_REVIEW_SESSION_MENU_ITEMS.find(item => item.action === 'settings')!
   const cardItems = FLASHCARD_REVIEW_SESSION_MENU_ITEMS.filter(item => (
@@ -257,9 +266,18 @@ export function flashcardReviewSessionMenuItems(options: {
       icon: options.ttsPaused ? 'mdi-play-circle-outline' : 'mdi-pause-circle-outline',
       divider: true,
     }] : []),
+    ...(options.showAudioFocus ? [{
+      action: 'toggle_audio_focus' as const,
+      title: 'Audio focus',
+      subtitle: 'Lowers the volume of other apps during Review playback.',
+      icon: 'mdi-headphones',
+      active: options.audioFocusEnabled,
+      toggle: true,
+      divider: !options.showTtsToggle,
+    }] : []),
     {
       ...settingsItem,
-      divider: !options.showTtsToggle,
+      divider: !options.showTtsToggle && !options.showAudioFocus,
     },
   ]
 }
@@ -906,15 +924,12 @@ export function flashcardReviewCardBackSpeechRepeatCount(
 
 export function flashcardReviewCardFaceDurationSeconds(
   review: Pick<FlashcardReviewTiming, 'frontSeconds' | 'backSeconds'>,
-  card: Pick<FlashcardReviewQueueCard, 'tags' | 'tagNames'>,
+  _card: Pick<FlashcardReviewQueueCard, 'tags' | 'tagNames'>,
   side: FlashcardReviewSide,
 ) {
-  const flag = flashcardReviewTimingFlag(card)
-  if (flag === 'easy') return 1
-  const configured = normalizeFlashcardFaceDurationSeconds(
+  return normalizeFlashcardFaceDurationSeconds(
     side === 'front' ? review.frontSeconds : review.backSeconds,
   )
-  return flag === 'hard' && side === 'back' ? configured + 3 : configured
 }
 
 export function flashcardReviewCardBackSpeechRate(

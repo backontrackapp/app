@@ -58,8 +58,9 @@ For a separate API subdomain or a native app build, set an absolute HTTPS URL:
 
 ```dotenv
 VITE_API_URL=https://api.your-domain.example
-BACKONTRACK_ALLOWED_ORIGINS=https://your-domain.example,http://localhost,capacitor://localhost
+BACKONTRACK_ALLOWED_ORIGINS=https://your-domain.example,https://admin.your-domain.example,http://localhost,capacitor://localhost
 BACKONTRACK_APP_URL=https://your-domain.example
+BACKONTRACK_ADMIN_URL=https://admin.your-domain.example
 ```
 
 Generate a different `BACKONTRACK_API_SECRET` for each production installation:

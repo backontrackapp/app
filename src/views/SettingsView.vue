@@ -34,6 +34,7 @@ import {
   DEFAULT_EXERCISE_WEIGHT_UNIT,
   normalizeExerciseWeightUnit,
 } from '@/services/exerciseSettings'
+import { setProductAnalyticsEnabled } from '@/services/productAnalytics'
 import type {
   IntervalCueSound,
   IntervalStepKind,
@@ -50,12 +51,14 @@ const hiddenMenuItems = ref<MainNavItemId[]>(normalizeHiddenMainMenuItems(
 ))
 const intervalTypeSounds = ref(defaultIntervalTypeSounds())
 const exerciseWeightUnit = ref<WeightUnit>(DEFAULT_EXERCISE_WEIGHT_UNIT)
+const productAnalyticsEnabled = ref(true)
 const loading = ref(true)
 const connecting = ref(false)
 const screenTimeConnecting = ref(false)
 const menuSaving = ref(false)
 const intervalSoundSaving = ref(false)
 const exerciseWeightUnitSaving = ref(false)
+const productAnalyticsSaving = ref(false)
 const previewingIntervalType = ref<IntervalStepKind>()
 const error = ref('')
 const notice = ref(false)
@@ -119,6 +122,7 @@ onMounted(async () => {
     intervalTypeSounds.value = normalizeIntervalTypeSounds(settings.intervalTypeSounds)
     stepSource.value = normalizeStepSource(settings.stepSource)
     exerciseWeightUnit.value = normalizeExerciseWeightUnit(settings.exerciseWeightUnit)
+    productAnalyticsEnabled.value = settings.productAnalyticsEnabled !== false
     if (settings.stepSource !== stepSource.value) {
       await api.updateUserSettings({ stepSource: stepSource.value })
     }
@@ -278,6 +282,30 @@ async function setExerciseWeightUnit(value: WeightUnit) {
     error.value = cause instanceof Error ? cause.message : 'The exercise weight unit could not be saved.'
   } finally {
     exerciseWeightUnitSaving.value = false
+  }
+}
+
+async function setProductAnalytics(value: boolean) {
+  if (productAnalyticsSaving.value || value === productAnalyticsEnabled.value) return
+  const previous = productAnalyticsEnabled.value
+  productAnalyticsEnabled.value = value
+  productAnalyticsSaving.value = true
+  error.value = ''
+  if (!value) setProductAnalyticsEnabled(false)
+  try {
+    const settings = await api.updateUserSettings({ productAnalyticsEnabled: value })
+    productAnalyticsEnabled.value = settings.productAnalyticsEnabled !== false
+    setProductAnalyticsEnabled(productAnalyticsEnabled.value)
+    noticeMessage.value = productAnalyticsEnabled.value
+      ? 'Product analytics enabled.'
+      : 'Product analytics disabled and existing analytics deleted.'
+    notice.value = true
+  } catch (cause) {
+    productAnalyticsEnabled.value = previous
+    setProductAnalyticsEnabled(previous)
+    error.value = cause instanceof Error ? cause.message : 'The analytics preference could not be saved.'
+  } finally {
+    productAnalyticsSaving.value = false
   }
 }
 
@@ -540,6 +568,37 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
     <v-card class="surface-card pa-5 pa-sm-6">
       <div class="settings-section-heading">
         <div>
+          <h2>Product analytics</h2>
+          <p>Share content-free usage events so BackOnTrack can improve activation, engagement, and reliability.</p>
+        </div>
+        <v-progress-circular
+          v-if="productAnalyticsSaving"
+          color="secondary"
+          indeterminate
+          size="22"
+          width="2"
+        />
+        <v-icon v-else icon="mdi-chart-timeline-variant" />
+      </div>
+
+      <v-switch
+        :model-value="productAnalyticsEnabled"
+        class="mt-5"
+        color="secondary"
+        inset
+        hide-details="auto"
+        label="Help improve BackOnTrack"
+        :disabled="loading || productAnalyticsSaving"
+        @update:model-value="setProductAnalytics($event === true)"
+      />
+      <p class="settings-analytics-copy mt-3">
+        Includes screen names, key actions, session duration, platform, and app version. It never includes task, journal, tracker, flashcard, or assistant content. Turning this off also deletes previously collected product analytics for your account.
+      </p>
+    </v-card>
+
+    <v-card class="surface-card pa-5 pa-sm-6">
+      <div class="settings-section-heading">
+        <div>
           <h2>Legal</h2>
           <p>Review how BackOnTrack handles your information and the terms for using the service.</p>
         </div>
@@ -586,6 +645,12 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
 .v-alert p {
   margin-top: .2rem;
   color: rgb(var(--v-theme-on-surface) / .56);
+  font-size: .78rem;
+  line-height: 1.45;
+}
+
+.settings-analytics-copy {
+  color: rgba(var(--v-theme-on-surface), .56);
   font-size: .78rem;
   line-height: 1.45;
 }

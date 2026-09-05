@@ -7,6 +7,7 @@ import type {
   TrackingDailyValue,
   TrackingEntry,
   TrackingFactorMode,
+  TrackingGoalVersion,
   TrackingInsightPoint,
   TrackingRelationshipPoint,
   TrackingTracker,
@@ -70,6 +71,63 @@ export interface TrackingInsightOptions {
   missingMeansAbsent?: boolean
 }
 
+export const LEGACY_TRACKING_GOAL_EFFECTIVE_DATE = '0001-01-01'
+
+export function normalizeTrackingGoalVersions(value: unknown): TrackingGoalVersion[] {
+  if (!Array.isArray(value)) return []
+  const byDate = new Map<string, TrackingGoalVersion>()
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue
+    const record = item as Record<string, unknown>
+    const effectiveDate = typeof record.effectiveDate === 'string' ? record.effectiveDate : ''
+    const targetValue = Number(record.targetValue)
+    const targetOperator = record.targetOperator
+    const trackingWindow = record.trackingWindow
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)
+      || !Number.isFinite(targetValue)
+      || targetValue < 0
+      || !['gte', 'lte', 'eq'].includes(String(targetOperator))
+      || !['occurrence', 'week'].includes(String(trackingWindow))
+    ) continue
+    byDate.set(effectiveDate, {
+      effectiveDate,
+      targetValue,
+      targetOperator: targetOperator as TrackingGoalVersion['targetOperator'],
+      trackingWindow: trackingWindow as TrackingGoalVersion['trackingWindow'],
+    })
+  }
+  return [...byDate.values()].sort((left, right) => left.effectiveDate.localeCompare(right.effectiveDate))
+}
+
+export function trackingGoalForDate(
+  tracker: TrackingTracker,
+  date: string,
+): TrackingGoalVersion | undefined {
+  const versions = tracker.goalVersions || []
+  for (let index = versions.length - 1; index >= 0; index -= 1) {
+    if (versions[index]!.effectiveDate <= date) return versions[index]
+  }
+  return versions.length || tracker.targetValue <= 0
+    ? undefined
+    : {
+        effectiveDate: LEGACY_TRACKING_GOAL_EFFECTIVE_DATE,
+        targetValue: tracker.targetValue,
+        targetOperator: tracker.targetOperator,
+        trackingWindow: tracker.trackingWindow,
+      }
+}
+
+export function upsertTrackingGoalVersion(
+  versions: TrackingGoalVersion[],
+  version: TrackingGoalVersion,
+) {
+  return normalizeTrackingGoalVersions([
+    ...versions.filter(item => item.effectiveDate !== version.effectiveDate),
+    version,
+  ])
+}
+
 export type TrackingInsightRangePreset = '7' | '14' | '1-month' | '3-months' | '6-months'
 
 const TRACKING_INSIGHT_RANGE_PRESETS: Array<{ maximumDataPoints: number; preset: TrackingInsightRangePreset }> = [
@@ -116,6 +174,7 @@ export function trackerDraftFromPreset(
     targetValue: 0,
     targetOperator: 'gte',
     trackingWindow: 'occurrence',
+    goalVersions: [],
     source: 'manual',
     scaleMin: preset.scaleMin,
     scaleMax: preset.scaleMax,

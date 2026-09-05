@@ -572,6 +572,9 @@ final class SyncService
                 if (!is_string($key) || strlen($key) > 80) {
                     throw new ApiException(422, 'A settings field is invalid.');
                 }
+                if ($key === 'productAnalyticsEnabled' && !is_bool($value)) {
+                    throw new ApiException(422, 'The product analytics setting must be boolean.');
+                }
                 $settings[$key] = $value;
             }
             $update = $this->database->pdo->prepare(
@@ -582,6 +585,11 @@ final class SyncService
                 'updated' => $this->now(),
                 'account' => $account,
             ]);
+            if (($settings['productAnalyticsEnabled'] ?? true) === false) {
+                $this->database->pdo->prepare(
+                    'DELETE FROM analytics_events WHERE account_id = :account',
+                )->execute(['account' => $account]);
+            }
             return [
                 'status' => 'applied',
                 'resource' => $this->userEnvelope($account),
@@ -1632,7 +1640,8 @@ final class SyncService
             return ['status' => 'merged', 'resource' => $this->userEnvelope($account)];
         }
         if (isset($allowed['settings'])) {
-            $allowed['settings'] = json_encode($allowed['settings'], JSON_THROW_ON_ERROR);
+            $settingsValue = $allowed['settings'];
+            $allowed['settings'] = json_encode($settingsValue, JSON_THROW_ON_ERROR);
         }
         $allowed['updated'] = $this->now();
         $assignments = array_map(static fn (string $field): string => $field . ' = :' . $field, array_keys($allowed));
@@ -1640,6 +1649,11 @@ final class SyncService
             'UPDATE users SET ' . implode(', ', $assignments) . ' WHERE id = :id',
         );
         $statement->execute([...$allowed, 'id' => $account]);
+        if (isset($settingsValue) && is_array($settingsValue) && ($settingsValue['productAnalyticsEnabled'] ?? true) === false) {
+            $this->database->pdo->prepare(
+                'DELETE FROM analytics_events WHERE account_id = :account',
+            )->execute(['account' => $account]);
+        }
         $this->saveFieldClocks($account, 'users', $account, $mergedClocks);
         return ['status' => 'applied', 'resource' => $this->userEnvelope($account)];
     }

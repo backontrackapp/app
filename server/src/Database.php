@@ -63,7 +63,7 @@ final class Database
             'users' => [
                 'id', 'email', 'email_visibility', 'verified', 'name', 'avatar',
                 'password', 'token_key', 'timezone', 'settings', 'assistant_token_usage_day',
-                'assistant_token_usage', 'assistant_daily_token_limit', 'created', 'updated',
+                'assistant_token_usage', 'assistant_daily_token_limit', 'admin_role', 'created', 'updated',
             ],
             'tags' => ['id', 'owner', 'name'],
             'flashcards' => [
@@ -125,7 +125,7 @@ final class Database
             ],
             'tracking_trackers' => [
                 'id', 'owner', 'name', 'description', 'role', 'kind',
-                'unit', 'target_value', 'target_operator', 'tracking_window', 'source',
+                'unit', 'target_value', 'target_operator', 'tracking_window', 'goal_versions', 'source',
                 'scale_min', 'scale_max', 'favorable_direction',
                 'daily_aggregation', 'active', 'archived', 'sort_order', 'color', 'icon',
             ],
@@ -169,6 +169,16 @@ final class Database
                 'last_seen_at', 'confirmed_receipt_sequence',
             ],
             'sync_retention_watermarks' => ['account_id', 'minimum_cursor', 'compacted_at'],
+            'admin_login_challenges' => [
+                'id', 'user_id', 'code_hash', 'attempts', 'expires_at', 'created_at',
+            ],
+            'analytics_events' => [
+                'id', 'account_id', 'client_id', 'session_id', 'event_name', 'screen',
+                'action', 'occurred_at', 'received_at', 'duration_ms', 'platform', 'app_version',
+            ],
+            'admin_audit_log' => [
+                'id', 'admin_id', 'target_user_id', 'action', 'occurred_at', 'ip_hash', 'user_agent',
+            ],
             'backontrack_schema_migrations' => ['version', 'name', 'checksum', 'applied_at'],
         ];
         $tableNames = array_keys($required);

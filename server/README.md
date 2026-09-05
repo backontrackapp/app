@@ -34,6 +34,8 @@ Configuration may be supplied through the root `.env`, process environment varia
 | `BACKONTRACK_TOKEN_TTL` | Token lifetime in seconds, 5 minutes–30 days | 604800 |
 | `BACKONTRACK_MAX_BODY_BYTES` | Maximum JSON request size | 2500000 |
 | `BACKONTRACK_APP_URL` | Public browser URL used in account email links | Required for account email |
+| `BACKONTRACK_ADMIN_URL` | Public admin-dashboard URL used in MFA email | Required for admin sign-in |
+| `BACKONTRACK_ADMIN_TOKEN_TTL` | Privileged token lifetime in seconds, 5 minutes–24 hours | 28800 |
 | `BACKONTRACK_MAIL_HOST` | SMTP host used by PHPMailer | Required for account email |
 | `BACKONTRACK_MAIL_PORT` | SMTP port | 587 |
 | `BACKONTRACK_MAIL_USERNAME` | SMTP username; configure with the password | No authentication |
@@ -58,6 +60,14 @@ php -r 'echo bin2hex(random_bytes(32)), PHP_EOL;'
 Generate separate values for `BACKONTRACK_API_SECRET` and `BACKONTRACK_MIGRATION_KEY`. Never commit either secret.
 
 Only `VITE_API_URL` is exposed to the browser build. Variables beginning with `BACKONTRACK_` remain PHP-only.
+
+The separate admin browser origin must be listed in `BACKONTRACK_ALLOWED_ORIGINS`; it uses the same PHP API and configured SQLite database as the main app.
+
+## Admin dashboard and product analytics
+
+Run `./scripts/admin-role person@example.com admin` to grant a verified account dashboard access, or use `none` to remove it and revoke existing sessions. Admin sign-in requires both the account password and a six-digit email code. The dashboard API is read-only and privileged access is recorded in `admin_audit_log`.
+
+The authenticated `POST /analytics/events` endpoint accepts only an allowlisted, content-free event schema. Events cover canonical screens, key product actions, foreground sessions, platform, and app version; arbitrary properties and user content are rejected. Stored events use a rolling 13-month retention window. Users can opt out in app settings, which deletes their stored analytics. See `docs/admin-analytics.md` for the complete contract and metric definitions.
 
 ## Flashcard AI assistant
 
@@ -160,6 +170,8 @@ The reconstructed PHP-era history is:
 | `202608220001` | Added opt-in, independently reorderable quick-log shortcuts for tasks |
 | `202609010003` | Added per-user, local-day AI token usage tracking |
 | `202609010004` | Added nullable per-user AI daily token-limit overrides |
+| `202609030001` | Added administrator roles and email MFA, content-free product analytics, and privileged-access auditing |
+| `202609030002` | Added date-versioned number and duration tracker task goals |
 
 Existing PHP databases are advanced without recreating application data. The schema is validated after migration, including required columns.
 
