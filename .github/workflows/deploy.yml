@@ -63,6 +63,7 @@ jobs:
       - name: Build project
         env:
           VITE_API_URL: /server
+          VITE_RING_PURCHASE_URL: https://buy.stripe.com/fZudR9dtS0xt2Ac420fnO00
           BACKONTRACK_REQUIRE_IPS: ${{ github.ref == 'refs/heads/dev' && vars.BACKONTRACK_REQUIRE_IPS || '' }}
           IS_DEV_DEPLOYMENT: ${{ github.ref == 'refs/heads/dev' }}
         run: |
@@ -246,6 +247,7 @@ jobs:
       - name: Prepare production environment
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL || 'https://backontrack.app/server' }}
+          VITE_RING_PURCHASE_URL: https://buy.stripe.com/fZudR9dtS0xt2Ac420fnO00
         run: printf 'VITE_API_URL=%s\n' "$VITE_API_URL" > .env.prod
 
       - name: Restore Android signing files
@@ -415,6 +417,7 @@ jobs:
       - name: Prepare production environment
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL || 'https://backontrack.app/server' }}
+          VITE_RING_PURCHASE_URL: https://buy.stripe.com/fZudR9dtS0xt2Ac420fnO00
         run: printf 'VITE_API_URL=%s\n' "$VITE_API_URL" > .env.prod
 
       - name: Restore iOS signing files
