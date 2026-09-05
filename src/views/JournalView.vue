@@ -5,7 +5,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { Intersect, Ripple } from 'vuetify/directives'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
-import ContentIcon from '@/components/ContentIcon.vue'
 import EmptyStateCard from '@/components/EmptyStateCard.vue'
 import {
   filterJournalEntries,
@@ -14,15 +13,10 @@ import {
   journalEntryHeading,
 } from '@/services/journal'
 import { useJournalStore } from '@/stores/journal'
-import { useTaskStore } from '@/stores/tasks'
-import { useTrackingStore } from '@/stores/tracking'
-import type { JournalEntry } from '@/types/domain'
 
 const route = useRoute()
 const router = useRouter()
 const journalStore = useJournalStore()
-const taskStore = useTaskStore()
-const trackingStore = useTrackingStore()
 const timelineDate = ref(initialDate())
 const timelinePage = ref(0)
 const timelineReady = ref(false)
@@ -37,8 +31,6 @@ const infiniteScrollOptions = { rootMargin: '0px 0px 256px 0px' }
 const vIntersect = Intersect
 const vRipple = Ripple
 
-const taskId = computed(() => typeof route.query.task === 'string' ? route.query.task : '')
-const trackerId = computed(() => typeof route.query.tracker === 'string' ? route.query.tracker : '')
 const availableColors = computed(() => journalEntryColors(
   timelineReady.value ? journalStore.entries.filter(entry => !entry.archived) : [],
 ))
@@ -48,20 +40,18 @@ const allColorsGradient = computed(() => availableColors.value.length > 1
 const filteredTimelineEntries = computed(() => filterJournalEntries(
   timelineReady.value ? journalStore.entries.filter(entry => !entry.archived) : [],
   'all',
-  taskId.value,
-  trackerId.value,
+  '',
+  '',
   searchQuery.value,
   selectedColor.value,
-  entrySearchTags,
 ))
 const archivedEntries = computed(() => filterJournalEntries(
   timelineReady.value ? journalStore.entries.filter(entry => entry.archived) : [],
   'all',
-  taskId.value,
-  trackerId.value,
+  '',
+  '',
   searchQuery.value,
   selectedColor.value,
-  entrySearchTags,
 ))
 const groups = computed(() => groupJournalEntriesByMonth(filteredTimelineEntries.value))
 const showInitialLoading = computed(() => loadingTimelinePage.value && !timelineReady.value)
@@ -70,10 +60,8 @@ const showEmptyState = computed(() => timelineReady.value
   && !hasMoreEntries.value
   && groups.value.length === 0
   && archivedEntries.value.length === 0)
-const filteredTask = computed(() => taskStore.tasks.find((task) => task.id === taskId.value))
-const filteredTracker = computed(() => trackingStore.trackers.find((tracker) => tracker.id === trackerId.value))
 const hasActiveFilter = computed(() => Boolean(
-  taskId.value || trackerId.value || searchQuery.value.trim() || selectedColor.value,
+  searchQuery.value.trim() || selectedColor.value,
 ))
 
 function initialDate() {
@@ -81,55 +69,10 @@ function initialDate() {
   return queryDate && isValid(queryDate) ? queryDate : new Date()
 }
 
-function sourceTask(entry: JournalEntry) {
-  return taskStore.tasks.find((task) => task.id === entry.task)
-}
-
-function taskName(entry: JournalEntry) {
-  return sourceTask(entry)?.name || entry.taskSnapshot
-}
-
-function trackerContexts(entry: JournalEntry) {
-  const attached = new Set(entry.trackers)
-  const snapshots = new Map(Object.entries(entry.trackerSnapshots))
-  entry.trackers.forEach((trackerId) => {
-    if (!snapshots.has(trackerId)) snapshots.set(trackerId, '')
-  })
-
-  return [...snapshots].flatMap(([trackerId, snapshot]) => {
-    const tracker = attached.has(trackerId)
-      ? trackingStore.trackers.find((item) => item.id === trackerId)
-      : undefined
-    const name = tracker?.name || snapshot
-    return name ? [{
-      id: trackerId,
-      name,
-      color: tracker?.color,
-      icon: tracker?.icon || 'mdi-chart-timeline-variant',
-    }] : []
-  })
-}
-
-function entrySearchTags(entry: JournalEntry) {
-  const task = taskName(entry)
-  return [
-    ...(task ? [task] : []),
-    ...trackerContexts(entry).map(context => context.name),
-  ]
-}
-
 function newEntryQuery() {
   return {
     date: format(timelineDate.value, 'yyyy-MM-dd'),
-    ...(taskId.value ? { task: taskId.value } : {}),
-    ...(trackerId.value ? { tracker: trackerId.value } : {}),
   }
-}
-
-function clearSourceFilter(source: 'task' | 'tracker') {
-  const query = { ...route.query }
-  delete query[source]
-  void router.replace({ name: 'journal', query })
 }
 
 function chooseColor(color: string) {
@@ -152,12 +95,8 @@ async function loadMoreEntries(intersecting = true) {
   }
 }
 
-onMounted(async () => {
-  await Promise.allSettled([
-    loadMoreEntries(),
-    taskStore.tasks.length ? Promise.resolve() : taskStore.load(),
-    trackingStore.loaded ? Promise.resolve() : trackingStore.load(),
-  ])
+onMounted(() => {
+  void loadMoreEntries()
 })
 </script>
 
@@ -212,29 +151,6 @@ onMounted(async () => {
         </template>
       </v-text-field>
 
-      <div v-if="taskId || trackerId" class="d-flex flex-wrap ga-2">
-        <v-chip
-          v-if="taskId"
-          closable
-          color="secondary"
-          variant="tonal"
-          prepend-icon="mdi-lightning-bolt-outline"
-          @click:close="clearSourceFilter('task')"
-        >
-          {{ filteredTask?.name || 'Task reflections' }}
-        </v-chip>
-        <v-chip
-          v-if="trackerId"
-          closable
-          :color="filteredTracker?.color || 'secondary'"
-          variant="tonal"
-          :prepend-icon="filteredTracker?.icon || 'mdi-chart-timeline-variant'"
-          @click:close="clearSourceFilter('tracker')"
-        >
-          {{ filteredTracker?.name || 'Tracker reflections' }}
-        </v-chip>
-      </div>
-
       <v-alert v-if="journalStore.error" type="error" variant="tonal" class="mt-5">
         {{ journalStore.error }}
         <template #append>
@@ -286,29 +202,6 @@ onMounted(async () => {
                     <span class="text-caption muted">
                       {{ format(parseISO(entry.localDate), 'MMM d') }} · {{ format(new Date(entry.occurredAt), 'h:mm a') }}
                     </span>
-                  </div>
-                  <div v-if="taskName(entry) || trackerContexts(entry).length" class="d-flex flex-wrap ga-2 mt-3">
-                    <v-chip
-                      v-if="taskName(entry)"
-                      size="small"
-                      variant="tonal"
-                      :color="sourceTask(entry)?.color || undefined"
-                      prepend-icon="mdi-lightning-bolt-outline"
-                    >
-                      {{ taskName(entry) }}
-                    </v-chip>
-                    <v-chip
-                      v-for="context in trackerContexts(entry)"
-                      :key="context.id"
-                      size="small"
-                      variant="tonal"
-                      :color="context.color"
-                    >
-                      <template #prepend>
-                        <ContentIcon :icon="context.icon" size="1rem" class="mr-1" />
-                      </template>
-                      {{ context.name }}
-                    </v-chip>
                   </div>
                 </div>
                 <v-img

@@ -7,7 +7,6 @@ import AppForm from '@/components/AppForm.vue'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
-import ContentIcon from '@/components/ContentIcon.vue'
 import DateTimePickerField from '@/components/DateTimePickerField.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
 import JournalImageField from '@/components/JournalImageField.vue'
@@ -16,14 +15,12 @@ import { squareImageSourceSignature } from '@/services/avatarImage'
 import { mobileKeyboardVisible } from '@/services/mobileKeyboardViewport'
 import { useJournalStore } from '@/stores/journal'
 import { useTaskStore } from '@/stores/tasks'
-import { useTrackingStore } from '@/stores/tracking'
 import type { JournalEntry, SquareImageSourceValue } from '@/types/domain'
 
 const route = useRoute()
 const router = useRouter()
 const journalStore = useJournalStore()
 const taskStore = useTaskStore()
-const trackingStore = useTrackingStore()
 const entryId = computed(() => typeof route.params.id === 'string' ? route.params.id : '')
 const isEditing = computed(() => Boolean(entryId.value))
 const platform = Capacitor.getPlatform()
@@ -53,39 +50,12 @@ const error = ref('')
 const original = ref('')
 const retirementActions = contentRetirementActions(
   'reflection',
-  'Hide it from your journal timeline while preserving its content and connections.',
-  'Permanently remove the reflection. Its linked task and trackers are not affected.',
+  'Hide it from your journal timeline while preserving its content.',
+  'Permanently remove the reflection.',
 )
 let reflectionAnimationFrame: number | undefined
 let reflectionTransitionTimer: number | undefined
 
-const taskItems = computed(() => [...taskStore.tasks]
-  .filter(item => !item.archived || (isEditing.value && item.id === task.value))
-  .sort((left, right) => Number(right.active) - Number(left.active) || left.name.localeCompare(right.name))
-  .map(item => ({
-    title: item.name,
-    value: item.id,
-    props: {
-      subtitle: [
-        item.archived ? 'Archived task' : '',
-        item.type === 'journal' ? 'Writing completes this task' : '',
-        item.active || item.archived ? '' : 'Paused task',
-      ].filter(Boolean).join(' · ') || undefined,
-    },
-  })))
-const selectedTask = computed(() => taskStore.tasks.find(item => item.id === task.value))
-const completesJournalTask = computed(() => selectedTask.value?.type === 'journal')
-const trackerItems = computed(() => [...trackingStore.trackers]
-  .filter(item => !item.archived || (isEditing.value && trackers.value.includes(item.id)))
-  .sort((left, right) => Number(right.active) - Number(left.active) || left.name.localeCompare(right.name))
-  .map(item => ({
-    title: item.name,
-    value: item.id,
-    icon: item.icon,
-    props: {
-      subtitle: item.archived ? 'Archived tracker' : item.active ? undefined : 'Paused tracker',
-    },
-  })))
 const signature = computed(() => JSON.stringify({
   title: title.value,
   body: body.value,
@@ -123,8 +93,6 @@ function destinationQuery() {
   const date = occurredLocal.value ? format(new Date(occurredLocal.value), 'yyyy-MM-dd') : undefined
   return {
     ...(date ? { date } : {}),
-    ...(typeof route.query.task === 'string' ? { task: route.query.task } : {}),
-    ...(typeof route.query.tracker === 'string' ? { tracker: route.query.tracker } : {}),
   }
 }
 
@@ -148,8 +116,9 @@ function applyEntry(entry: JournalEntry) {
 
 function initializeNewEntry() {
   occurredLocal.value = defaultOccurredLocal()
-  task.value = typeof route.query.task === 'string' ? route.query.task : undefined
-  trackers.value = typeof route.query.tracker === 'string' ? [route.query.tracker] : []
+  task.value = route.query.from === 'tasks' && typeof route.query.task === 'string'
+    ? route.query.task
+    : undefined
   original.value = signature.value
 }
 
@@ -164,20 +133,11 @@ async function loadEntry() {
   }
 }
 
-function loadContextOptions() {
-  return Promise.allSettled([
-    taskStore.tasks.length ? Promise.resolve() : taskStore.load(),
-    trackingStore.loaded ? Promise.resolve() : trackingStore.load(),
-  ])
-}
-
-function removeArchivedNewConnections() {
-  if (isEditing.value) return
-  if (taskStore.tasks.find(item => item.id === task.value)?.archived) task.value = undefined
-  const archivedTrackerIds = new Set(
-    trackingStore.trackers.filter(item => item.archived).map(item => item.id),
-  )
-  trackers.value = trackers.value.filter(id => !archivedTrackerIds.has(id))
+async function validateJournalTask() {
+  if (isEditing.value || !task.value) return
+  if (!taskStore.tasks.length) await taskStore.load().catch(() => undefined)
+  const source = taskStore.tasks.find(item => item.id === task.value)
+  if (source && (source.archived || source.type !== 'journal')) task.value = undefined
 }
 
 if (isEditing.value) {
@@ -191,7 +151,7 @@ if (isEditing.value) {
 }
 
 onMounted(() => {
-  void loadContextOptions().then(removeArchivedNewConnections)
+  void validateJournalTask()
   if (isEditing.value && loading.value) void loadEntry()
 })
 
@@ -415,52 +375,6 @@ function runRetirementAction(action: ContentRetirementActionId) {
           @error="error = $event"
         />
       </v-card>
-
-      <v-card class="surface-card pa-5 mb-4">
-        <h2 class="text-body-1 font-weight-black">Connect this reflection</h2>
-        <p class="text-body-2 muted mt-1 mb-4">
-          {{ completesJournalTask
-            ? `Saving this reflection completes ${selectedTask?.name || 'the journaling task'} for its date.`
-            : 'Add context without changing task progress or tracking logs.' }}
-        </p>
-        <div class="journal-editor-context">
-          <v-select
-            v-model="task"
-            label="Task (optional)"
-            :items="taskItems"
-            :loading="taskStore.loading && !taskItems.length"
-            clearable
-            variant="outlined"
-            hide-details="auto"
-          />
-          <v-select
-            v-model="trackers"
-            label="Trackers (optional)"
-            :items="trackerItems"
-            :loading="trackingStore.loading && !trackerItems.length"
-            clearable
-            multiple
-            chips
-            closable-chips
-            variant="outlined"
-            hide-details="auto"
-          >
-            <template #item="{ props: itemProps, item }">
-              <v-list-item v-bind="itemProps">
-                <template #prepend>
-                  <ContentIcon :icon="item.raw.icon" size="1.125rem" class="mr-3" />
-                </template>
-              </v-list-item>
-            </template>
-            <template #chip="{ props: chipProps, item }">
-              <v-chip v-bind="chipProps">
-                <ContentIcon :icon="item.raw.icon" size=".875rem" class="mr-1" />
-                {{ item.title }}
-              </v-chip>
-            </template>
-          </v-select>
-        </div>
-      </v-card>
     </AppForm>
 
     <FormActionBar
@@ -504,7 +418,7 @@ function runRetirementAction(action: ContentRetirementActionId) {
     <ConfirmDialog
       v-model="deleteDialog"
       title="Delete this reflection permanently?"
-      message="This permanently removes the journal entry. Its linked task and trackers are not affected. This cannot be undone."
+      message="This permanently removes the journal entry. This cannot be undone."
       confirm-text="Delete permanently"
       icon="mdi-delete-forever-outline"
       :loading="deleting"
@@ -515,8 +429,7 @@ function runRetirementAction(action: ContentRetirementActionId) {
 
 <style scoped>
 .journal-editor-page { padding-bottom: 5rem; }
-.journal-editor-fields,
-.journal-editor-context { display: grid; gap: 1rem; }
+.journal-editor-fields { display: grid; gap: 1rem; }
 .journal-editor-reflection-slot { min-width: 0; }
 .journal-editor-reflection { display: grid; gap: .25rem; }
 .journal-editor-privacy { color: rgba(var(--v-theme-on-surface), .58); font-size: .72rem; font-style: italic; line-height: 1.4; }
@@ -576,8 +489,5 @@ function runRetirementAction(action: ContentRetirementActionId) {
 :global(html.journal-reflection-fullscreen body) { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .journal-editor-reflection--fullscreen { transition-duration: 0s; }
-}
-@media (min-width: 48rem) {
-  .journal-editor-context { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>

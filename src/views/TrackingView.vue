@@ -3,7 +3,6 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { addDays, format, isValid, parseISO, startOfWeek } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
-import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import ContentIcon from '@/components/ContentIcon.vue'
 import DateSwipeFeedback from '@/components/DateSwipeFeedback.vue'
 import EmptyStateCard from '@/components/EmptyStateCard.vue'
@@ -28,16 +27,12 @@ const selectedDate = ref(new Date())
 const visibleWeekStart = ref(startOfWeek(selectedDate.value, { weekStartsOn: 1 }))
 const trackerActionsOpen = ref(false)
 const actionTracker = ref<TrackingTracker>()
-const pendingStatusTracker = ref<TrackingTracker>()
-const statusDialog = ref(false)
-const updatingStatus = ref(false)
 const reorderingTrackers = ref(false)
 const archiveExpanded = ref(false)
 const sheetOpen = ref(false)
 const sheetTracker = ref<TrackingTracker>()
 const editingEntry = ref<TrackingEntry>()
 const openValuePad = ref(false)
-const error = ref('')
 const weeklyChartError = ref('')
 const weeklyChartLoading = ref(true)
 const screenTimeEnabled = ref(false)
@@ -125,53 +120,6 @@ function editActionTracker() {
   if (!tracker) return
   trackerActionsOpen.value = false
   void router.push(`/tracking/${tracker.id}/edit`)
-}
-
-async function requestTrackerStatusChange() {
-  const tracker = actionTracker.value
-  if (!tracker) return
-  trackerActionsOpen.value = false
-  await nextTick()
-  pendingStatusTracker.value = tracker
-  statusDialog.value = true
-}
-
-async function confirmTrackerStatusChange() {
-  const tracker = pendingStatusTracker.value
-  if (!tracker) return
-  updatingStatus.value = true
-  error.value = ''
-  try {
-    await store.setTrackerActive(tracker.id, !tracker.active)
-    statusDialog.value = false
-    pendingStatusTracker.value = undefined
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : `Could not ${tracker.active ? 'pause' : 'unpause'} this tracker.`
-  } finally {
-    updatingStatus.value = false
-  }
-}
-
-async function writeTrackerReflection() {
-  const tracker = actionTracker.value
-  if (!tracker) return
-  trackerActionsOpen.value = false
-  await nextTick()
-  await router.push({
-    name: 'journal-new',
-    query: { tracker: tracker.id, date: dateKey.value },
-  })
-}
-
-async function viewTrackerReflections() {
-  const tracker = actionTracker.value
-  if (!tracker) return
-  trackerActionsOpen.value = false
-  await nextTick()
-  await router.push({
-    name: 'journal',
-    query: { tracker: tracker.id, date: dateKey.value },
-  })
 }
 
 function startLog(tracker: TrackingTracker, entry?: TrackingEntry, directToValuePad = false) {
@@ -289,8 +237,8 @@ async function loadVisibleWeekEntries() {
   <main class="app-page tracking-page">
     <DateSwipeFeedback ref="dateSwipeFeedback" />
 
-    <v-alert v-if="error || store.error" type="error" variant="tonal" class="mb-4">
-      {{ error || store.error }}
+    <v-alert v-if="store.error" type="error" variant="tonal" class="mb-4">
+      {{ store.error }}
     </v-alert>
 
     <WeekDateNavigator
@@ -359,7 +307,7 @@ async function loadVisibleWeekEntries() {
               id: tracker.id,
               group: 'outcome-trackers',
               handle: '.tracker-card__action',
-              disabled: outcomes.length < 2 || updatingStatus || reorderingTrackers,
+              disabled: outcomes.length < 2 || reorderingTrackers,
               onDrop: reorderVisibleTrackers,
             }"
             :tracker="tracker"
@@ -395,7 +343,7 @@ async function loadVisibleWeekEntries() {
               id: tracker.id,
               group: 'factor-trackers',
               handle: '.tracker-card__action',
-              disabled: factors.length < 2 || updatingStatus || reorderingTrackers,
+              disabled: factors.length < 2 || reorderingTrackers,
               onDrop: reorderVisibleTrackers,
             }"
             :tracker="tracker"
@@ -515,40 +463,8 @@ async function loadVisibleWeekEntries() {
           rounded="lg"
           @click="editActionTracker"
         />
-        <v-list-item
-          :prepend-icon="actionTracker.active ? 'mdi-pause' : 'mdi-play'"
-          :title="actionTracker.active ? 'Pause' : 'Unpause'"
-          rounded="lg"
-          @click="requestTrackerStatusChange"
-        />
-        <v-divider class="my-1" />
-        <v-list-item
-          prepend-icon="mdi-notebook-edit-outline"
-          title="Write reflection"
-          rounded="lg"
-          @click="writeTrackerReflection"
-        />
-        <v-list-item
-          prepend-icon="mdi-notebook-outline"
-          title="View reflections"
-          rounded="lg"
-          @click="viewTrackerReflections"
-        />
       </template>
     </ActionBottomSheet>
-
-    <ConfirmDialog
-      v-model="statusDialog"
-      :title="pendingStatusTracker?.active ? 'Pause this tracker?' : 'Unpause this tracker?'"
-      :message="pendingStatusTracker?.active
-        ? `${pendingStatusTracker?.name || 'This tracker'} will stop accepting new logs until you unpause it. Its history will be preserved.`
-        : `${pendingStatusTracker?.name || 'This tracker'} will be available for logging again.`"
-      :confirm-text="pendingStatusTracker?.active ? 'Pause tracker' : 'Unpause tracker'"
-      :confirm-color="pendingStatusTracker?.active ? 'warning' : 'secondary'"
-      :icon="pendingStatusTracker?.active ? 'mdi-pause' : 'mdi-play'"
-      :loading="updatingStatus"
-      @confirm="confirmTrackerStatusChange"
-    />
 
     <TrackingLogBottomSheet
       v-model="sheetOpen"
