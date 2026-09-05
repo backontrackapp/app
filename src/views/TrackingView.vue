@@ -368,7 +368,7 @@ async function loadVisibleWeekEntries() {
         </v-btn>
         <v-expand-transition>
           <div v-show="archiveExpanded" id="archived-trackers">
-            <div class="tracker-grid mt-2">
+            <div class="d-flex flex-column ga-3 mt-2">
               <v-card v-for="tracker in archivedTrackers" :key="tracker.id" class="surface-card pa-4 archived-tracker" role="link" tabindex="0" :aria-label="`Edit archived tracker ${tracker.name}`" @click="router.push(`/tracking/${tracker.id}/edit`)" @keydown.enter="router.push(`/tracking/${tracker.id}/edit`)" @keydown.space.prevent="router.push(`/tracking/${tracker.id}/edit`)">
                 <v-icon icon="mdi-archive-outline" :color="tracker.color" />
                 <div class="min-width-0"><strong class="d-block text-truncate">{{ tracker.name }}</strong><span class="text-caption muted">Open to restore</span></div>
